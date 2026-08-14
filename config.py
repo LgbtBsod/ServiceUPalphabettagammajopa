@@ -23,6 +23,11 @@ CLIENTS_DB_DIR = os.path.join(BASE_DIR, "DBClients")
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")
 TEMPLATES_DIR = os.path.join(REPORTS_DIR, "templates")
 
-# Создание необходимых директорий
-for directory in [BACKUP_DIR, EXPORT_DIR, PHOTOS_DIR, THUMBNAILS_DIR, CLIENTS_DB_DIR, REPORTS_DIR, TEMPLATES_DIR]:
-    os.makedirs(directory, exist_ok=True)
+
+def ensure_directories():
+    """Создание необходимых директорий.
+    
+    Выносится в отдельную функцию для устранения side effects при импорте.
+    """
+    for directory in [BACKUP_DIR, EXPORT_DIR, PHOTOS_DIR, THUMBNAILS_DIR, CLIENTS_DB_DIR, REPORTS_DIR, TEMPLATES_DIR]:
+        os.makedirs(directory, exist_ok=True)
