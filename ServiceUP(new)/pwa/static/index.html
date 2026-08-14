@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+
+  <!-- PWA: запуск в полноэкранном режиме (без адресной строки) -->
+  <meta name="theme-color" content="#007aff">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Сервис">
+  <meta name="application-name" content="Сервис">
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
+  <link rel="stylesheet" href="style.css">
+  <title>Сервисный центр</title>
+</head>
+<body>
+  <div id="app">
+    <!-- Шапка -->
+    <header class="header">
+      <div class="header-left">
+        <span class="logo">🔧</span>
+        <div>
+          <h1>Сервисный центр</h1>
+          <span id="stat-count" class="subtitle">Загрузка…</span>
+        </div>
+      </div>
+      <button id="btn-refresh" class="icon-btn" title="Обновить">🔄</button>
+    </header>
+
+    <!-- Дашборд -->
+    <div class="dashboard" id="dashboard">
+      <div class="stat-card"><span id="stat-total" class="stat-val">—</span><span class="stat-lbl">Всего</span></div>
+      <div class="stat-card"><span id="stat-repair" class="stat-val">—</span><span class="stat-lbl">В ремонте</span></div>
+      <div class="stat-card"><span id="stat-ready" class="stat-val">—</span><span class="stat-lbl">Готово</span></div>
+    </div>
+
+    <!-- Поиск -->
+    <div class="search-bar">
+      <input type="search" id="search-input" placeholder="🔍 Поиск по имени, телефону, №…" autocomplete="off">
+    </div>
+
+    <!-- Фильтр статуса -->
+    <div class="filter-row" id="filter-row">
+      <!-- Заполняется JS: кнопки статусов -->
+    </div>
+
+    <!-- Список заказов -->
+    <main class="orders-list" id="orders-list">
+      <div class="loading">⏳ Загрузка заказов…</div>
+    </main>
+
+    <!-- Кнопка добавления (FAB) -->
+    <button id="btn-add" class="fab" title="Новый заказ">＋</button>
+
+    <!-- Модальное окно просмотра/редактирования -->
+    <div class="modal-overlay" id="order-modal" style="display:none;">
+      <div class="modal">
+        <div class="modal-header">
+          <h2 id="modal-title">Заказ</h2>
+          <button class="icon-btn" id="modal-close">✖</button>
+        </div>
+        <form id="order-form" class="order-form">
+          <input type="hidden" id="f-id">
+          <div class="form-grid">
+            <div class="field">
+              <label>Клиент *</label>
+              <input type="text" id="f-client" required>
+            </div>
+            <div class="field">
+              <label>Телефон *</label>
+              <input type="tel" id="f-phone" required>
+            </div>
+            <div class="field">
+              <label>Тип устройства</label>
+              <select id="f-type"></select>
+            </div>
+            <div class="field">
+              <label>Бренд</label>
+              <select id="f-brand"></select>
+            </div>
+            <div class="field full">
+              <label>Модель</label>
+              <input type="text" id="f-model">
+            </div>
+            <div class="field">
+              <label>Серийный номер</label>
+              <input type="text" id="f-serial">
+            </div>
+            <div class="field">
+              <label>Статус</label>
+              <select id="f-status"></select>
+            </div>
+            <div class="field full">
+              <label>Неисправность</label>
+              <textarea id="f-defect" rows="2"></textarea>
+            </div>
+            <div class="field">
+              <label>Стоимость (₽)</label>
+              <input type="number" id="f-price" min="0" step="100">
+            </div>
+            <div class="field">
+              <label>Предоплата (₽)</label>
+              <input type="number" id="f-prepay" min="0" step="100">
+            </div>
+            <div class="field">
+              <label>Приоритет</label>
+              <select id="f-priority"></select>
+            </div>
+            <div class="field">
+              <label>Инженер</label>
+              <input type="text" id="f-engineer">
+            </div>
+            <div class="field full">
+              <label>Комплектация</label>
+              <input type="text" id="f-completeness">
+            </div>
+            <div class="field full">
+              <label>Внешний вид</label>
+              <input type="text" id="f-appearance">
+            </div>
+            <div class="field full">
+              <label>Заметки</label>
+              <textarea id="f-notes" rows="2"></textarea>
+            </div>
+          </div>
+
+          <!-- Фотографии -->
+          <div class="photos-section">
+            <label>📸 Фотографии</label>
+            <div class="photos-grid" id="photos-grid"></div>
+            <div class="photo-upload-row">
+              <label class="photo-upload-btn">
+                📷 Сделать фото
+                <input type="file" id="photo-input-camera" accept="image/*" capture="environment" multiple style="display:none;">
+              </label>
+              <label class="photo-upload-btn">
+                🖼 Из галереи
+                <input type="file" id="photo-input-gallery" accept="image/*" multiple style="display:none;">
+              </label>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn-primary">💾 Сохранить</button>
+            <button type="button" class="btn-secondary" id="btn-status-quick">✅ Готов к выдаче</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Модальный просмотр фото -->
+    <div class="photo-viewer-overlay" id="photo-viewer" style="display:none;" onclick="closePhotoViewer(event)">
+      <div class="photo-viewer-content" onclick="event.stopPropagation()">
+        <button class="photo-nav-btn photo-nav-prev" onclick="navPhoto(-1)">◀</button>
+        <img id="photo-viewer-img" src="" alt="">
+        <button class="photo-nav-btn photo-nav-next" onclick="navPhoto(1)">▶</button>
+        <div class="photo-viewer-bar">
+          <span id="photo-viewer-counter"></span>
+          <button class="photo-close-btn" onclick="closePhotoViewer()">✖</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast уведомления -->
+    <div id="toast" class="toast" style="display:none;"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
