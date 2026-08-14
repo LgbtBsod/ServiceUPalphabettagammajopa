@@ -185,13 +185,105 @@ def get_default_language() -> str:
     return get_settings().app.language
 
 
+# =============================================================================
+# PATH HELPERS - SSOT for all directory paths (replaces legacy config.py)
+# =============================================================================
+
+def get_reports_dir() -> Path:
+    """Get reports directory as Path object"""
+    return get_data_dir() / "reports"
+
+
+def get_templates_dir() -> Path:
+    """Get templates directory as Path object"""
+    return get_reports_dir() / "templates"
+
+
+def get_photos_dir() -> Path:
+    """Get client photos directory as Path object"""
+    return get_data_dir() / "client_photos"
+
+
+def get_thumbnails_dir() -> Path:
+    """Get thumbnails directory as Path object"""
+    return get_photos_dir() / "thumbnails"
+
+
+def get_clients_db_dir() -> Path:
+    """Get clients database directory as Path object"""
+    return get_data_dir() / "DBClients"
+
+
+def get_export_dir() -> Path:
+    """Get export directory as Path object"""
+    return get_data_dir() / "exports"
+
+
+def get_config_path() -> Path:
+    """Get main config file path"""
+    return Path(get_settings().app.data_dir).parent / "service_center.config"
+
+
+def get_license_key_file() -> Path:
+    """Get license key file path"""
+    return Path(get_settings().app.data_dir).parent / ".license"
+
+
+# =============================================================================
+# LEGACY COMPATIBILITY ALIASES (DEPRECATED - migrate to new API)
+# These maintain backward compatibility with old config.py usage.
+# Will be removed in version 20.0 - update your code to use the new functions above.
+# =============================================================================
+
+BASE_DIR: Path = Path(__file__).parent.parent  # workspace root
+APP_VERSION: str = get_version()
+APP_NAME: str = get_app_name()
+DB_PATH: str = str(get_db_path())
+CONFIG_PATH: str = str(get_config_path())
+BACKUP_DIR: str = str(get_backup_dir())
+EXPORT_DIR: str = str(get_export_dir())
+PHOTOS_DIR: str = str(get_photos_dir())
+THUMBNAILS_DIR: str = str(get_thumbnails_dir())
+CLIENTS_DB_DIR: str = str(get_clients_db_dir())
+REPORTS_DIR: str = str(get_reports_dir())
+TEMPLATES_DIR: str = str(get_templates_dir())
+
+
+# License secret key - loaded from environment or default
+_LICENSE_SECRET_DEFAULT = b'ServiceUP_2024_License_Secret_Key_v1!'
+_env_secret = os.getenv("SERVICEUP_LICENSE_SECRET")
+LICENSE_SECRET_KEY: bytes = _env_secret.encode() if _env_secret else _LICENSE_SECRET_DEFAULT
+
+
+def ensure_directories() -> None:
+    """Create all necessary directories.
+    
+    This function ensures all application directories exist.
+    Uses pathlib for modern, cross-platform path handling.
+    """
+    directories = [
+        get_backup_dir(),
+        get_export_dir(),
+        get_photos_dir(),
+        get_thumbnails_dir(),
+        get_clients_db_dir(),
+        get_reports_dir(),
+        get_templates_dir(),
+    ]
+    
+    for directory in directories:
+        directory.mkdir(parents=True, exist_ok=True)
+
+
 # Export public API
 __all__ = [
+    # Core settings classes
     'Settings',
     'DatabaseSettings',
     'AppSettings',
     'LicenseSettings',
     'NotificationSettings',
+    # Getter functions
     'get_settings',
     'reload_settings',
     'get_app_name',
@@ -202,4 +294,28 @@ __all__ = [
     'get_backup_dir',
     'get_max_workers',
     'get_default_language',
+    # Path helpers
+    'get_reports_dir',
+    'get_templates_dir',
+    'get_photos_dir',
+    'get_thumbnails_dir',
+    'get_clients_db_dir',
+    'get_export_dir',
+    'get_config_path',
+    'get_license_key_file',
+    # Legacy compatibility (DEPRECATED)
+    'BASE_DIR',
+    'APP_VERSION',
+    'APP_NAME',
+    'DB_PATH',
+    'CONFIG_PATH',
+    'BACKUP_DIR',
+    'EXPORT_DIR',
+    'PHOTOS_DIR',
+    'THUMBNAILS_DIR',
+    'CLIENTS_DB_DIR',
+    'REPORTS_DIR',
+    'TEMPLATES_DIR',
+    'LICENSE_SECRET_KEY',
+    'ensure_directories',
 ]
