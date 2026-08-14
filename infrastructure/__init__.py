@@ -1,22 +1,37 @@
 """
-Infrastructure module - инфраструктурные реализации.
+Infrastructure Layer.
 
-Содержит реализации репозиториев, внешние сервисы и адаптеры.
+Реализации интерфейсов для работы с внешними системами:
+- Базы данных (SQLite, PostgreSQL)
+- Кэширование (Redis, Memory)
+- Очереди сообщений
+- Файловое хранилище
 """
 
-from .db import (
-    DeviceRepository,
+from infrastructure.db.repositories import (
+    BaseRepository,
     ClientRepository,
-    UnitOfWork,
-    DatabaseConnection,
+    DeviceRepository,
 )
-
-from .licensing import LicenseService
+from infrastructure.db.connection import DatabaseConnection, get_db_connection
+from infrastructure.cache.memory_cache import MemoryCache
+from infrastructure.messaging.event_publisher import EventPublisher
+from infrastructure.storage.file_storage import FileStorage
+from infrastructure.licensing import LicenseService
 
 __all__ = [
-    'DeviceRepository',
-    'ClientRepository',
-    'UnitOfWork',
-    'DatabaseConnection',
-    'LicenseService',
+    # DB
+    "BaseRepository",
+    "ClientRepository",
+    "DeviceRepository",
+    "DatabaseConnection",
+    "get_db_connection",
+    # Cache
+    "MemoryCache",
+    # Messaging
+    "EventPublisher",
+    # Storage
+    "FileStorage",
+    # Licensing
+    "LicenseService",
 ]
