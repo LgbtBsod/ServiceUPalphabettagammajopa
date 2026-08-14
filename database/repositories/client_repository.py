@@ -2,17 +2,20 @@
 # -*- coding: utf-8 -*-
 
 """
-Репозиторий для работы с клиентами.
+Репозиторий для работы с клиентами на SQLAlchemy ORM.
 
-Реализует паттерн Repository для отделения бизнес-логики от доступа к данным.
+Использует SQLAlchemy ORM API вместо raw SQL запросов.
+Соблюдает принципы SOLID, DRY и Clean Code.
 """
 
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+
+from sqlalchemy.orm import Session
+from sqlalchemy import select, func
 
 from .base import BaseRepository
-from ..db_config import DatabaseConfig
-from .sqlite_connection import SQLiteConnection
+from ..repositories.sqlite_connection import SQLAlchemyConnection
+from ..sqlalchemy_models import Client
 
 
 class ClientRepository(BaseRepository[Dict[str, Any]]):
@@ -20,149 +23,137 @@ class ClientRepository(BaseRepository[Dict[str, Any]]):
     Репозиторий для управления клиентами.
     
     Все SQL запросы инкапсулированы в этом классе.
+    Использует SQLAlchemy ORM для типобезопасности и защиты от SQL инъекций.
     """
     
-    def __init__(self, connection: SQLiteConnection):
+    def __init__(self, connection: SQLAlchemyConnection):
         """
         Инициализация репозитория.
         
         Args:
-            connection: Подключение к базе данных.
+            connection: Подключение к базе данных через SQLAlchemy.
         """
-        self._conn = connection
+        self._connection = connection
+    
+    def _get_session(self) -> Session:
+        """Получение текущей сессии."""
+        return self._connection.get_session()
     
     def get(self, id: int) -> Optional[Dict[str, Any]]:
         """Получение клиента по ID."""
-        cursor = self._conn.execute(
-            "SELECT * FROM clients WHERE id = ?",
-            (id,)
-        )
-        row = cursor.fetchone()
-        return dict(row) if row else None
+        session = self._get_session()
+        client = session.get(Client, id)
+        return client.to_dict() if client else None
     
     def get_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
         """Получение клиента по телефону."""
-        cursor = self._conn.execute(
-            "SELECT * FROM clients WHERE phone = ?",
-            (phone,)
-        )
-        row = cursor.fetchone()
-        return dict(row) if row else None
+        session = self._get_session()
+        stmt = select(Client).where(Client.phone == phone)
+        client = session.scalar(stmt)
+        return client.to_dict() if client else None
     
     def get_all(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Получение всех клиентов с фильтрацией."""
-        query = "SELECT * FROM clients"
-        params = []
-        conditions = []
+        session = self._get_session()
+        stmt = select(Client)
         
         if filters:
+            conditions = []
             for field, value in filters.items():
-                if value is not None:
-                    conditions.append(f"{field} = ?")
-                    params.append(value)
+                if value is not None and hasattr(Client, field):
+                    conditions.append(getattr(Client, field) == value)
+            if conditions:
+                stmt = stmt.where(*conditions)
         
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-        
-        query += " ORDER BY name"
-        
-        cursor = self._conn.execute(query, tuple(params))
-        rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        stmt = stmt.order_by(Client.name)
+        clients = session.scalars(stmt).all()
+        return [client.to_dict() for client in clients]
     
     def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Создание нового клиента."""
-        columns = ['name', 'phone', 'status']
-        placeholders = ', '.join(['?' for _ in columns])
-        column_names = ', '.join(columns)
+        session = self._get_session()
         
-        values = [
-            data.get('name') or data.get('full_name', ''),
-            data.get('phone', ''),
-            data.get('status', 'Новый')
-        ]
-        
-        cursor = self._conn.execute(
-            f"INSERT INTO clients ({column_names}) VALUES ({placeholders})",
-            tuple(values)
+        client = Client(
+            name=data.get('name') or data.get('full_name', ''),
+            phone=data.get('phone', ''),
+            status=data.get('status', 'Новый')
         )
-        self._conn.commit()
         
-        return self.get(cursor.lastrowid) or {}
+        session.add(client)
+        session.flush()  # Получаем ID
+        
+        created_client = session.get(Client, client.id)
+        return created_client.to_dict() if created_client else {}
     
     def update(self, id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Обновление клиента."""
-        if not self.exists(id):
+        session = self._get_session()
+        client = session.get(Client, id)
+        
+        if not client:
             return None
         
-        set_clauses = []
-        params = []
+        client.update_from_dict(data)
+        session.flush()
         
-        for field, value in data.items():
-            set_clauses.append(f"{field} = ?")
-            params.append(value)
-        
-        params.append(id)
-        
-        query = f"UPDATE clients SET {', '.join(set_clauses)} WHERE id = ?"
-        self._conn.execute(query, tuple(params))
-        self._conn.commit()
-        
-        return self.get(id)
+        updated_client = session.get(Client, id)
+        return updated_client.to_dict() if updated_client else None
     
     def delete(self, id: int) -> bool:
         """Удаление клиента."""
-        if not self.exists(id):
+        session = self._get_session()
+        client = session.get(Client, id)
+        
+        if not client:
             return False
         
-        self._conn.execute("DELETE FROM clients WHERE id = ?", (id,))
-        self._conn.commit()
+        session.delete(client)
+        session.flush()
         return True
     
     def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
         """Подсчет клиентов."""
-        query = "SELECT COUNT(*) FROM clients"
-        params = []
-        conditions = []
+        session = self._get_session()
+        stmt = select(func.count()).select_from(Client)
         
         if filters:
+            conditions = []
             for field, value in filters.items():
-                if value is not None:
-                    conditions.append(f"{field} = ?")
-                    params.append(value)
+                if value is not None and hasattr(Client, field):
+                    conditions.append(getattr(Client, field) == value)
+            if conditions:
+                stmt = stmt.where(*conditions)
         
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-        
-        cursor = self._conn.execute(query, tuple(params))
-        result = cursor.fetchone()
-        return result[0] if result else 0
+        result = session.scalar(stmt)
+        return result or 0
     
     def exists(self, id: int) -> bool:
         """Проверка существования клиента."""
-        cursor = self._conn.execute(
-            "SELECT 1 FROM clients WHERE id = ?",
-            (id,)
-        )
-        return cursor.fetchone() is not None
+        session = self._get_session()
+        client = session.get(Client, id)
+        return client is not None
     
     def search(self, query_str: str) -> List[Dict[str, Any]]:
         """Поиск клиентов по имени или телефону."""
+        session = self._get_session()
         search_pattern = f"%{query_str}%"
-        cursor = self._conn.execute(
-            """
-            SELECT * FROM clients 
-            WHERE name LIKE ? OR phone LIKE ?
-            ORDER BY name
-            """,
-            (search_pattern, search_pattern)
-        )
-        rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        
+        stmt = select(Client).where(
+            (Client.name.like(search_pattern)) | 
+            (Client.phone.like(search_pattern))
+        ).order_by(Client.name)
+        
+        clients = session.scalars(stmt).all()
+        return [client.to_dict() for client in clients]
     
-    def update_stats(self, client_id: int, total_orders: int, 
-                     completed_orders: int, total_spent: float,
-                     last_order_date: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def update_stats(
+        self,
+        client_id: int,
+        total_orders: int,
+        completed_orders: int,
+        total_spent: float,
+        last_order_date: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """
         Обновление статистики клиента.
         
@@ -176,13 +167,19 @@ class ClientRepository(BaseRepository[Dict[str, Any]]):
         Returns:
             Обновленные данные клиента.
         """
-        data = {
-            'total_orders': total_orders,
-            'completed_orders': completed_orders,
-            'total_spent': total_spent
-        }
+        session = self._get_session()
+        client = session.get(Client, client_id)
         
-        if last_order_date:
-            data['last_order_date'] = last_order_date
+        if not client:
+            return None
         
-        return self.update(client_id, data)
+        client.update_stats(
+            total_orders=total_orders,
+            completed_orders=completed_orders,
+            total_spent=total_spent,
+            last_order_date=last_order_date
+        )
+        
+        session.flush()
+        updated_client = session.get(Client, client_id)
+        return updated_client.to_dict() if updated_client else None

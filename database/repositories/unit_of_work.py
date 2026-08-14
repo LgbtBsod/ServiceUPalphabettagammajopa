@@ -2,19 +2,20 @@
 # -*- coding: utf-8 -*-
 
 """
-Unit of Work паттерн для управления транзакциями.
+Unit of Work паттерн для управления транзакциями на SQLAlchemy.
 
 Реализует паттерн Unit of Work для координации изменений между
 несколькими репозиториями в рамках одной транзакции.
 Соблюдает принципы SOLID и Clean Code.
 """
 
-from typing import Optional, Any
+from typing import Optional
 from contextlib import contextmanager
 
 from .base import DatabaseConnection
 from .device_repository import DeviceRepository
 from .client_repository import ClientRepository
+from .sqlite_connection import SQLAlchemyConnection
 
 
 class UnitOfWork:
@@ -28,12 +29,12 @@ class UnitOfWork:
             # Оба изменения будут закоммичены или откачены вместе
     """
     
-    def __init__(self, connection: DatabaseConnection):
+    def __init__(self, connection: SQLAlchemyConnection):
         """
         Инициализация Unit of Work.
         
         Args:
-            connection: Подключение к базе данных.
+            connection: Подключение к базе данных через SQLAlchemy.
         """
         self._connection = connection
         self._devices: Optional[DeviceRepository] = None
@@ -55,7 +56,7 @@ class UnitOfWork:
     
     def __enter__(self) -> 'UnitOfWork':
         """Начало транзакции."""
-        self._connection.begin_transaction()
+        self._connection.connect()  # Убеждаемся что сессия создана
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -64,10 +65,16 @@ class UnitOfWork:
         
         При возникновении исключения происходит откат, иначе фиксация.
         """
-        if exc_type is not None:
-            self._connection.rollback()
-        else:
-            self._connection.commit()
+        session = self._connection.session
+        if session:
+            if exc_type is not None:
+                session.rollback()
+            else:
+                try:
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
     
     @contextmanager
     def transaction(self):
@@ -79,17 +86,22 @@ class UnitOfWork:
                 uow.devices.create(data1)
                 uow.clients.create(data2)
         """
+        session = self._connection.get_session()
         try:
             yield self
-            self._connection.commit()
+            session.commit()
         except Exception:
-            self._connection.rollback()
+            session.rollback()
             raise
     
     def commit(self) -> None:
         """Фиксация всех изменений."""
-        self._connection.commit()
+        session = self._connection.session
+        if session:
+            session.commit()
     
     def rollback(self) -> None:
         """Откат всех изменений."""
-        self._connection.rollback()
+        session = self._connection.session
+        if session:
+            session.rollback()

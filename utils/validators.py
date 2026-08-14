@@ -52,12 +52,13 @@ def validate_phone(phone: Optional[str]) -> bool:
 
 def validate_price(price: Optional[Number]) -> bool:
     """Валидация цены.
-    
+
     Пустая строка и None допустимы (цена не обязательна).
-    
+    Некорректные строки (например "abc") возвращают False.
+
     Args:
         price: Цена в любом формате (строка, число)
-        
+
     Returns:
         True если цена валидная или пустая, False иначе
     """
@@ -65,21 +66,32 @@ def validate_price(price: Optional[Number]) -> bool:
         return True
     if not str(price).strip():
         return True
-    
+
     try:
-        # Очищаем от форматирования: запятые, пробелы, символ валюты
-        cleaned = str(price).strip()
-        cleaned = cleaned.replace(',', '.').replace(' ', '').replace('\u00a0', '')
-        cleaned = re.sub(r'[^\d.]', '', cleaned)  # Оставляем только цифры и точки
+        original = str(price).strip()
         
+        # Если после удаления всех цифр ничего не осталось - это некорректная строка
+        if not re.search(r'\d', original):
+            return False
+        
+        # Очищаем от форматирования: запятые, пробелы, символ валюты
+        cleaned = original.replace(',', '.').replace(' ', '').replace('\u00a0', '')
+        # Удаляем символы валют и другие нецифровые символы кроме точки
+        cleaned = re.sub(r'[^\d.]', '', cleaned)
+
         if not cleaned:
             return True
-            
+        
+        # Проверяем корректность формата числа (одна точка, не в начале/конце)
+        if cleaned.count('.') > 1:
+            return False
+        if cleaned.startswith('.') or cleaned.endswith('.'):
+            return False
+
         float(cleaned)
         return True
     except (ValueError, TypeError):
         return False
-
 
 def validate_required(value: Optional[any]) -> bool:
     """Валидация обязательного поля.

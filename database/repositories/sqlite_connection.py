@@ -2,72 +2,76 @@
 # -*- coding: utf-8 -*-
 
 """
-SQLite реализация подключения к базе данных.
+SQLAlchemy реализация подключения к базе данных.
 
-Использует стандартную библиотеку sqlite3.
-В будущем может быть заменена на SQLAlchemy для лучшей абстракции.
+Использует SQLAlchemy ORM для абстракции над СУБД.
+Заменяет ручные SQL запросы на типобезопасный API.
 """
 
-import sqlite3
-from typing import Any, List, Optional
+from typing import Any, Optional
 from contextlib import contextmanager
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.engine import Engine
 
 from .base import DatabaseConnection
 
 
-class SQLiteConnection(DatabaseConnection):
+class SQLAlchemyConnection(DatabaseConnection):
     """
-    Подключение к SQLite базе данных.
+    Подключение к базе данных через SQLAlchemy.
     
-    Реализует интерфейс DatabaseConnection для работы с SQLite.
+    Реализует интерфейс DatabaseConnection для работы с SQLAlchemy ORM.
     """
     
-    def __init__(self, db_path: str, timeout: float = 10.0):
+    def __init__(self, engine: Engine, session_factory: Optional[sessionmaker] = None):
         """
         Инициализация подключения.
         
         Args:
-            db_path: Путь к файлу базы данных.
-            timeout: Таймаут ожидания блокировки в секундах.
+            engine: SQLAlchemy движок.
+            session_factory: Фабрика сессий (опционально).
         """
-        self.db_path = db_path
-        self.timeout = timeout
-        self._conn: Optional[sqlite3.Connection] = None
+        self._engine = engine
+        self._session_factory = session_factory
+        self._session: Optional[Session] = None
+        self._owns_session = False
     
-    def connect(self) -> sqlite3.Connection:
+    @property
+    def engine(self) -> Engine:
+        """Получение SQLAlchemy движка."""
+        return self._engine
+    
+    def connect(self) -> Session:
         """
         Установление подключения к БД.
         
         Returns:
-            Объект подключения sqlite3.
+            Объект сессии SQLAlchemy.
         """
-        if self._conn is not None:
-            return self._conn
+        if self._session is not None:
+            return self._session
         
         try:
-            self._conn = sqlite3.connect(self.db_path, timeout=self.timeout)
-            self._conn.row_factory = sqlite3.Row
+            if self._session_factory:
+                self._session = self._session_factory()
+            else:
+                self._session_factory = sessionmaker(bind=self._engine)
+                self._session = self._session_factory()
             
-            # Оптимизация производительности
-            self._execute_pragma('journal_mode=WAL')
-            self._execute_pragma('synchronous=NORMAL')
-            self._execute_pragma('cache_size=-6400')  # ~6MB
-            self._execute_pragma('foreign_keys=ON')
-            
-            return self._conn
-        except sqlite3.Error as e:
-            raise RuntimeError(f"Не удалось подключиться к SQLite ({self.db_path}): {e}") from e
-    
-    def _execute_pragma(self, pragma: str) -> None:
-        """Выполнение PRAGMA команды."""
-        if self._conn:
-            self._conn.execute(f'PRAGMA {pragma}')
+            self._owns_session = True
+            return self._session
+        except Exception as e:
+            raise RuntimeError(f"Не удалось подключиться к БД: {e}") from e
     
     def disconnect(self) -> None:
         """Закрытие подключения к БД."""
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        if self._session and self._owns_session:
+            try:
+                self._session.close()
+            except Exception:
+                pass
+            finally:
+                self._session = None
     
     @contextmanager
     def transaction(self):
@@ -76,37 +80,37 @@ class SQLiteConnection(DatabaseConnection):
         
         Пример использования:
             with db.transaction():
-                db.execute(...)
+                session.add(model)
         """
-        if not self._conn:
+        if not self._session:
             raise RuntimeError("Подключение к БД не установлено")
         
         try:
-            yield self._conn
-            self._conn.commit()
+            yield self._session
+            self._session.commit()
         except Exception:
-            self._conn.rollback()
+            self._session.rollback()
             raise
     
-    def execute(self, query: str, params: tuple = ()) -> sqlite3.Cursor:
+    def execute(self, query: str, params: tuple = ()) -> Any:
         """
-        Выполнение SQL запроса.
+        Выполнение SQL запроса (для обратной совместимости).
         
         Args:
             query: SQL запрос.
             params: Параметры запроса.
             
         Returns:
-            Курсор с результатами.
+            Результат выполнения.
         """
-        if not self._conn:
+        if not self._session:
             raise RuntimeError("Подключение к БД не установлено")
         
-        cursor = self._conn.cursor()
-        cursor.execute(query, params)
-        return cursor
+        from sqlalchemy import text
+        result = self._session.execute(text(query), params if params else {})
+        return result
     
-    def executemany(self, query: str, params_list: List[tuple]) -> sqlite3.Cursor:
+    def executemany(self, query: str, params_list: list[tuple]) -> Any:
         """
         Выполнение SQL запроса с несколькими наборами параметров.
         
@@ -115,35 +119,46 @@ class SQLiteConnection(DatabaseConnection):
             params_list: Список наборов параметров.
             
         Returns:
-            Курсор с результатами.
+            Результат выполнения.
         """
-        if not self._conn:
+        if not self._session:
             raise RuntimeError("Подключение к БД не установлено")
         
-        cursor = self._conn.cursor()
-        cursor.executemany(query, params_list)
-        return cursor
+        from sqlalchemy import text
+        result = self._session.execute(text(query), params_list)
+        return result
     
     def commit(self) -> None:
         """Фиксация транзакции."""
-        if self._conn:
-            self._conn.commit()
+        if self._session:
+            self._session.commit()
     
     def rollback(self) -> None:
         """Откат транзакции."""
-        if self._conn:
-            self._conn.rollback()
+        if self._session:
+            self._session.rollback()
     
     def begin_transaction(self) -> None:
         """Начало транзакции (неявно происходит при первом запросе)."""
-        pass  # SQLite автоматически начинает транзакцию
+        pass  # SQLAlchemy управляет транзакциями автоматически
     
     @property
     def is_connected(self) -> bool:
         """Проверка активности подключения."""
-        return self._conn is not None
+        return self._session is not None
     
     @property
-    def connection(self) -> Optional[sqlite3.Connection]:
-        """Получение объекта подключения."""
-        return self._conn
+    def session(self) -> Optional[Session]:
+        """Получение объекта сессии."""
+        return self._session
+    
+    def get_session(self) -> Session:
+        """
+        Получение текущей сессии или создание новой.
+        
+        Returns:
+            Сессия SQLAlchemy.
+        """
+        if not self._session:
+            return self.connect()
+        return self._session
