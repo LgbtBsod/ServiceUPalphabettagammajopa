@@ -14,7 +14,7 @@ import tempfile
 from typing import List
 
 from database.repositories import (
-    SQLiteConnection,
+    SQLAlchemyConnection,
     DeviceRepository,
     ClientRepository,
     UnitOfWork,
@@ -22,7 +22,7 @@ from database.repositories import (
 from database.models import Device
 
 
-class TestSQLiteConnection:
+class TestSQLAlchemyConnection:
     """Тесты подключения к SQLite."""
     
     @pytest.fixture
@@ -37,35 +37,18 @@ class TestSQLiteConnection:
     @pytest.fixture
     def connection(self, temp_db):
         """Создание подключения для тестов."""
-        conn = SQLiteConnection(temp_db)
+        conn = SQLAlchemyConnection(f"sqlite:///{temp_db}")
         conn.connect()
-        # Создаем минимальную схему для тестов
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS devices (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_number TEXT UNIQUE,
-                client_name TEXT,
-                phone TEXT,
-                status TEXT DEFAULT 'Диагностика',
-                total_price TEXT,
-                work_items TEXT
-            )
-        ''')
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS clients (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT,
-                phone TEXT UNIQUE,
-                status TEXT DEFAULT 'Новый'
-            )
-        ''')
-        conn.commit()
+        # Создаем минимальную схему для тестов с использованием SQLAlchemy моделей
+        from database.sqlalchemy_models import Base, create_tables, get_session_factory
+        engine = conn.engine
+        Base.metadata.create_all(engine)
         yield conn
         conn.disconnect()
     
     def test_connect_disconnect(self, temp_db):
         """Тест подключения и отключения."""
-        conn = SQLiteConnection(temp_db)
+        conn = SQLAlchemyConnection(f"sqlite:///{temp_db}")
         assert not conn.is_connected
         
         conn.connect()
@@ -76,9 +59,12 @@ class TestSQLiteConnection:
     
     def test_execute_query(self, connection):
         """Тест выполнения SQL запроса."""
+        from datetime import datetime
+        now = datetime.utcnow().isoformat()
+        # Используем полный набор полей для совместимости с SQLAlchemy моделью
         cursor = connection.execute(
-            "INSERT INTO clients (name, phone) VALUES (?, ?)",
-            ("Тестовый клиент", "+79991234567")
+            "INSERT INTO clients (name, phone, status, total_orders, completed_orders, total_spent, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("Тестовый клиент", "+79991234567", "Новый", 0, 0, 0.0, now, now)
         )
         connection.commit()
         
@@ -88,14 +74,17 @@ class TestSQLiteConnection:
         )
         row = cursor.fetchone()
         assert row is not None
-        assert dict(row)['name'] == "Тестовый клиент"
+        assert row._mapping['name'] == "Тестовый клиент"
     
     def test_transaction_commit(self, connection):
         """Тест фиксации транзакции."""
-        with connection.transaction() as conn:
-            conn.execute(
-                "INSERT INTO clients (name, phone) VALUES (?, ?)",
-                ("Клиент 1", "+79991111111")
+        from sqlalchemy import text
+        from datetime import datetime
+        now = datetime.utcnow().isoformat()
+        with connection.transaction() as sess:
+            sess.execute(
+                text("INSERT INTO clients (name, phone, status, total_orders, completed_orders, total_spent, created_at, updated_at) VALUES (:param_0, :param_1, :param_2, :param_3, :param_4, :param_5, :param_6, :param_7)"),
+                {"param_0": "Клиент 1", "param_1": "+79991111111", "param_2": "Новый", "param_3": 0, "param_4": 0, "param_5": 0.0, "param_6": now, "param_7": now}
             )
         
         # Проверяем что данные закоммичены
@@ -105,15 +94,18 @@ class TestSQLiteConnection:
     
     def test_transaction_rollback(self, connection):
         """Тест отката транзакции."""
+        from sqlalchemy import text
+        from datetime import datetime
         # Получаем начальное количество записей
         cursor = connection.execute("SELECT COUNT(*) FROM clients")
         initial_count = cursor.fetchone()[0]
         
         try:
-            with connection.transaction() as conn:
-                conn.execute(
-                    "INSERT INTO clients (name, phone) VALUES (?, ?)",
-                    ("Клиент для отката", "+79992222222")
+            with connection.transaction() as sess:
+                now = datetime.utcnow().isoformat()
+                sess.execute(
+                    text("INSERT INTO clients (name, phone, status, total_orders, completed_orders, total_spent, created_at, updated_at) VALUES (:param_0, :param_1, :param_2, :param_3, :param_4, :param_5, :param_6, :param_7)"),
+                    {"param_0": "Клиент для отката", "param_1": "+79992222222", "param_2": "Новый", "param_3": 0, "param_4": 0, "param_5": 0.0, "param_6": now, "param_7": now}
                 )
                 raise ValueError("Искусственная ошибка")
         except ValueError:
@@ -134,40 +126,13 @@ class TestDeviceRepository:
         fd, path = tempfile.mkstemp(suffix='.db')
         os.close(fd)
         
-        conn = SQLiteConnection(path)
+        conn = SQLAlchemyConnection(f"sqlite:///{path}")
         conn.connect()
         
-        # Создаем таблицу
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS devices (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_number TEXT UNIQUE,
-                receipt_date TEXT,
-                completion_date TEXT,
-                device_type TEXT,
-                brand TEXT,
-                model TEXT,
-                serial_number TEXT,
-                defect TEXT,
-                appearance TEXT,
-                completeness TEXT,
-                work_items TEXT,
-                client_name TEXT,
-                client_status TEXT DEFAULT 'Новый',
-                phone TEXT,
-                total_price TEXT,
-                prepayment TEXT,
-                status TEXT DEFAULT 'Диагностика',
-                priority TEXT DEFAULT 'Обычный',
-                engineer TEXT,
-                warranty TEXT,
-                notes TEXT,
-                photos TEXT,
-                expense TEXT DEFAULT '0',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
+        # Создаем схему с использованием SQLAlchemy моделей
+        from database.sqlalchemy_models import Base
+        engine = conn.engine
+        Base.metadata.create_all(engine)
         
         repo = DeviceRepository(conn)
         yield repo
@@ -288,20 +253,13 @@ class TestClientRepository:
         fd, path = tempfile.mkstemp(suffix='.db')
         os.close(fd)
         
-        conn = SQLiteConnection(path)
+        conn = SQLAlchemyConnection(f"sqlite:///{path}")
         conn.connect()
         
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS clients (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT,
-                phone TEXT UNIQUE,
-                status TEXT DEFAULT 'Новый',
-                total_orders INTEGER DEFAULT 0,
-                total_spent REAL DEFAULT 0
-            )
-        ''')
-        conn.commit()
+        # Создаем схему с использованием SQLAlchemy моделей
+        from database.sqlalchemy_models import Base
+        engine = conn.engine
+        Base.metadata.create_all(engine)
         
         repo = ClientRepository(conn)
         yield repo
@@ -354,28 +312,13 @@ class TestUnitOfWork:
         fd, path = tempfile.mkstemp(suffix='.db')
         os.close(fd)
         
-        conn = SQLiteConnection(path)
+        conn = SQLAlchemyConnection(f"sqlite:///{path}")
         conn.connect()
         
-        # Создаем таблицы
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS devices (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_number TEXT UNIQUE,
-                client_name TEXT,
-                phone TEXT,
-                status TEXT DEFAULT 'Диагностика'
-            )
-        ''')
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS clients (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT,
-                phone TEXT UNIQUE,
-                status TEXT DEFAULT 'Новый'
-            )
-        ''')
-        conn.commit()
+        # Создаем схему с использованием SQLAlchemy моделей
+        from database.sqlalchemy_models import Base
+        engine = conn.engine
+        Base.metadata.create_all(engine)
         
         uow = UnitOfWork(conn)
         yield uow, conn, path

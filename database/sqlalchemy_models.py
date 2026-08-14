@@ -113,9 +113,14 @@ class Device(Base):
         Integer, ForeignKey('clients.id', ondelete='SET NULL'), nullable=True, index=True
     )
     
+    # Дублируем имя клиента и телефон для быстрого доступа (denormalization)
+    client_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    
     # Даты
     receipt_date: Mapped[str] = mapped_column(String(50), nullable=False)
     completion_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    ready_date: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     
     # Информация об устройстве
     device_type: Mapped[str] = mapped_column(String(100), nullable=False)

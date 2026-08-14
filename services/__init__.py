@@ -74,28 +74,40 @@ class OrderService(BaseService[Order]):
         Raises:
             ValueError: При некорректных данных.
         """
-        with self._uow_class() as uow:
-            # Генерация номера заказа
-            order_number = self._generate_order_number(uow)
-            order_data['order_number'] = order_number
-            
-            # Установка значений по умолчанию
-            if 'status' not in order_data:
-                order_data['status'] = OrderStatus.DIAGNOSTICS.value
-            if 'priority' not in order_data:
-                order_data['priority'] = Priority.NORMAL.value
-            if 'receipt_date' not in order_data:
-                order_data['receipt_date'] = datetime.now().isoformat()
-            
-            # Создание записи в БД
-            device_repo = uow.devices
-            created_device = device_repo.create(order_data)
-            
-            # Конвертация в Pydantic модель
-            order = self._device_to_order(created_device)
-            
-            logger.info(f"Создан заказ №{order.order_number}")
-            return order
+        # Поддержка как класса, так и фабрики/экземпляра
+        if callable(self._uow_class) and not isinstance(self._uow_class, type):
+            # Это фабрика (lambda или функция)
+            uow_instance = self._uow_class()
+            with uow_instance as uow:
+                return self._create_order_in_uow(uow, order_data)
+        else:
+            # Это класс
+            with self._uow_class() as uow:
+                return self._create_order_in_uow(uow, order_data)
+    
+    def _create_order_in_uow(self, uow: UnitOfWork, order_data: Dict[str, Any]) -> Order:
+        """Внутренний метод создания заказа в рамках UoW."""
+        # Генерация номера заказа
+        order_number = self._generate_order_number(uow)
+        order_data['order_number'] = order_number
+        
+        # Установка значений по умолчанию
+        if 'status' not in order_data:
+            order_data['status'] = OrderStatus.DIAGNOSTICS.value
+        if 'priority' not in order_data:
+            order_data['priority'] = Priority.NORMAL.value
+        if 'receipt_date' not in order_data:
+            order_data['receipt_date'] = datetime.now().isoformat()
+        
+        # Создание записи в БД
+        device_repo = uow.devices
+        created_device = device_repo.create(order_data)
+        
+        # Конвертация в Pydantic модель
+        order = self._device_to_order(created_device)
+        
+        logger.info(f"Создан заказ №{order.order_number}")
+        return order
 
     def get_order(self, order_id: int) -> Optional[Order]:
         """
@@ -107,9 +119,15 @@ class OrderService(BaseService[Order]):
         Returns:
             Объект Order или None.
         """
-        with self._uow_class() as uow:
-            device = uow.devices.get(order_id)
-            return self._device_to_order(device) if device else None
+        if callable(self._uow_class) and not isinstance(self._uow_class, type):
+            uow_instance = self._uow_class()
+            with uow_instance as uow:
+                device = uow.devices.get(order_id)
+                return self._device_to_order(device) if device else None
+        else:
+            with self._uow_class() as uow:
+                device = uow.devices.get(order_id)
+                return self._device_to_order(device) if device else None
 
     def get_order_by_number(self, order_number: str) -> Optional[Order]:
         """
@@ -121,9 +139,15 @@ class OrderService(BaseService[Order]):
         Returns:
             Объект Order или None.
         """
-        with self._uow_class() as uow:
-            device = uow.devices.get_by_order_number(order_number)
-            return self._device_to_order(device) if device else None
+        if callable(self._uow_class) and not isinstance(self._uow_class, type):
+            uow_instance = self._uow_class()
+            with uow_instance as uow:
+                device = uow.devices.get_by_order_number(order_number)
+                return self._device_to_order(device) if device else None
+        else:
+            with self._uow_class() as uow:
+                device = uow.devices.get_by_order_number(order_number)
+                return self._device_to_order(device) if device else None
 
     def update_order_status(self, order_id: int, status: OrderStatus) -> Optional[Order]:
         """
@@ -140,24 +164,33 @@ class OrderService(BaseService[Order]):
         Returns:
             Обновленный объект Order.
         """
-        with self._uow_class() as uow:
-            order = self.get_order(order_id)
-            if not order:
-                return None
-            
-            # Проверка бизнес-правил
-            if order.status == OrderStatus.REFUSED.value and status != OrderStatus.REFUSED:
-                raise ValueError("Нельзя изменить статус отказанного заказа")
-            
-            update_data = {'status': status.value}
-            
-            if status == OrderStatus.READY and not order.ready_date:
-                update_data['ready_date'] = datetime.now().isoformat()
-            
-            updated_device = uow.devices.update(order_id, update_data)
-            logger.info(f"Заказ №{order.order_number}: статус изменен на {status.value}")
-            
-            return self._device_to_order(updated_device) if updated_device else None
+        if callable(self._uow_class) and not isinstance(self._uow_class, type):
+            uow_instance = self._uow_class()
+            with uow_instance as uow:
+                return self._update_order_status_in_uow(uow, order_id, status)
+        else:
+            with self._uow_class() as uow:
+                return self._update_order_status_in_uow(uow, order_id, status)
+    
+    def _update_order_status_in_uow(self, uow: UnitOfWork, order_id: int, status: OrderStatus) -> Optional[Order]:
+        """Внутренний метод обновления статуса заказа в рамках UoW."""
+        order = self.get_order(order_id)
+        if not order:
+            return None
+        
+        # Проверка бизнес-правил
+        if order.status == OrderStatus.REFUSED.value and status != OrderStatus.REFUSED:
+            raise ValueError("Нельзя изменить статус отказанного заказа")
+        
+        update_data = {'status': status.value}
+        
+        if status == OrderStatus.READY and not order.ready_date:
+            update_data['ready_date'] = datetime.now().isoformat()
+        
+        updated_device = uow.devices.update(order_id, update_data)
+        logger.info(f"Заказ №{order.order_number}: статус изменен на {status.value}")
+        
+        return self._device_to_order(updated_device) if updated_device else None
 
     def add_work_item(self, order_id: int, work_item: WorkItem) -> Optional[Order]:
         """
@@ -170,23 +203,32 @@ class OrderService(BaseService[Order]):
         Returns:
             Обновленный объект Order.
         """
-        with self._uow_class() as uow:
-            order = self.get_order(order_id)
-            if not order:
-                return None
-            
-            # Получение текущих работ
-            current_works = uow.devices.get_work_items(order_id)
-            
-            # Добавление новой работы
-            work_dict = work_item.model_dump(mode='json')
-            current_works.append(work_dict)
-            
-            # Обновление в БД
-            updated_device = uow.devices.update_work_items(order_id, current_works)
-            
-            logger.info(f"Заказ №{order.order_number}: добавлена работа '{work_item.name}'")
-            return self._device_to_order(updated_device) if updated_device else None
+        if callable(self._uow_class) and not isinstance(self._uow_class, type):
+            uow_instance = self._uow_class()
+            with uow_instance as uow:
+                return self._add_work_item_in_uow(uow, order_id, work_item)
+        else:
+            with self._uow_class() as uow:
+                return self._add_work_item_in_uow(uow, order_id, work_item)
+    
+    def _add_work_item_in_uow(self, uow: UnitOfWork, order_id: int, work_item: WorkItem) -> Optional[Order]:
+        """Внутренний метод добавления работы в рамках UoW."""
+        order = self.get_order(order_id)
+        if not order:
+            return None
+        
+        # Получение текущих работ
+        current_works = uow.devices.get_work_items(order_id)
+        
+        # Добавление новой работы
+        work_dict = work_item.model_dump(mode='json')
+        current_works.append(work_dict)
+        
+        # Обновление в БД
+        updated_device = uow.devices.update_work_items(order_id, current_works)
+        
+        logger.info(f"Заказ №{order.order_number}: добавлена работа '{work_item.name}'")
+        return self._device_to_order(updated_device) if updated_device else None
 
     def search_orders(self, query: str) -> List[Order]:
         """
@@ -198,9 +240,15 @@ class OrderService(BaseService[Order]):
         Returns:
             Список найденных заказов.
         """
-        with self._uow_class() as uow:
-            devices = uow.devices.search(query)
-            return [self._device_to_order(d) for d in devices]
+        if callable(self._uow_class) and not isinstance(self._uow_class, type):
+            uow_instance = self._uow_class()
+            with uow_instance as uow:
+                devices = uow.devices.search(query)
+                return [self._device_to_order(d) for d in devices]
+        else:
+            with self._uow_class() as uow:
+                devices = uow.devices.search(query)
+                return [self._device_to_order(d) for d in devices]
 
     def get_overdue_orders(self, days: int = 14) -> List[Order]:
         """
@@ -212,16 +260,25 @@ class OrderService(BaseService[Order]):
         Returns:
             Список просроченных заказов.
         """
-        with self._uow_class() as uow:
-            all_devices = uow.devices.get_all()
-            overdue = []
-            
-            for device in all_devices:
-                order = self._device_to_order(device)
-                if order.days_in_service > days:
-                    overdue.append(order)
-            
-            return overdue
+        if callable(self._uow_class) and not isinstance(self._uow_class, type):
+            uow_instance = self._uow_class()
+            with uow_instance as uow:
+                return self._get_overdue_orders_in_uow(uow, days)
+        else:
+            with self._uow_class() as uow:
+                return self._get_overdue_orders_in_uow(uow, days)
+    
+    def _get_overdue_orders_in_uow(self, uow: UnitOfWork, days: int = 14) -> List[Order]:
+        """Внутренний метод получения просроченных заказов в рамках UoW."""
+        all_devices = uow.devices.get_all()
+        overdue = []
+        
+        for device in all_devices:
+            order = self._device_to_order(device)
+            if order.days_in_service > days:
+                overdue.append(order)
+        
+        return overdue
 
     def _generate_order_number(self, uow: UnitOfWork) -> str:
         """Генерация уникального номера заказа."""
@@ -311,20 +368,29 @@ class ClientService(BaseService[Client]):
         Returns:
             Созданный объект Client.
         """
-        with self._uow_class() as uow:
-            # Проверка на дубликат по телефону
-            phone = client_data.get('phone', '')
-            existing = uow.clients.get_by_phone(phone)
-            
-            if existing:
-                logger.warning(f"Клиент с телефоном {phone} уже существует")
-                return self._dict_to_client(existing)
-            
-            # Создание клиента
-            created_client = uow.clients.create(client_data)
-            logger.info(f"Создан клиент: {client_data.get('full_name', 'Unknown')}")
-            
-            return self._dict_to_client(created_client)
+        if callable(self._uow_class) and not isinstance(self._uow_class, type):
+            uow_instance = self._uow_class()
+            with uow_instance as uow:
+                return self._create_client_in_uow(uow, client_data)
+        else:
+            with self._uow_class() as uow:
+                return self._create_client_in_uow(uow, client_data)
+    
+    def _create_client_in_uow(self, uow: UnitOfWork, client_data: Dict[str, Any]) -> Client:
+        """Внутренний метод создания клиента в рамках UoW."""
+        # Проверка на дубликат по телефону
+        phone = client_data.get('phone', '')
+        existing = uow.clients.get_by_phone(phone)
+        
+        if existing:
+            logger.warning(f"Клиент с телефоном {phone} уже существует")
+            return self._dict_to_client(existing)
+        
+        # Создание клиента
+        created_client = uow.clients.create(client_data)
+        logger.info(f"Создан клиент: {client_data.get('full_name', 'Unknown')}")
+        
+        return self._dict_to_client(created_client)
 
     def get_client_by_phone(self, phone: str) -> Optional[Client]:
         """
@@ -336,9 +402,15 @@ class ClientService(BaseService[Client]):
         Returns:
             Объект Client или None.
         """
-        with self._uow_class() as uow:
-            client_dict = uow.clients.get_by_phone(phone)
-            return self._dict_to_client(client_dict) if client_dict else None
+        if callable(self._uow_class) and not isinstance(self._uow_class, type):
+            uow_instance = self._uow_class()
+            with uow_instance as uow:
+                client_dict = uow.clients.get_by_phone(phone)
+                return self._dict_to_client(client_dict) if client_dict else None
+        else:
+            with self._uow_class() as uow:
+                client_dict = uow.clients.get_by_phone(phone)
+                return self._dict_to_client(client_dict) if client_dict else None
 
     def search_clients(self, query: str) -> List[Client]:
         """
@@ -350,9 +422,15 @@ class ClientService(BaseService[Client]):
         Returns:
             Список найденных клиентов.
         """
-        with self._uow_class() as uow:
-            clients = uow.clients.search(query)
-            return [self._dict_to_client(c) for c in clients]
+        if callable(self._uow_class) and not isinstance(self._uow_class, type):
+            uow_instance = self._uow_class()
+            with uow_instance as uow:
+                clients = uow.clients.search(query)
+                return [self._dict_to_client(c) for c in clients]
+        else:
+            with self._uow_class() as uow:
+                clients = uow.clients.search(query)
+                return [self._dict_to_client(c) for c in clients]
 
     def update_client_stats(self, client_id: int) -> Optional[Client]:
         """
@@ -369,36 +447,45 @@ class ClientService(BaseService[Client]):
         Returns:
             Обновленный объект Client.
         """
-        with self._uow_class() as uow:
-            # Получение всех заказов клиента
-            orders = uow.devices.get_all({'client_id': client_id})
-            
-            total_orders = len(orders)
-            completed_orders = sum(
-                1 for o in orders 
-                if dict(o).get('status') == OrderStatus.ISSUED.value
-            )
-            
-            # TODO: Расчет общей суммы
-            total_spent = 0.0
-            last_order_date = None
-            
-            if orders:
-                # Получение даты последнего заказа
-                last_order = max(orders, key=lambda x: dict(x).get('receipt_date', ''))
-                last_order_date = dict(last_order).get('receipt_date')
-            
-            # Обновление статистики
-            updated_client = uow.clients.update_stats(
-                client_id=client_id,
-                total_orders=total_orders,
-                completed_orders=completed_orders,
-                total_spent=total_spent,
-                last_order_date=last_order_date
-            )
-            
-            logger.info(f"Обновлена статистика клиента ID={client_id}")
-            return self._dict_to_client(updated_client) if updated_client else None
+        if callable(self._uow_class) and not isinstance(self._uow_class, type):
+            uow_instance = self._uow_class()
+            with uow_instance as uow:
+                return self._update_client_stats_in_uow(uow, client_id)
+        else:
+            with self._uow_class() as uow:
+                return self._update_client_stats_in_uow(uow, client_id)
+    
+    def _update_client_stats_in_uow(self, uow: UnitOfWork, client_id: int) -> Optional[Client]:
+        """Внутренний метод обновления статистики клиента в рамках UoW."""
+        # Получение всех заказов клиента
+        orders = uow.devices.get_all({'client_id': client_id})
+        
+        total_orders = len(orders)
+        completed_orders = sum(
+            1 for o in orders 
+            if dict(o).get('status') == OrderStatus.ISSUED.value
+        )
+        
+        # TODO: Расчет общей суммы
+        total_spent = 0.0
+        last_order_date = None
+        
+        if orders:
+            # Получение даты последнего заказа
+            last_order = max(orders, key=lambda x: dict(x).get('receipt_date', ''))
+            last_order_date = dict(last_order).get('receipt_date')
+        
+        # Обновление статистики
+        updated_client = uow.clients.update_stats(
+            client_id=client_id,
+            total_orders=total_orders,
+            completed_orders=completed_orders,
+            total_spent=total_spent,
+            last_order_date=last_order_date
+        )
+        
+        logger.info(f"Обновлена статистика клиента ID={client_id}")
+        return self._dict_to_client(updated_client) if updated_client else None
 
     def _dict_to_client(self, client_dict: Dict[str, Any]) -> Client:
         """Конвертация словаря из БД в модель Client."""
