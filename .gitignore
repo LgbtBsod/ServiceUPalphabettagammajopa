@@ -6,38 +6,56 @@ __pycache__/
 *.pyd
 .Python
 *.so
+*.egg-info/
+.eggs/
 
 # Dependencies
 .venv/
 venv/
 env/
 ENV/
-.conda/
-
-# Testing
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
 .coverage
-htmlcov/
-.nosetests
-.pytest_cache/
-.mypy_cache/
-
-# Logs
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
 *.log
+*.tmp
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
 
-# Environment variables
+# Environment
 .env
 .env.local
+.env.dev
+.env.test
+.env.prod
+*.env
 *.env.*
 
-# IDE
+# Editors
 .vscode/
 .idea/
 *.swp
 *.swo
-*.tmp
 
 # Build artifacts
-dist/
 build/
-*.egg-info/
+dist/
+*.egg
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+coverage/
+htmlcov/
+.pytest_cache/
+.mypy_cache/
 ```
