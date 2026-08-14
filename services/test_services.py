@@ -18,7 +18,7 @@ from unittest.mock import Mock, MagicMock, patch
 # Импорты тестируемых модулей
 from services import OrderService, ClientService, create_services
 from database.repositories.unit_of_work import UnitOfWork
-from database.repositories.sqlite_connection import SQLiteConnection
+from database.repositories.sqlite_connection import SQLAlchemyConnection
 from models.pydantic_models import OrderStatus, Priority, WorkItem
 
 
@@ -43,12 +43,12 @@ def test_db_path(tmp_path):
             defect TEXT,
             appearance TEXT,
             completeness TEXT,
-            work_items TEXT,
+            work_items_json TEXT DEFAULT '[]',
             client_name TEXT,
             client_status TEXT DEFAULT 'Новый',
             phone TEXT,
-            total_price TEXT,
-            prepayment TEXT,
+            total_price REAL DEFAULT 0,
+            prepayment REAL DEFAULT 0,
             status TEXT DEFAULT 'Диагностика',
             priority TEXT DEFAULT 'Обычный',
             engineer TEXT,
@@ -59,7 +59,9 @@ def test_db_path(tmp_path):
             diagnostic_cost TEXT,
             repair_cost TEXT,
             client_id INTEGER,
-            ready_date TEXT
+            ready_date TEXT,
+            created_at TEXT,
+            updated_at TEXT
         )
     ''')
     
@@ -74,7 +76,9 @@ def test_db_path(tmp_path):
             total_orders INTEGER DEFAULT 0,
             completed_orders INTEGER DEFAULT 0,
             total_spent REAL DEFAULT 0,
-            last_order_date TEXT
+            last_order_date TEXT,
+            created_at TEXT,
+            updated_at TEXT
         )
     ''')
     
@@ -96,7 +100,7 @@ def test_db_path(tmp_path):
 @pytest.fixture
 def connection(test_db_path):
     """Подключение к тестовой БД."""
-    conn = SQLiteConnection(test_db_path)
+    conn = SQLAlchemyConnection(f"sqlite:///{test_db_path}")
     conn.connect()
     yield conn
     conn.disconnect()

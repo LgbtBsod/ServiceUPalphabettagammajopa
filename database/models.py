@@ -81,6 +81,7 @@ class Device:
     order_number: str = ""
     receipt_date: str = ""
     completion_date: str = ""
+    ready_date: str = ""  # Дата готовности заказа
     device_type: str = ""
     brand: str = ""
     model: str = ""
@@ -109,6 +110,7 @@ class Device:
             'order_number': self.order_number,
             'receipt_date': self.receipt_date,
             'completion_date': self.completion_date,
+            'ready_date': self.ready_date,
             'device_type': self.device_type,
             'brand': self.brand,
             'model': self.model,
@@ -139,6 +141,7 @@ class Device:
             order_number=data.get('order_number', ''),
             receipt_date=data.get('receipt_date', ''),
             completion_date=data.get('completion_date', ''),
+            ready_date=data.get('ready_date', ''),
             device_type=data.get('device_type', ''),
             brand=data.get('brand', ''),
             model=data.get('model', ''),

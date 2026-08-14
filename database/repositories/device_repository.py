@@ -148,6 +148,7 @@ class DeviceRepository(BaseRepository[Device]):
             order_number=data.get('order_number', ''),
             receipt_date=data.get('receipt_date', ''),
             completion_date=data.get('completion_date') or None,
+            ready_date=data.get('ready_date') or None,
             device_type=data.get('device_type', ''),
             brand=data.get('brand', ''),
             model=data.get('model', ''),
@@ -156,6 +157,8 @@ class DeviceRepository(BaseRepository[Device]):
             appearance=data.get('appearance', ''),
             completeness=data.get('completeness', ''),
             work_items_json=work_items,
+            client_name=data.get('client_name') or None,
+            phone=data.get('phone') or None,
             total_price=float(data.get('total_price', 0) or 0),
             prepayment=float(data.get('prepayment', 0) or 0),
             status=data.get('status', 'Диагностика'),
@@ -292,9 +295,11 @@ class DeviceRepository(BaseRepository[Device]):
         session = self._get_session()
         search_pattern = f"%{query_str}%"
         
-        # Примечание: client_name нет в модели Device, используем доступные поля
+        # Поиск по всем доступным полям включая client_name и phone
         stmt = select(DeviceModel).where(
             (DeviceModel.order_number.like(search_pattern)) |
+            (DeviceModel.client_name.like(search_pattern)) |
+            (DeviceModel.phone.like(search_pattern)) |
             (DeviceModel.brand.like(search_pattern)) |
             (DeviceModel.model.like(search_pattern))
         ).order_by(DeviceModel.id.desc())
