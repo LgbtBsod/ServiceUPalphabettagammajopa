@@ -16,6 +16,8 @@ from typing import TypeVar, Generic, List, Optional, Any, Callable
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 
+from models.pydantic_models import OrderStatus
+
 T = TypeVar('T')
 
 
@@ -223,8 +225,8 @@ class SpecificationFactory:
         - Не выдан и не отказан
         - Не просрочен более чем на 30 дней
         """
-        not_issued = StatusSpecification('Выдан').not_()
-        not_refused = StatusSpecification('Отказан').not_()
+        not_issued = StatusSpecification(OrderStatus.ISSUED.value).not_()
+        not_refused = StatusSpecification(OrderStatus.REFUSED.value).not_()
         not_overly_overdue = OverdueSpecification(30).not_()
         
         return not_issued.and_(not_refused).and_(not_overly_overdue)

@@ -4,11 +4,14 @@
 """Просмотрщик фотографий"""
 
 import os
+import logging
 import customtkinter as ctk
 from tkinter import ttk
 from PIL import Image, ImageTk
 
 from gui.widgets.premium import PremiumCard, PremiumLabel
+
+logger = logging.getLogger(__name__)
 
 
 class PhotoViewerWindow(ctk.CTkToplevel):
@@ -195,7 +198,7 @@ class PhotoViewerWindow(ctk.CTkToplevel):
                     btn.pack(side="left", padx=1)
                     self.thumbnail_buttons.append(btn)
             except Exception as e:
-                print(f"Ошибка создания миниатюры: {e}")
+                logger.error(f"Ошибка создания миниатюры: {e}", exc_info=True)
     
     def load_current_photo(self):
         """Загрузка текущего фото"""
@@ -220,7 +223,7 @@ class PhotoViewerWindow(ctk.CTkToplevel):
             self.highlight_current_thumbnail()
             
         except Exception as e:
-            print(f"Ошибка загрузки фото: {e}")
+            logger.error(f"Ошибка загрузки фото: {e}", exc_info=True)
             self.photo_label.configure(text="❌ Ошибка загрузки изображения", image=None)
     
     def highlight_current_thumbnail(self):

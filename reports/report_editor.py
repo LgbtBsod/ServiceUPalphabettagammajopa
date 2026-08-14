@@ -12,6 +12,10 @@
 """
 
 import os
+import logging
+
+logger = logging.getLogger(__name__)
+
 import json
 import customtkinter as ctk
 from tkinter import messagebox, filedialog, colorchooser
@@ -94,7 +98,7 @@ def load_template_data(act_type: str) -> dict:
             with open(path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
-            print(f"Ошибка чтения шаблона {path}: {e}")
+            logger.error(f"Ошибка чтения шаблона {path}: {e}")
     data = dict(_DEFAULT_TEMPLATES[act_type])
     save_template_data(act_type, data)
     return data
@@ -109,7 +113,7 @@ def save_template_data(act_type: str, data: dict) -> bool:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
     except Exception as e:
-        print(f"Ошибка сохранения шаблона {path}: {e}")
+        logger.error(f"Ошибка сохранения шаблона {path}: {e}")
         return False
 
 
@@ -613,10 +617,10 @@ class ActPanel:
                 self.preview_label = ctk.CTkLabel(self.preview_container, image=ctk_img, text="")
                 self.preview_label.pack(expand=True, padx=4, pady=4)
             except Exception as render_err:
-                print(f"Рендер PDF недоступен ({render_err})")
+                logger.warning(f"Рендер PDF недоступен ({render_err})")
                 self._render_text_fallback()
         except Exception as e:
-            print(f"Ошибка предпросмотра: {e}")
+            logger.error(f"Ошибка предпросмотра: {e}")
             self._show_preview_error(str(e))
 
     def _show_preview_error(self, msg: str):
@@ -758,7 +762,7 @@ class ActPanel:
                     subprocess.run(["lp", tmp_pdf], check=False)
                     printed = True
             except Exception as pe:
-                print(f"Прямая печать не удалась: {pe}")
+                logger.error(f"Прямая печать не удалась: {pe}")
                 try:
                     if _sys.platform == "win32":
                         os.startfile(tmp_pdf)
@@ -905,7 +909,7 @@ class ReportEditor(ctk.CTkToplevel):
             if panel is not None:
                 panel.update_preview()
         except Exception as e:
-            print(f"Ошибка обновления вкладки: {e}")
+            logger.error(f"Ошибка обновления вкладки: {e}")
 
     # ------------------------------------------------------------------
     # Действия панели инструментов (применяются к активной вкладке)

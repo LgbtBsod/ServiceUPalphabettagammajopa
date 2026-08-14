@@ -20,7 +20,10 @@ import os
 import socket
 import threading
 import json
+import secrets
+import logging
 from datetime import datetime
+from functools import wraps
 from typing import Optional, List, Dict, Any
 
 # Импорты приложения (пути уже настроены в config.py)
@@ -34,6 +37,27 @@ from utils.formatters import (
     generate_order_number, parse_price_to_float,
 )
 from utils.constants import STATUSES, PRIORITIES
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Безопасность: токен авторизации для PWA API
+# ---------------------------------------------------------------------------
+
+# Токен берётся из переменной окружения SERVICEUP_PWA_API_KEY
+# Если не задан — генерируется случайный при каждом запуске (не рекомендуется для продакшена)
+PWA_API_KEY = os.getenv("SERVICEUP_PWA_API_KEY", secrets.token_urlsafe(32))
+
+
+def require_api_key(f):
+    """Декоратор проверки API-ключа для защиты endpoints."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
+        if not api_key or api_key != PWA_API_KEY:
+            return jsonify({'error': 'Unauthorized: invalid or missing API key'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +222,7 @@ def create_flask_app():
     # ------------------------------------------------------------------
 
     @app.route('/api/orders', methods=['GET'])
+    @require_api_key
     def api_orders():
         """Список заказов. Параметры: status, limit, offset, hide_completed."""
         try:
@@ -228,6 +253,7 @@ def create_flask_app():
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/orders/<int:device_id>', methods=['GET'])
+    @require_api_key
     def api_order_detail(device_id: int):
         """Детали одного заказа."""
         try:
@@ -240,6 +266,7 @@ def create_flask_app():
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/orders', methods=['POST'])
+    @require_api_key
     def api_create_order():
         """Создание нового заказа."""
         try:
@@ -306,7 +333,7 @@ def create_flask_app():
                     _db_holder.client_db.add_repair_to_client_history(
                         data.get('client_name', ''), phone, device_data)
                 except Exception as e:
-                    print(f"PWA: ошибка истории клиента: {e}")
+                    logger.error(f"PWA: ошибка истории клиента: {e}", exc_info=True)
 
                 device_data['id'] = device_id
                 return jsonify({
@@ -320,6 +347,7 @@ def create_flask_app():
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/orders/<int:device_id>', methods=['PUT'])
+    @require_api_key
     def api_update_order(device_id: int):
         """Редактирование заказа."""
         try:
@@ -327,6 +355,10 @@ def create_flask_app():
             existing = db.get_device(device_id)
             if not existing:
                 return jsonify({'error': 'Заказ не найден'}), 404
+
+            # Проверка: нельзя менять статус отказанного заказа
+            if existing.get('status') == 'Отказано':
+                return jsonify({'error': 'Нельзя редактировать заказ со статусом "Отказано"'}), 403
 
             data = request.get_json(force=True)
             phone = normalize_phone(data.get('phone', '')) or existing.get('phone', '')
@@ -388,7 +420,7 @@ def create_flask_app():
                         device_data.get('client_name', ''), phone,
                         order_number, device_data)
                 except Exception as e:
-                    print(f"PWA: ошибка истории клиента: {e}")
+                    logger.error(f"PWA: ошибка истории клиента: {e}", exc_info=True)
 
                 return jsonify({
                     'ok': True,
@@ -399,6 +431,7 @@ def create_flask_app():
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/orders/<int:device_id>/status', methods=['PUT'])
+    @require_api_key
     def api_update_status(device_id: int):
         """Смена статуса заказа."""
         try:
@@ -423,6 +456,7 @@ def create_flask_app():
     # ------------------------------------------------------------------
 
     @app.route('/api/search', methods=['GET'])
+    @require_api_key
     def api_search():
         """Поиск заказов по имени/телефону/номеру."""
         try:
@@ -444,6 +478,7 @@ def create_flask_app():
     # ------------------------------------------------------------------
 
     @app.route('/api/dictionaries', methods=['GET'])
+    @require_api_key
     def api_dictionaries():
         """Справочники для форм: типы устройств, бренды, статусы, приоритеты."""
         try:
@@ -464,6 +499,7 @@ def create_flask_app():
     # ------------------------------------------------------------------
 
     @app.route('/api/stats', methods=['GET'])
+    @require_api_key
     def api_stats():
         """Статистика для дашборда."""
         try:
@@ -478,6 +514,7 @@ def create_flask_app():
     # ------------------------------------------------------------------
 
     @app.route('/api/orders/<int:device_id>/photos', methods=['POST'])
+    @require_api_key
     def api_upload_photo(device_id: int):
         """Загрузка фото для заказа (multipart form-data, field 'photo')."""
         try:
@@ -515,18 +552,13 @@ def create_flask_app():
             if not saved_path:
                 return jsonify({'error': 'Не удалось сохранить фото'}), 500
 
-            # Обновляем список фото в БД
+            # Обновляем список фото в БД через фасад Database
             photos_str = device.get('photos', '')
             photos_list = [p.strip() for p in photos_str.split(',') if p.strip()] if photos_str else []
             photos_list.append(saved_path)
             new_photos_str = ','.join(photos_list)
 
-            # Прямой UPDATE колонки photos
-            import sqlite3
-            conn = sqlite3.connect(DB_PATH)
-            conn.execute('UPDATE devices SET photos = ? WHERE id = ?', (new_photos_str, device_id))
-            conn.commit()
-            conn.close()
+            db.update_device(device_id, {'photos': new_photos_str})
 
             # Dual-write: добавляем фото и в отдельную таблицу photos_db
             try:
@@ -547,6 +579,7 @@ def create_flask_app():
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/orders/<int:device_id>/photos/<int:photo_idx>', methods=['GET'])
+    @require_api_key
     def api_photo_by_index(device_id: int, photo_idx: int):
         """Отдаёт файл фото по индексу в списке photos заказа.
 
@@ -642,7 +675,7 @@ class PWAServerManager:
             self._running = True
             return True
         except Exception as e:
-            print(f"Ошибка запуска PWA-сервера: {e}")
+            logger.error(f"Ошибка запуска PWA-сервера: {e}", exc_info=True)
             self._running = False
             return False
 
@@ -655,7 +688,7 @@ class PWAServerManager:
             if srv is not None:
                 srv.shutdown()
         except Exception as e:
-            print(f"Ошибка остановки PWA-сервера: {e}")
+            logger.error(f"Ошибка остановки PWA-сервера: {e}", exc_info=True)
         self._running = False
         # Закрываем соединения БД
         _db_holder.close()

@@ -4,39 +4,37 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-# Dependencies
-.venv/
-venv/
-env/
 .Python
+env/
+venv/
+.venv/
 pip-log.txt
 pip-delete-this-directory.txt
-
-# Testing
+.tox/
 .coverage
-coverage/
-htmlcov/
-.pytest_cache/
-.hypothesis/
-
-# Logs
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
 *.log
+.DS_Store
+Thumbs.db
+
+# Reports
+reports/*.txt
 
 # Environment
 .env
 .env.local
 .env.*
-.ENV
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-*.tmp
 
-# OS
-.DS_Store
-Thumbs.db
+# Dependencies
+node_modules/
+.mypy_cache/
+.pytest_cache/
 ```

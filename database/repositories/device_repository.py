@@ -138,11 +138,11 @@ class DeviceRepository(BaseRepository[Device]):
             # Если client_id не указан, пытаемся найти клиента по телефону
             phone = data.get('phone')
             if phone:
-                client_stmt = select(DeviceModel.client_id).where(
-                    DeviceModel.phone == phone  # type: ignore[attr-defined]
-                )
-                # Или создаем временную запись
-                client_id = None
+                from .client_repository import ClientRepository
+                client_repo = ClientRepository(self._connection)
+                client = client_repo.get_by_phone(phone)
+                if client:
+                    client_id = client['id']
         
         device_model = DeviceModel(
             order_number=data.get('order_number', ''),
@@ -156,8 +156,9 @@ class DeviceRepository(BaseRepository[Device]):
             defect=data.get('defect', ''),
             appearance=data.get('appearance', ''),
             completeness=data.get('completeness', ''),
-            work_items_json=work_items,
+            work_items=work_items,
             client_name=data.get('client_name') or None,
+            client_status=data.get('client_status', 'Новый'),
             phone=data.get('phone') or None,
             total_price=float(data.get('total_price', 0) or 0),
             prepayment=float(data.get('prepayment', 0) or 0),
@@ -177,7 +178,6 @@ class DeviceRepository(BaseRepository[Device]):
             raise RuntimeError("Не удалось получить созданное устройство")
         
         result_data = created_model.to_dict()
-        result_data['work_items'] = result_data.pop('work_items_json', '[]')
         return Device.from_dict(result_data)
     
     def update(self, id: int, data: Dict[str, Any]) -> Optional[Device]:
@@ -197,13 +197,11 @@ class DeviceRepository(BaseRepository[Device]):
         if not device_model:
             return None
         
-        # Обработка work_items
+        # Обработка work_items - модель уже использует work_items напрямую
         if 'work_items' in data:
             work_items = data['work_items']
             if isinstance(work_items, list):
-                work_items = json.dumps(work_items, ensure_ascii=False)
-            data['work_items_json'] = work_items
-            del data['work_items']
+                data['work_items'] = json.dumps(work_items, ensure_ascii=False)
         
         # Преобразование числовых полей
         if 'total_price' in data:
@@ -219,7 +217,6 @@ class DeviceRepository(BaseRepository[Device]):
             return None
         
         result_data = updated_model.to_dict()
-        result_data['work_items'] = result_data.pop('work_items_json', '[]')
         return Device.from_dict(result_data)
     
     def delete(self, id: int) -> bool:

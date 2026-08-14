@@ -3,8 +3,11 @@
 
 """Менеджер интеграций (SMS, Email, Telegram)"""
 
+import logging
 from typing import Optional
 from utils.formatters import format_order_number_for_display, format_phone, format_price
+
+logger = logging.getLogger(__name__)
 
 
 class IntegrationManager:
@@ -31,7 +34,7 @@ class IntegrationManager:
         sender = self.settings.get('sms_sender')
         
         # Здесь должна быть реализация конкретного СМС-провайдера
-        print(f"📱 Отправка СМС на {phone}: {message}")
+        logger.info(f"📱 Отправка СМС на {phone}: {message}")
         return True
     
     def send_email(self, to_email: str, subject: str, body: str) -> bool:
@@ -41,10 +44,10 @@ class IntegrationManager:
         
         try:
             # Здесь должна быть реализация отправки email
-            print(f"📧 Отправка Email на {to_email}: {subject}")
+            logger.info(f"📧 Отправка Email на {to_email}: {subject}")
             return True
         except Exception as e:
-            print(f"Ошибка отправки email: {e}")
+            logger.error(f"Ошибка отправки email: {e}", exc_info=True)
             return False
     
     def send_telegram(self, message: str) -> bool:
@@ -69,7 +72,7 @@ class IntegrationManager:
             response = requests.post(url, data=data, timeout=5)
             return response.status_code == 200
         except Exception as e:
-            print(f"Ошибка отправки Telegram: {e}")
+            logger.error(f"Ошибка отправки Telegram: {e}", exc_info=True)
             return False
     
     def notify_order_ready(self, device: dict) -> None:

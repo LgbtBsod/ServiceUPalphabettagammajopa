@@ -51,6 +51,8 @@ class Client(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(50), default='Новый')
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Статистика
     total_orders: Mapped[int] = mapped_column(Integer, default=0)
@@ -115,6 +117,7 @@ class Device(Base):
     
     # Дублируем имя клиента и телефон для быстрого доступа (denormalization)
     client_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    client_status: Mapped[Optional[str]] = mapped_column(String(50), default='Новый')
     phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     
     # Даты
@@ -133,12 +136,15 @@ class Device(Base):
     appearance: Mapped[str] = mapped_column(Text, nullable=False, default='')
     completeness: Mapped[str] = mapped_column(Text, nullable=False, default='')
     
-    # Работы (JSON)
-    work_items_json: Mapped[str] = mapped_column(Text, nullable=False, default='[]')
+    # Работы (JSON) - храним как work_items для совместимости с legacy кодом
+    work_items: Mapped[str] = mapped_column(Text, nullable=False, default='[]')
     
     # Финансы
     total_price: Mapped[float] = mapped_column(Float, default=0.0)
     prepayment: Mapped[float] = mapped_column(Float, default=0.0)
+    expense: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default='0')
+    diagnostic_cost: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    repair_cost: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Статус и приоритет
     status: Mapped[str] = mapped_column(String(50), default='Диагностика')
@@ -170,16 +176,16 @@ class Device(Base):
     
     def get_work_items(self) -> list[dict]:
         """Получение списка работ из JSON."""
-        if not self.work_items_json:
+        if not self.work_items:
             return []
         try:
-            return json.loads(self.work_items_json)
+            return json.loads(self.work_items)
         except (json.JSONDecodeError, TypeError):
             return []
     
     def set_work_items(self, items: list[dict]) -> None:
         """Установка списка работ в JSON."""
-        self.work_items_json = json.dumps(items, ensure_ascii=False)
+        self.work_items = json.dumps(items, ensure_ascii=False)
     
     def calculate_total_from_works(self) -> float:
         """Вычисление общей стоимости из работ."""

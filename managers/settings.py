@@ -5,10 +5,13 @@
 
 import os
 import json
+import logging
 from typing import Any
 
 from config import CONFIG_PATH
 from utils.constants import DEFAULT_SETTINGS
+
+logger = logging.getLogger(__name__)
 
 
 class SettingsManager:
@@ -26,7 +29,7 @@ class SettingsManager:
                     loaded = json.load(f)
                     return self.merge_settings(DEFAULT_SETTINGS.copy(), loaded)
         except Exception as e:
-            print(f"Ошибка загрузки настроек: {e}")
+            logger.error(f"Ошибка загрузки настроек: {e}", exc_info=True)
         
         return DEFAULT_SETTINGS.copy()
     
@@ -46,7 +49,7 @@ class SettingsManager:
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(self.settings, f, indent=4, ensure_ascii=False)
         except Exception as e:
-            print(f"Ошибка сохранения настроек: {e}")
+            logger.error(f"Ошибка сохранения настроек: {e}", exc_info=True)
     
     def get(self, key: str, default: Any = None) -> Any:
         """Получение значения настройки"""

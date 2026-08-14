@@ -6,10 +6,13 @@
 import os
 import shutil
 import zipfile
+import logging
 from datetime import datetime
 from typing import Optional
 
 from config import BACKUP_DIR
+
+logger = logging.getLogger(__name__)
 
 
 class BackupManager:
@@ -26,7 +29,7 @@ class BackupManager:
             if not os.path.exists(self.backup_path):
                 os.makedirs(self.backup_path)
         except Exception as e:
-            print(f"Ошибка создания директории бэкапов: {e}")
+            logger.error(f"Ошибка создания директории бэкапов: {e}", exc_info=True)
     
     def create_backup(self, db_path: str) -> Optional[str]:
         """Создание резервной копии"""
@@ -36,7 +39,7 @@ class BackupManager:
         try:
             # Не создаём пустой/несуществующий бэкап (раньше это маскировало ошибки БД)
             if not db_path or not os.path.exists(db_path) or os.path.getsize(db_path) == 0:
-                print("Пропуск бэкапа: файл БД отсутствует или пуст")
+                logger.warning("Пропуск бэкапа: файл БД отсутствует или пуст")
                 return None
             
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -54,7 +57,7 @@ class BackupManager:
             self.cleanup_old_backups()
             return backup_file
         except Exception as e:
-            print(f"Ошибка создания бэкапа: {e}")
+            logger.error(f"Ошибка создания бэкапа: {e}", exc_info=True)
             return None
     
     def cleanup_old_backups(self):
@@ -74,6 +77,6 @@ class BackupManager:
                 try:
                     os.remove(backups[i][1])
                 except OSError as e:
-                    print(f"Не удалось удалить старый бэкап {backups[i][1]}: {e}")
+                    logger.warning(f"Не удалось удалить старый бэкап {backups[i][1]}: {e}")
         except Exception as e:
-            print(f"Ошибка очистки бэкапов: {e}")
+            logger.error(f"Ошибка очистки бэкапов: {e}", exc_info=True)
