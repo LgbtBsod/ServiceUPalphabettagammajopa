@@ -15,7 +15,18 @@ from .entities import (
 
 from .aggregates import OrderAggregate
 
+from .constants import (
+    STATUSES,
+    DEFAULT_STATUS,
+    PRIORITIES,
+    DEFAULT_PRIORITY,
+    CLIENT_STATUSES,
+    WARRANTIES,
+    DICTIONARY_TYPES,
+)
+
 __all__ = [
+    # Entities and aggregates
     'Device',
     'Client',
     'WorkItem',
@@ -23,4 +34,12 @@ __all__ = [
     'RepairHistory',
     'FinanceRecord',
     'OrderAggregate',
+    # Domain constants
+    'STATUSES',
+    'DEFAULT_STATUS',
+    'PRIORITIES',
+    'DEFAULT_PRIORITY',
+    'CLIENT_STATUSES',
+    'WARRANTIES',
+    'DICTIONARY_TYPES',
 ]

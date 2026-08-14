@@ -1,172 +1,97 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Константы приложения"""
+"""Константы приложения - DEPRECATED.
 
-# Статусы заказов
-STATUSES = [
-    "Диагностика",
-    "Ожидание запчастей", 
-    "В ремонте",
-    "Готов к выдаче",
-    "Выдан клиенту",
-    "Отказ от ремонта"
-]
+Этот модуль устарел и будет удален в версии 20.0.
+Используйте:
+    - domain.constants для бизнес-констант (STATUSES, PRIORITIES и т.д.)
+    - config.settings для настроек приложения (DEFAULT_SETTINGS)
 
-# Приоритеты
-PRIORITIES = ["Низкий", "Обычный", "Высокий", "Срочный"]
+Principles applied:
+- SSOT: Constants moved to domain.constants
+- DRY: Re-export from single source
+"""
 
-# Статусы клиентов
-CLIENT_STATUSES = ["Новый", "Постоянный", "VIP", "Проблемный"]
+from __future__ import annotations
+import warnings
 
-# Гарантии
-WARRANTIES = ["", "1 месяц", "3 месяца", "6 месяцев", "1 год", "2 года"]
+# Import from single source of truth in domain layer
+from domain.constants import (
+    STATUSES,
+    DEFAULT_STATUS,
+    PRIORITIES,
+    DEFAULT_PRIORITY,
+    CLIENT_STATUSES,
+    WARRANTIES,
+    DICTIONARY_TYPES,
+)
 
-# Типы словарей
-DICTIONARY_TYPES = {
-    'work': {
-        'name': 'Выполненные работы',
-        'icon': '🔨',
-        'default_values': [
-            "Диагностика",
-            "Установка ОС",
-            "Замена аккумулятора",
-            "Замена дисплея",
-            "Профилактика",
-            "Замена термопасты",
-            "Ремонт материнской платы",
-            "Замена клавиатуры",
-            "Замена разъема зарядки",
-            "Восстановление данных",
-            "Замена матрицы",
-            "Ремонт после залития",
-            "Замена кулера",
-            "Апгрейд ОЗУ",
-            "Замена HDD на SSD"
-        ]
-    },
-    'appearance': {
-        'name': 'Внешний вид',
-        'icon': '👁️',
-        'default_values': [
-            "Отличное состояние",
-            "Хорошее состояние",
-            "Среднее состояние",
-            "Частично разобран",
-            "Следы эксплуатации",
-            "Сколы/царапины",
-            "Потертости",
-            "Разбит экран",
-            "Трещина на корпусе",
-            "Отсутствуют детали"
-        ]
-    },
-    'completeness': {
-        'name': 'Комплектация',
-        'icon': '📦',
-        'default_values': [
-            "Полная комплектация",
-            "Без ЗУ",
-            "Без аккумулятора",
-            "Только устройство",
-            "С ЗУ, без кабеля",
-            "С документами",
-            "В заводской упаковке",
-            "Без крышки",
-            "Неполная комплектация"
-        ]
-    },
-    'brands': {
-        'name': 'Бренды',
-        'icon': '🏢',
-        'default_values': [
-            "Apple",
-            "Samsung",
-            "Xiaomi",
-            "HP",
-            "Dell",
-            "Lenovo",
-            "Asus",
-            "Acer",
-            "LG",
-            "Sony",
-            "Другое"
-        ]
-    },
-    'device_types': {
-        'name': 'Типы устройств',
-        'icon': '📱',
-        'default_values': [
-            "Ноутбук",
-            "ПК",
-            "Смартфон",
-            "Планшет",
-            "Монитор",
-            "Принтер",
-            "Телевизор",
-            "Аудио",
-            "Фотоаппарат",
-            "Игровая консоль",
-            "Другое"
-        ]
-    },
-    'engineers': {
-        'name': 'Инженеры',
-        'icon': '👨‍🔧',
-        'default_values': [
-            "Иноагент",
-            "Петров П.П.",
-            "Сидоров С.С.",
-            "Козлов А.А.",
-            "Михайлов М.М."
-        ]
-    },
-    'client_statuses': {
-        'name': 'Статусы клиента',
-        'icon': '👤',
-        'default_values': [
-            "Новый",
-            "Постоянный",
-            "VIP",
-            "Проблемный"
-        ]
+# Import default settings from config (application settings, not domain constants)
+from config.settings import get_settings
+
+
+def _get_default_settings() -> dict:
+    """Get default settings from pydantic-settings config.
+    
+    Returns a dict compatible with legacy DEFAULT_SETTINGS usage.
+    """
+    settings = get_settings()
+    return {
+        'theme': 'light',
+        'accent_color': '#0078d4',
+        'fullscreen': False,
+        'confirm_delete': True,
+        'confirm_exit': False,
+        'auto_save_on_close': True,
+        'default_status': DEFAULT_STATUS,
+        'default_priority': DEFAULT_PRIORITY,
+        'remind_overdue': True,
+        'overdue_days': 14,
+        'notify_on_ready': settings.notification.push_enabled,
+        'auto_backup': True,
+        'backup_interval': 24,
+        'backup_count': 10,
+        'backup_path': '',
+        'compress_backups': True,
+        'photo_quality': 85,
+        'create_thumbnails': True,
+        'window_width': 1280,
+        'window_height': 720,
+        'window_x': None,
+        'window_y': None,
+        'show_completed': True,
+        'transparency': False,
+        'transparency_alpha': 1.0,
+        'window_geometry': {},
+        'pwa': {
+            'port': 5000,
+            'auto_start': False,
+            'auto_sync': True,
+            'sync_interval': 30,
+        },
     }
-}
 
-# Настройки по умолчанию
-DEFAULT_SETTINGS = {
-    'theme': 'light',
-    'accent_color': '#0078d4',
-    'fullscreen': False,
-    'confirm_delete': True,
-    'confirm_exit': False,
-    'auto_save_on_close': True,
-    'default_status': 'Диагностика',
-    'default_priority': 'Обычный',
-    'remind_overdue': True,
-    'overdue_days': 14,
-    'notify_on_ready': True,
-    'auto_backup': True,
-    'backup_interval': 24,
-    'backup_count': 10,
-    'backup_path': '',  # пусто = BACKUP_DIR по умолчанию
-    'compress_backups': True,
-    'photo_quality': 85,
-    'create_thumbnails': True,
-    'window_width': 1280,
-    'window_height': 720,
-    'window_x': None,
-    'window_y': None,
-    'show_completed': True,
-    'transparency': False,
-    'transparency_alpha': 1.0,
-    # Геометрия окон: {window_key: "WxH+X+Y"} — сохраняется/восстанавливается
-    'window_geometry': {},
-    # Настройки PWA (мобильная версия)
-    'pwa': {
-        'port': 5000,
-        'auto_start': False,
-        'auto_sync': True,
-        'sync_interval': 30,
-    },
-}
+
+# Legacy compatibility - will be removed in v20.0
+warnings.warn(
+    "utils.constants is deprecated. "
+    "Use 'domain.constants' for business constants and 'config.settings' for app settings. "
+    "This module will be removed in version 20.0.",
+    DeprecationWarning,
+    stacklevel=2
+)
+
+DEFAULT_SETTINGS = _get_default_settings()
+
+
+__all__ = [
+    'STATUSES',
+    'PRIORITIES',
+    'CLIENT_STATUSES',
+    'WARRANTIES',
+    'DICTIONARY_TYPES',
+    'DEFAULT_SETTINGS',
+    'DEFAULT_STATUS',
+    'DEFAULT_PRIORITY',
+]
