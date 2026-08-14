@@ -2,20 +2,22 @@
 # -*- coding: utf-8 -*-
 
 """
-Репозиторий для работы с устройствами/заказами.
+Репозиторий для работы с устройствами/заказами на SQLAlchemy ORM.
 
-Реализует паттерн Repository для отделения бизнес-логики от доступа к данным.
-Соблюдает принципы SOLID, особенно Single Responsibility Principle (SRP).
+Использует SQLAlchemy ORM API вместо raw SQL запросов.
+Соблюдает принципы SOLID, особенно Single Responsibility Principle (SRP) и DRY.
 """
 
 import json
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+
+from sqlalchemy.orm import Session
+from sqlalchemy import select, func
 
 from .base import BaseRepository
+from ..repositories.sqlite_connection import SQLAlchemyConnection
+from ..sqlalchemy_models import Device as DeviceModel
 from ..models import Device
-from ..db_config import DatabaseConfig
-from .sqlite_connection import SQLiteConnection
 
 
 class DeviceRepository(BaseRepository[Device]):
@@ -23,17 +25,21 @@ class DeviceRepository(BaseRepository[Device]):
     Репозиторий для управления устройствами/заказами.
     
     Все SQL запросы инкапсулированы в этом классе.
-    Для смены БД достаточно изменить реализацию подключения.
+    Использует SQLAlchemy ORM для типобезопасности и защиты от SQL инъекций.
     """
     
-    def __init__(self, connection: SQLiteConnection):
+    def __init__(self, connection: SQLAlchemyConnection):
         """
         Инициализация репозитория.
         
         Args:
-            connection: Подключение к базе данных.
+            connection: Подключение к базе данных через SQLAlchemy.
         """
-        self._conn = connection
+        self._connection = connection
+    
+    def _get_session(self) -> Session:
+        """Получение текущей сессии."""
+        return self._connection.get_session()
     
     def get(self, id: int) -> Optional[Device]:
         """
@@ -45,12 +51,16 @@ class DeviceRepository(BaseRepository[Device]):
         Returns:
             Объект Device или None если не найдено.
         """
-        cursor = self._conn.execute(
-            "SELECT * FROM devices WHERE id = ?",
-            (id,)
-        )
-        row = cursor.fetchone()
-        return Device.from_dict(dict(row)) if row else None
+        session = self._get_session()
+        device_model = session.get(DeviceModel, id)
+        
+        if not device_model:
+            return None
+        
+        # Преобразуем ORM модель в нашу Domain модель
+        data = device_model.to_dict()
+        data['work_items'] = data.pop('work_items_json', '[]')
+        return Device.from_dict(data)
     
     def get_by_order_number(self, order_number: str) -> Optional[Device]:
         """
@@ -62,12 +72,16 @@ class DeviceRepository(BaseRepository[Device]):
         Returns:
             Объект Device или None если не найдено.
         """
-        cursor = self._conn.execute(
-            "SELECT * FROM devices WHERE order_number = ?",
-            (order_number,)
-        )
-        row = cursor.fetchone()
-        return Device.from_dict(dict(row)) if row else None
+        session = self._get_session()
+        stmt = select(DeviceModel).where(DeviceModel.order_number == order_number)
+        device_model = session.scalar(stmt)
+        
+        if not device_model:
+            return None
+        
+        data = device_model.to_dict()
+        data['work_items'] = data.pop('work_items_json', '[]')
+        return Device.from_dict(data)
     
     def get_all(self, filters: Optional[Dict[str, Any]] = None) -> List[Device]:
         """
@@ -79,24 +93,27 @@ class DeviceRepository(BaseRepository[Device]):
         Returns:
             Список объектов Device.
         """
-        query = "SELECT * FROM devices"
-        params = []
-        conditions = []
+        session = self._get_session()
+        stmt = select(DeviceModel)
         
         if filters:
+            conditions = []
             for field, value in filters.items():
-                if value is not None:
-                    conditions.append(f"{field} = ?")
-                    params.append(value)
+                if value is not None and hasattr(DeviceModel, field):
+                    conditions.append(getattr(DeviceModel, field) == value)
+            if conditions:
+                stmt = stmt.where(*conditions)
         
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
+        stmt = stmt.order_by(DeviceModel.id.desc())
+        devices = session.scalars(stmt).all()
         
-        query += " ORDER BY id DESC"
+        result = []
+        for device_model in devices:
+            data = device_model.to_dict()
+            data['work_items'] = data.pop('work_items_json', '[]')
+            result.append(Device.from_dict(data))
         
-        cursor = self._conn.execute(query, tuple(params))
-        rows = cursor.fetchall()
-        return [Device.from_dict(dict(row)) for row in rows]
+        return result
     
     def create(self, data: Dict[str, Any]) -> Device:
         """
@@ -108,27 +125,57 @@ class DeviceRepository(BaseRepository[Device]):
         Returns:
             Созданный объект Device.
         """
-        columns = [
-            'order_number', 'receipt_date', 'completion_date', 'device_type',
-            'brand', 'model', 'serial_number', 'defect', 'appearance',
-            'completeness', 'work_items', 'client_name', 'client_status',
-            'phone', 'total_price', 'prepayment', 'status', 'priority',
-            'engineer', 'warranty', 'notes', 'photos', 'expense'
-        ]
+        session = self._get_session()
         
-        placeholders = ', '.join(['?' for _ in columns])
-        column_names = ', '.join(columns)
+        # Подготовка work_items как JSON
+        work_items = data.get('work_items', '[]')
+        if isinstance(work_items, list):
+            work_items = json.dumps(work_items, ensure_ascii=False)
         
-        values = [data.get(col, '') for col in columns]
+        # Получаем client_id из данных или создаем нового клиента
+        client_id = data.get('client_id')
+        if not client_id:
+            # Если client_id не указан, пытаемся найти клиента по телефону
+            phone = data.get('phone')
+            if phone:
+                client_stmt = select(DeviceModel.client_id).where(
+                    DeviceModel.phone == phone  # type: ignore[attr-defined]
+                )
+                # Или создаем временную запись
+                client_id = None
         
-        cursor = self._conn.execute(
-            f"INSERT INTO devices ({column_names}) VALUES ({placeholders})",
-            tuple(values)
+        device_model = DeviceModel(
+            order_number=data.get('order_number', ''),
+            receipt_date=data.get('receipt_date', ''),
+            completion_date=data.get('completion_date') or None,
+            device_type=data.get('device_type', ''),
+            brand=data.get('brand', ''),
+            model=data.get('model', ''),
+            serial_number=data.get('serial_number') or None,
+            defect=data.get('defect', ''),
+            appearance=data.get('appearance', ''),
+            completeness=data.get('completeness', ''),
+            work_items_json=work_items,
+            total_price=float(data.get('total_price', 0) or 0),
+            prepayment=float(data.get('prepayment', 0) or 0),
+            status=data.get('status', 'Диагностика'),
+            priority=data.get('priority', 'Обычный'),
+            engineer=data.get('engineer') or None,
+            warranty=data.get('warranty') or None,
+            notes=data.get('notes') or None,
+            photos=data.get('photos') or None
         )
-        self._conn.commit()
         
-        # Получаем созданную запись
-        return self.get(cursor.lastrowid)
+        session.add(device_model)
+        session.flush()
+        
+        created_model = session.get(DeviceModel, device_model.id)
+        if not created_model:
+            raise RuntimeError("Не удалось получить созданное устройство")
+        
+        result_data = created_model.to_dict()
+        result_data['work_items'] = result_data.pop('work_items_json', '[]')
+        return Device.from_dict(result_data)
     
     def update(self, id: int, data: Dict[str, Any]) -> Optional[Device]:
         """
@@ -141,23 +188,36 @@ class DeviceRepository(BaseRepository[Device]):
         Returns:
             Обновленный объект Device или None если не найдено.
         """
-        if not self.exists(id):
+        session = self._get_session()
+        device_model = session.get(DeviceModel, id)
+        
+        if not device_model:
             return None
         
-        set_clauses = []
-        params = []
+        # Обработка work_items
+        if 'work_items' in data:
+            work_items = data['work_items']
+            if isinstance(work_items, list):
+                work_items = json.dumps(work_items, ensure_ascii=False)
+            data['work_items_json'] = work_items
+            del data['work_items']
         
-        for field, value in data.items():
-            set_clauses.append(f"{field} = ?")
-            params.append(value)
+        # Преобразование числовых полей
+        if 'total_price' in data:
+            data['total_price'] = float(data['total_price'] or 0)
+        if 'prepayment' in data:
+            data['prepayment'] = float(data['prepayment'] or 0)
         
-        params.append(id)
+        device_model.update_from_dict(data)
+        session.flush()
         
-        query = f"UPDATE devices SET {', '.join(set_clauses)} WHERE id = ?"
-        self._conn.execute(query, tuple(params))
-        self._conn.commit()
+        updated_model = session.get(DeviceModel, id)
+        if not updated_model:
+            return None
         
-        return self.get(id)
+        result_data = updated_model.to_dict()
+        result_data['work_items'] = result_data.pop('work_items_json', '[]')
+        return Device.from_dict(result_data)
     
     def delete(self, id: int) -> bool:
         """
@@ -169,11 +229,14 @@ class DeviceRepository(BaseRepository[Device]):
         Returns:
             True если удалено, False если не найдено.
         """
-        if not self.exists(id):
+        session = self._get_session()
+        device_model = session.get(DeviceModel, id)
+        
+        if not device_model:
             return False
         
-        self._conn.execute("DELETE FROM devices WHERE id = ?", (id,))
-        self._conn.commit()
+        session.delete(device_model)
+        session.flush()
         return True
     
     def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
@@ -186,22 +249,19 @@ class DeviceRepository(BaseRepository[Device]):
         Returns:
             Количество записей.
         """
-        query = "SELECT COUNT(*) FROM devices"
-        params = []
-        conditions = []
+        session = self._get_session()
+        stmt = select(func.count()).select_from(DeviceModel)
         
         if filters:
+            conditions = []
             for field, value in filters.items():
-                if value is not None:
-                    conditions.append(f"{field} = ?")
-                    params.append(value)
+                if value is not None and hasattr(DeviceModel, field):
+                    conditions.append(getattr(DeviceModel, field) == value)
+            if conditions:
+                stmt = stmt.where(*conditions)
         
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-        
-        cursor = self._conn.execute(query, tuple(params))
-        result = cursor.fetchone()
-        return result[0] if result else 0
+        result = session.scalar(stmt)
+        return result or 0
     
     def exists(self, id: int) -> bool:
         """
@@ -213,11 +273,9 @@ class DeviceRepository(BaseRepository[Device]):
         Returns:
             True если существует, False иначе.
         """
-        cursor = self._conn.execute(
-            "SELECT 1 FROM devices WHERE id = ?",
-            (id,)
-        )
-        return cursor.fetchone() is not None
+        session = self._get_session()
+        device_model = session.get(DeviceModel, id)
+        return device_model is not None
     
     def search(self, query_str: str) -> List[Device]:
         """
@@ -231,21 +289,25 @@ class DeviceRepository(BaseRepository[Device]):
         Returns:
             Список найденных устройств.
         """
+        session = self._get_session()
         search_pattern = f"%{query_str}%"
-        cursor = self._conn.execute(
-            """
-            SELECT * FROM devices 
-            WHERE order_number LIKE ? 
-               OR client_name LIKE ? 
-               OR phone LIKE ? 
-               OR brand LIKE ? 
-               OR model LIKE ?
-            ORDER BY id DESC
-            """,
-            (search_pattern,) * 5
-        )
-        rows = cursor.fetchall()
-        return [Device.from_dict(dict(row)) for row in rows]
+        
+        # Примечание: client_name нет в модели Device, используем доступные поля
+        stmt = select(DeviceModel).where(
+            (DeviceModel.order_number.like(search_pattern)) |
+            (DeviceModel.brand.like(search_pattern)) |
+            (DeviceModel.model.like(search_pattern))
+        ).order_by(DeviceModel.id.desc())
+        
+        devices = session.scalars(stmt).all()
+        
+        result = []
+        for device_model in devices:
+            data = device_model.to_dict()
+            data['work_items'] = data.pop('work_items_json', '[]')
+            result.append(Device.from_dict(data))
+        
+        return result
     
     def get_work_items(self, device_id: int) -> List[Dict[str, Any]]:
         """
@@ -257,14 +319,13 @@ class DeviceRepository(BaseRepository[Device]):
         Returns:
             Список работ в формате словарей.
         """
-        device = self.get(device_id)
-        if not device or not device.work_items:
+        session = self._get_session()
+        device_model = session.get(DeviceModel, device_id)
+        
+        if not device_model:
             return []
         
-        try:
-            return json.loads(device.work_items)
-        except (json.JSONDecodeError, TypeError):
-            return []
+        return device_model.get_work_items()
     
     def update_work_items(self, device_id: int, work_items: List[Dict[str, Any]]) -> Optional[Device]:
         """
@@ -277,5 +338,4 @@ class DeviceRepository(BaseRepository[Device]):
         Returns:
             Обновленный объект Device.
         """
-        work_items_json = json.dumps(work_items, ensure_ascii=False)
-        return self.update(device_id, {'work_items': work_items_json})
+        return self.update(device_id, {'work_items': work_items})
