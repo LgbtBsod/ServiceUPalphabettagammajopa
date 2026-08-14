@@ -8,6 +8,10 @@
 временные файлы удаляются (чтобы не занимать место).
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import os
 import sys
 import subprocess
@@ -54,7 +58,7 @@ def print_act_pdf(pdf_path: str, delete_after: bool = True, delay_sec: int = 60)
         else:
             subprocess.run(['lp', pdf_path], check=False)
     except Exception as e:
-        print(f"Печать не удалась, открываю просмотрщик: {e}")
+        logger.warning(f"Печать не удалась, открываю просмотрщик: {e}")
         try:
             if sys.platform == 'win32':
                 os.startfile(pdf_path)
@@ -68,7 +72,7 @@ def print_act_pdf(pdf_path: str, delete_after: bool = True, delay_sec: int = 60)
             try:
                 if os.path.exists(pdf_path):
                     os.remove(pdf_path)
-                    print(f"Временный акт удалён: {pdf_path}")
+                    logger.debug(f"Временный акт удалён: {pdf_path}")
             except OSError:
                 pass
 
@@ -89,7 +93,7 @@ def open_act_pdf(pdf_path: str, delete_after: bool = True, delay_sec: int = 120)
         else:
             subprocess.run(['xdg-open', pdf_path], check=False)
     except Exception as e:
-        print(f"Не удалось открыть PDF: {e}")
+        logger.error(f"Не удалось открыть PDF: {e}")
 
     if delete_after:
         def _cleanup():

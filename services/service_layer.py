@@ -38,12 +38,16 @@ class BaseService(Generic[T]):
         Инициализация сервиса.
         
         Args:
-            factory: Фабрика базы данных. Если не указана, используется глобальная.
+            factory: Фабрика базы данных или callable для получения UnitOfWork.
+                    Если не указана, используется глобальная фабрика.
         """
         self._factory = factory or get_database_factory()
 
     def _get_uow(self) -> UnitOfWork:
         """Получение нового Unit of Work для транзакций."""
+        # Поддержка как фабрики с методом create_unit_of_work, так и callable
+        if callable(self._factory) and not hasattr(self._factory, 'create_unit_of_work'):
+            return self._factory()
         return self._factory.create_unit_of_work()
 
 
@@ -380,14 +384,26 @@ class ClientService(BaseService[Client]):
                 if dict(o).get('status') == OrderStatus.ISSUED.value
             )
             
-            # TODO: Расчет общей суммы
+            # Расчет общей суммы из завершенных заказов
             total_spent = 0.0
             last_order_date = None
             
-            if orders:
+            for order in orders:
+                order_dict = dict(order) if hasattr(order, '__dict__') else order
+                # Считаем только завершенные заказы
+                if order_dict.get('status') == OrderStatus.ISSUED.value:
+                    # Берем total_price или сумму diagnostic_cost + repair_cost
+                    total_price_val = order_dict.get('total_price', '0') or '0'
+                    try:
+                        total_spent += float(str(total_price_val).replace(',', '.').strip() or 0)
+                    except (ValueError, TypeError):
+                        pass
+                
                 # Получение даты последнего заказа
-                last_order = max(orders, key=lambda x: dict(x).get('receipt_date', ''))
-                last_order_date = dict(last_order).get('receipt_date')
+                receipt_date = order_dict.get('receipt_date')
+                if receipt_date:
+                    if last_order_date is None or receipt_date > last_order_date:
+                        last_order_date = receipt_date
             
             # Обновление статистики
             updated_client = uow.clients.update_stats(
@@ -398,7 +414,7 @@ class ClientService(BaseService[Client]):
                 last_order_date=last_order_date
             )
             
-            logger.info(f"Обновлена статистика клиента ID={client_id}")
+            logger.info(f"Обновлена статистика клиента ID={client_id}: сумма={total_spent}")
             return self._dict_to_client(updated_client) if updated_client else None
 
     def _dict_to_client(self, client_dict: Dict[str, Any]) -> Client:

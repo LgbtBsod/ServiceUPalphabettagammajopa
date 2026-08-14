@@ -17,7 +17,8 @@ import sys
 import os
 
 # Секретный ключ — ДОЛЖЕН БЫТЬ одинаковым с utils/license_manager.py!
-SECRET_KEY = b'ServiceUP_2024_License_Secret_Key_v1!'
+# Вынесен в config.py для централизованного управления
+from config import LICENSE_SECRET_KEY as SECRET_KEY
 
 
 def generate_key(hwid: str) -> str:

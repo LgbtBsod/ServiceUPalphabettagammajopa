@@ -4,6 +4,7 @@
 """Диалог создания/редактирования устройства"""
 
 import os
+import logging
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
 from datetime import datetime
@@ -19,6 +20,8 @@ from utils.formatters import (
 from utils.validators import validate_phone, validate_price
 from utils.constants import STATUSES, PRIORITIES, CLIENT_STATUSES, WARRANTIES
 from utils.window_effects import apply_dialog_translucency
+
+logger = logging.getLogger(__name__)
 
 from gui.widgets.premium import PremiumCard, PremiumLabel, PremiumEntry, PremiumCombobox
 from gui.widgets.modern import ModernCard
@@ -576,9 +579,11 @@ class DeviceFormDialog(ctk.CTkToplevel):
                 return True
             return False
         except Exception as e:
-            print(f"Ошибка сохранения: {e}")
+            logger.error(f"Ошибка сохранения: {e}", exc_info=True)
             return False
-        """Создание основной вкладки"""
+
+    def _create_main_tab_content(self, parent, device_data):
+        """Создание основной вкладки (контент)."""
         columns = ctk.CTkFrame(parent, fg_color="transparent")
         columns.pack(fill="both", expand=True, padx=10, pady=10)
         
@@ -617,8 +622,8 @@ class DeviceFormDialog(ctk.CTkToplevel):
                 else:
                     dt = datetime.strptime(receipt_date[:10], "%Y-%m-%d")
                 current_datetime = dt.strftime("%d.%m.%Y %H:%M:%S")
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Ошибка парсинга даты приема {receipt_date}: {e}")
         
         self.receipt_datetime_label = ctk.CTkLabel(
             info_frame,
@@ -1063,8 +1068,8 @@ class DeviceFormDialog(ctk.CTkToplevel):
                 if os.path.exists(photo_path):
                     try:
                         os.remove(photo_path)
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.error(f"Ошибка удаления фото {photo_path}: {e}")
                 self.update_photos_display()
     
     def view_photo(self, photo_path: str):
@@ -1212,7 +1217,7 @@ class DeviceFormDialog(ctk.CTkToplevel):
                 with open(path, 'r', encoding='utf-8') as f:
                     return json.load(f)
         except Exception as e:
-            print(f"Не удалось загрузить шаблон акта: {e}")
+            logger.error(f"Не удалось загрузить шаблон акта: {e}", exc_info=True)
         return {}
 
     def show_receipt_act_preview(self):

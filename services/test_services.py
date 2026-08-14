@@ -29,7 +29,7 @@ def test_db_path(tmp_path):
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
     
-    # Создание таблиц с полной схемой как в production
+    # Создание таблиц с полной схемой как в production (включая work_items для SQLAlchemy модели)
     cursor.execute('''
         CREATE TABLE devices (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,7 +43,7 @@ def test_db_path(tmp_path):
             defect TEXT,
             appearance TEXT,
             completeness TEXT,
-            work_items_json TEXT DEFAULT '[]',
+            work_items TEXT DEFAULT '[]',
             client_name TEXT,
             client_status TEXT DEFAULT 'Новый',
             phone TEXT,

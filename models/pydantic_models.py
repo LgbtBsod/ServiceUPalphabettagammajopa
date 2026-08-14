@@ -55,7 +55,7 @@ class ClientStatus(str, Enum):
     NEW = "Новый"
     REGULAR = "Постоянный"
     VIP = "VIP"
-    PROBLEMATIC = "Еблан"
+    PROBLEMATIC = "Проблемный"
 
 
 class DeviceType(str, Enum):

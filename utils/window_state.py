@@ -26,8 +26,11 @@
 помещалось (важно для 1280x720 и при смене монитора).
 """
 
+import logging
 import re
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # Ключ в настройках, под которым хранятся все геометрии окон
 GEOMETRY_KEY = "window_geometry"
@@ -118,4 +121,4 @@ def save_window_geometry(settings, window_key: str, window) -> None:
             geo = f"{geo}+{x}+{y}"
         settings.set(f"{GEOMETRY_KEY}.{window_key}", geo)
     except Exception as e:
-        print(f"Не удалось сохранить геометрию окна {window_key}: {e}")
+        logger.warning(f"Не удалось сохранить геометрию окна {window_key}: {e}")

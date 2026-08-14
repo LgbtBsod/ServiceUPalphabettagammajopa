@@ -219,4 +219,4 @@ class WorkItemsManager:
             for item_data in items_data:
                 self.add_item(WorkItem.from_dict(item_data))
         except (ValueError, TypeError) as e:
-            print(f"Ошибка разбора работ: {e}")
+            logger.error(f"Ошибка разбора работ: {e}")

@@ -18,15 +18,18 @@ import os
 import json
 import hmac
 import hashlib
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
 from config import BASE_DIR
 from utils.hardware import get_hwid, get_hwid_short
 
-# Секретный ключ для HMAC (одинаковый в keygen.py!)
+logger = logging.getLogger(__name__)
+
+# Секретный ключ для HMAC — вынесен в config.py для централизованного управления
 # ВАЖНО: не меняйте после первой активации клиентов!
-SECRET_KEY = b'ServiceUP_2024_License_Secret_Key_v1!'
+from config import LICENSE_SECRET_KEY as SECRET_KEY
 
 TRIAL_DAYS = 14
 REG_KEY_PATH = r'SOFTWARE\ServiceUP'
@@ -118,11 +121,11 @@ class LicenseManager:
             payload = json.dumps(data, sort_keys=True)
             expected = _compute_checksum(payload)
             if not hmac.compare_digest(signature, expected):
-                print("Лицензия: подпись недействительна")
+                logger.warning("Лицензия: подпись недействительна")
                 return None
             return data
         except Exception as e:
-            print(f"Ошибка чтения лицензии: {e}")
+            logger.error(f"Ошибка чтения лицензии: {e}", exc_info=True)
             return None
 
     def _write_license_file(self, data: dict) -> bool:
@@ -142,7 +145,7 @@ class LicenseManager:
                     pass
             return True
         except Exception as e:
-            print(f"Ошибка записи лицензии: {e}")
+            logger.error(f"Ошибка записи лицензии: {e}", exc_info=True)
             return False
 
     # ------------------------------------------------------------------

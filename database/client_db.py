@@ -10,6 +10,14 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from config import CLIENTS_DB_DIR
+import logging
+from .sqlalchemy_models import Base, ClientModel, DeviceModel, WorkItemModel, ExpenseModel
+from .repositories.sqlite_connection import SQLAlchemyConnection
+from .repositories.client_repository import ClientRepository
+from .db_config import DB_CONFIG
+
+logger = logging.getLogger(__name__)
+
 
 
 class ClientDatabaseManager:
@@ -34,9 +42,9 @@ class ClientDatabaseManager:
         try:
             if not os.path.exists(self.clients_db_dir):
                 os.makedirs(self.clients_db_dir)
-                print(f"✅ Создана директория для БД клиентов: {self.clients_db_dir}")
+                logger.info(f"Создана для БД клиентов: {self.clients_db_dir}")
         except Exception as e:
-            print(f"Ошибка создания директории для БД клиентов: {e}")
+            logger.error(f"Ошибка создания для БД клиентов: {e}")
     
     def get_client_db_path(self, client_name: str, client_phone: str) -> str:
         """Получение пути к базе данных клиента.
@@ -115,10 +123,10 @@ class ClientDatabaseManager:
             
             conn.commit()
             conn.close()
-            print(f"✅ Создана БД клиента: {db_path}")
+            logger.info(f"Создана БД клиента: {db_path}")
             return db_path
         except Exception as e:
-            print(f"❌ Ошибка создания БД клиента: {e}")
+            logger.error(f"Ошибка создания БД клиента: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -133,7 +141,7 @@ class ClientDatabaseManager:
         """
         try:
             if not client_name or not client_phone:
-                print("❌ Нет имени или телефона клиента для сохранения истории")
+                logger.warning("Нет имени или телефона клиента для сохранения истории")
                 return False
 
             # --- Новая схема: основная БД ---
@@ -150,15 +158,15 @@ class ClientDatabaseManager:
                         device_id = dev_row['id'] if dev_row else None
                         self._main_db.add_to_repair_history_main(client_id, device_id, device_data)
                 except Exception as e:
-                    print(f"⚠️ Основная БД: {e}")
+                    logger.warning(f"Предупреждение Основная БД: {e}")
 
             # --- Старая схема: отдельный .db файл (для совместимости) ---
-            print(f"📝 Сохраняем заказ в историю для клиента: {client_name}, тел: {client_phone}")
-            print(f"📦 Данные заказа: {device_data.get('order_number')}, статус: {device_data.get('status')}")
+            logger.info(f"Сохраняем заказ в историю для клиента: {client_name}, тел: {client_phone}")
+            logger.debug(f"Данные заказа: {device_data.get('order_number')}, статус: {device_data.get('status')}")
             
             db_path = self.create_client_database(client_name, client_phone)
             if not db_path:
-                print(f"❌ Не удалось создать БД для {client_name}")
+                logger.error(f"Не удалось создать БД для {client_name}")
                 return False
             
             conn = sqlite3.connect(db_path)
@@ -174,7 +182,7 @@ class ClientDatabaseManager:
             is_update = existing is not None
 
             if existing:
-                print(f"Заказ {order_number} уже есть в истории, обновляем...")
+                logger.info(f"Заказ {order_number} уже есть в истории, обновляем...")
                 # Обновляем существующую запись
                 cursor.execute('''
                     UPDATE repair_history SET
@@ -235,7 +243,7 @@ class ClientDatabaseManager:
                     device_data.get('notes', ''),
                     device_data.get('photos', '')
                 ))
-                print(f"✅ Добавлена новая запись для заказа {order_number}")
+                logger.info(f"Добавлена новая запись для заказа {order_number}")
             
             # Обновляем статистику
             price_val = 0
@@ -333,10 +341,10 @@ class ClientDatabaseManager:
             
             conn.commit()
             conn.close()
-            print(f"✅ Заказ {order_number} успешно сохранен в истории клиента {client_name}")
+            logger.info(f"Заказ {order_number} успешно сохранен в истории клиента {client_name}")
             return True
         except Exception as e:
-            print(f"❌ Ошибка добавления в историю клиента: {e}")
+            logger.error(f"Ошибка добавления в историю клиента: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -347,7 +355,7 @@ class ClientDatabaseManager:
         try:
             return self.add_repair_to_client_history(client_name, client_phone, device_data)
         except Exception as e:
-            print(f"❌ Ошибка обновления записи в истории: {e}")
+            logger.error(f"Ошибка обновления записи в истории: {e}")
             return False
     
     def get_client_history(self, client_name: str, client_phone: str) -> List[Dict[str, Any]]:
@@ -365,15 +373,15 @@ class ClientDatabaseManager:
                 if history:
                     return history
             except Exception as e:
-                print(f"⚠️ Основная БД get_client_history: {e}")
+                logger.warning(f"Предупреждение Основная БД get_client_history: {e}")
 
         # --- Старая схема ---
         try:
             db_path = self.get_client_db_path(client_name, client_phone)
-            print(f"🔍 Поиск истории по пути: {db_path}")
+            logger.debug(f"Поиск истории по пути: {db_path}")
             
             if not os.path.exists(db_path):
-                print(f"⚠️ Файл БД не существует: {db_path}")
+                logger.warning(f"Файл БД не существует: {db_path}")
                 return []
             
             conn = sqlite3.connect(db_path)
@@ -382,7 +390,7 @@ class ClientDatabaseManager:
             
             cursor.execute('SELECT COUNT(*) FROM repair_history')
             count = cursor.fetchone()[0]
-            print(f"📊 Найдено записей в истории: {count}")
+            logger.info(f"Найдено записей в истории: {count}")
             
             cursor.execute('''
                 SELECT * FROM repair_history
@@ -394,11 +402,11 @@ class ClientDatabaseManager:
             
             # Выводим для отладки
             for record in history:
-                print(f"  - Заказ {record.get('order_number')}: {record.get('status')}, цена: {record.get('total_price')}")
+                logger.debug(f"  - Заказ {record.get('order_number')}: {record.get('status')}, цена: {record.get('total_price')}")
             
             return history
         except Exception as e:
-            print(f"❌ Ошибка получения истории клиента: {e}")
+            logger.error(f"Ошибка получения истории клиента: {e}")
             import traceback
             traceback.print_exc()
             return []
@@ -435,5 +443,5 @@ class ClientDatabaseManager:
             conn.close()
             return stats_dict
         except (sqlite3.Error, Exception) as e:
-            print(f"❌ Ошибка получения статистики клиента: {e}")
+            logger.error(f"Ошибка получения статистики клиента: {e}")
             return {}

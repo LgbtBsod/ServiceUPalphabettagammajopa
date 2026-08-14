@@ -5,11 +5,14 @@
 
 import os
 import re
+import logging
 from datetime import datetime
 from PIL import Image
 from typing import Optional, List
 
 from config import PHOTOS_DIR, THUMBNAILS_DIR
+
+logger = logging.getLogger(__name__)
 
 
 class PhotoManager:
@@ -28,7 +31,7 @@ class PhotoManager:
             if not os.path.exists(self.thumbnails_dir):
                 os.makedirs(self.thumbnails_dir)
         except Exception as e:
-            print(f"Ошибка создания директорий для фото: {e}")
+            logger.error(f"Ошибка создания директорий для фото: {e}", exc_info=True)
     
     def get_client_photos_dir(self, client_name: str, client_phone: str) -> str:
         """Получение пути к директории клиента для фотографий"""
@@ -66,7 +69,7 @@ class PhotoManager:
             
             return thumb
         except Exception as e:
-            print(f"Ошибка создания миниатюры: {e}")
+            logger.error(f"Ошибка создания миниатюры: {e}", exc_info=True)
             return None
     
     def save_photo(self, source_path: str, client_name: str, client_phone: str,
@@ -105,7 +108,7 @@ class PhotoManager:
             
             return dest_path
         except Exception as e:
-            print(f"Ошибка сохранения фото: {e}")
+            logger.error(f"Ошибка сохранения фото: {e}", exc_info=True)
             return None
     
     def get_order_photos(self, order_number: str, client_name: str, client_phone: str) -> List[str]:
@@ -123,7 +126,7 @@ class PhotoManager:
             
             return sorted(photos, reverse=True)
         except Exception as e:
-            print(f"Ошибка получения фотографий: {e}")
+            logger.error(f"Ошибка получения фотографий: {e}", exc_info=True)
             return []
     
     def get_thumbnail(self, photo_path: str) -> Optional[Image.Image]:
@@ -140,7 +143,7 @@ class PhotoManager:
             else:
                 return self.create_thumbnail(photo_path, size=(80, 80))
         except Exception as e:
-            print(f"Ошибка получения миниатюры: {e}")
+            logger.error(f"Ошибка получения миниатюры: {e}", exc_info=True)
             return None
     
     def delete_photos(self, photo_paths: List[str]) -> bool:
@@ -159,5 +162,5 @@ class PhotoManager:
                         os.remove(thumb_path)
             return True
         except Exception as e:
-            print(f"Ошибка удаления фотографий: {e}")
+            logger.error(f"Ошибка удаления фотографий: {e}", exc_info=True)
             return False

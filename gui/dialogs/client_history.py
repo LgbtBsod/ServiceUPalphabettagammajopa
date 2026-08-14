@@ -6,6 +6,7 @@
 import json
 import os
 import csv
+import logging
 import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
@@ -14,6 +15,8 @@ from typing import Dict, Any, List
 from database import Database, ClientDatabaseManager
 from utils.formatters import format_date, format_phone, format_price, format_order_number_for_display, format_order_number_for_db
 from gui.widgets.modern import ModernCard, ModernButton, ModernLabel, ModernEntry, ModernCombobox
+
+logger = logging.getLogger(__name__)
 
 
 class ClientHistoryWindow(ctk.CTkToplevel):
@@ -242,9 +245,9 @@ class ClientHistoryWindow(ctk.CTkToplevel):
     
     def load_data(self):
         """Загрузка данных"""
-        print(f"Загрузка истории для клиента: {self.client_name}, тел: {self.client_phone}")
+        logger.info(f"Загрузка истории для клиента: {self.client_name}, тел: {self.client_phone}")
         self.all_history = self.client_db.get_client_history(self.client_name, self.client_phone)
-        print(f"Найдено записей: {len(self.all_history)}")
+        logger.info(f"Найдено записей: {len(self.all_history)}")
         
         # Обновляем статистику
         self.update_statistics()

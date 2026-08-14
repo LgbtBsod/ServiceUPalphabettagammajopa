@@ -5,6 +5,7 @@
 
 import os
 import sys
+import logging
 import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, timedelta
@@ -21,6 +22,8 @@ from utils.formatters import (
 )
 from utils.validators import validate_phone, validate_price
 from utils.constants import STATUSES, PRIORITIES
+
+logger = logging.getLogger(__name__)
 
 # Импортируем современные виджеты
 from gui.widgets import (
@@ -56,7 +59,7 @@ class ServiceCenterApp:
         try:
             self.db.migrate_client_dbs()
         except Exception as e:
-            print(f"Авто-миграция клиентских БД: {e}")
+            logger.error(f"Авто-миграция клиентских БД не удалась: {e}", exc_info=True)
         self.report_gen = ReportGenerator()
         self.backup_manager = BackupManager(self.settings)
         self.integration_manager = IntegrationManager(self.settings)
@@ -113,7 +116,7 @@ class ServiceCenterApp:
                     url = self.pwa_manager.get_url()
                     self.update_status_bar(f"📱 Мобильная версия активна: {url}")
         except Exception as e:
-            print(f"Авто-запуск PWA не удался: {e}")
+            logger.error(f"Авто-запуск PWA сервера не удался: {e}", exc_info=True)
     
     def setup_main_window(self):
         """Настройка главного окна"""
@@ -781,7 +784,7 @@ class ServiceCenterApp:
                 self.pwa_manager.stop()
                 self.update_status_bar("Мобильная версия остановлена")
         except Exception as e:
-            print(f"Ошибка остановки PWA-сервера: {e}")
+            logger.error(f"Ошибка остановки PWA-сервера: {e}", exc_info=True)
     
     def _create_status_bar_in(self, parent):
         """Создание статусной строки внутри указанного контейнера."""
@@ -886,7 +889,7 @@ class ServiceCenterApp:
                 if v and v not in values:
                     values.append(v)
         except Exception as e:
-            print(f"Ошибка сбора значений фильтра {dict_type}: {e}")
+            logger.error(f"Ошибка сбора значений фильтра {dict_type}: {e}")
         return sorted(values)
     
     def _render_device_row(self, device: Dict[str, Any]) -> tuple:
@@ -990,7 +993,7 @@ class ServiceCenterApp:
                 status, priority, not hide_completed, device_type, brand)
             self._clear_tree_and_populate(devices)
         except Exception as e:
-            print(f"Ошибка применения фильтров: {e}")
+            logger.error(f"Ошибка применения фильтров: {e}")
 
     def load_devices(self):
         """Загрузка устройств"""
@@ -999,7 +1002,7 @@ class ServiceCenterApp:
             devices = self.db.get_all_devices(include_completed=not hide_completed)
             self._clear_tree_and_populate(devices)
         except Exception as e:
-            print(f"Ошибка загрузки устройств: {e}")
+            logger.error(f"Ошибка загрузки устройств: {e}")
 
     def _quick_delete_selected(self):
         """Быстрое удаление выбранного заказа (Delete)."""
@@ -1012,20 +1015,19 @@ class ServiceCenterApp:
         order_number_display = self.tree.item(selected[0])['values'][0]
         device_id = self.get_device_id_by_order_number(order_number_display)
         if device_id:
-            import sqlite3
             try:
-                conn = sqlite3.connect(DB_PATH)
-                conn.execute('DELETE FROM devices WHERE id = ?', (device_id,))
-                conn.execute('DELETE FROM work_items_db WHERE device_id = ?', (device_id,))
-                conn.execute('DELETE FROM photos_db WHERE device_id = ?', (device_id,))
-                conn.commit()
-                conn.close()
-                self.load_devices()
-                self.dashboard.update_stats()
-                self.update_finance_display()
-                self.update_status_bar(f"Заказ #{order_number_display} удалён")
+                # Удаляем через фасад Database вместо прямого SQL
+                success = self.db.delete_device(device_id)
+                if success:
+                    self.load_devices()
+                    self.dashboard.update_stats()
+                    self.update_finance_display()
+                    self.update_status_bar(f"Заказ #{order_number_display} удалён")
+                else:
+                    messagebox.showerror("Ошибка", "Не удалось удалить заказ")
             except Exception as e:
-                print(f"Ошибка удаления: {e}")
+                logger.error(f"Ошибка удаления: {e}")
+                messagebox.showerror("Ошибка", f"Не удалось удалить заказ: {e}")
 
     def refresh_orders(self):
         """Ручное обновление списка заказов из БД (кнопка «🔄 Обновить»).
@@ -1048,7 +1050,7 @@ class ServiceCenterApp:
                 self.update_finance_display()
             self.update_status_bar("Список заказов обновлён")
         except Exception as e:
-            print(f"Ошибка обновления: {e}")
+            logger.error(f"Ошибка обновления: {e}")
 
     def show_overdue_orders(self):
         """Показ просроченных заказов (>14 дней в ремонте)."""
@@ -1058,7 +1060,7 @@ class ServiceCenterApp:
             self._clear_tree_and_populate(overdue, count_label_text=f"Просроченных: {len(overdue)}")
             self.update_status_bar(f"⏰ Просроченных заказов: {len(overdue)}")
         except Exception as e:
-            print(f"Ошибка фильтра просроченных: {e}")
+            logger.error(f"Ошибка фильтра просроченных: {e}")
 
     def show_today_orders(self):
         """Показ заказов, принятых сегодня."""
@@ -1069,7 +1071,7 @@ class ServiceCenterApp:
             self._clear_tree_and_populate(today_orders, count_label_text=f"Сегодня: {len(today_orders)}")
             self.update_status_bar(f"📅 Принято сегодня: {len(today_orders)}")
         except Exception as e:
-            print(f"Ошибка фильтра «сегодня»: {e}")
+            logger.error(f"Ошибка фильтра «сегодня»: {e}")
 
     def show_week_orders(self):
         """Показ заказов за последнюю неделю."""
@@ -1089,7 +1091,7 @@ class ServiceCenterApp:
             self._clear_tree_and_populate(week_orders, count_label_text=f"За неделю: {len(week_orders)}")
             self.update_status_bar(f"📅 За неделю: {len(week_orders)}")
         except Exception as e:
-            print(f"Ошибка фильтра «неделя»: {e}")
+            logger.error(f"Ошибка фильтра «неделя»: {e}")
 
     def _start_auto_sync(self):
         """Запускает периодическое автообновление списка заказов.
@@ -1150,7 +1152,7 @@ class ServiceCenterApp:
             devices = self.db.search_devices(search_text, include_completed=not hide_completed)
             self._clear_tree_and_populate(devices, count_label_text=f"Найдено: {len(devices)}")
         except Exception as e:
-            print(f"Ошибка поиска: {e}")
+            logger.error(f"Ошибка поиска: {e}")
     
     def sort_treeview(self, col):
         """Сортировка таблицы"""
@@ -1185,7 +1187,7 @@ class ServiceCenterApp:
                 return device.get('id')
             return None
         except Exception as e:
-            print(f"Ошибка получения ID устройства: {e}")
+            logger.error(f"Ошибка получения ID устройства: {e}")
             return None
     
     def on_device_double_click(self, event):
@@ -1253,7 +1255,7 @@ class ServiceCenterApp:
                 with open(path, 'r', encoding='utf-8') as f:
                     return json.load(f)
         except Exception as e:
-            print(f"Не удалось загрузить шаблон акта: {e}")
+            logger.error(f"Не удалось загрузить шаблон акта: {e}")
         return {}
 
     def print_receipt_act(self):
@@ -1543,7 +1545,7 @@ class ServiceCenterApp:
             self.db.close()
             self.root.destroy()
         except Exception as e:
-            print(f"Ошибка при закрытии: {e}")
+            logger.error(f"Ошибка при закрытии: {e}")
             self.root.destroy()
     
     def run(self):
@@ -1558,7 +1560,7 @@ class ServiceCenterApp:
         except KeyboardInterrupt:
             self.on_closing()
         except Exception as e:
-            print(f"Ошибка выполнения: {e}")
+            logger.error(f"Ошибка выполнения: {e}")
             self.on_closing()
 
 

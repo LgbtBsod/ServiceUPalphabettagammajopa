@@ -3,6 +3,7 @@
 
 """Окно настроек приложения"""
 
+import logging
 import customtkinter as ctk
 from tkinter import messagebox, colorchooser
 import json
@@ -10,6 +11,8 @@ import os
 
 from config import CONFIG_PATH
 from utils.constants import DEFAULT_SETTINGS, STATUSES, PRIORITIES
+
+logger = logging.getLogger(__name__)
 
 
 class SettingsWindow(ctk.CTkToplevel):
@@ -487,7 +490,7 @@ class SettingsWindow(ctk.CTkToplevel):
                     import os
                     os.makedirs(backup_path, exist_ok=True)
                 except Exception as e:
-                    print(f"Не удалось создать папку бэкапов {backup_path}: {e}")
+                    logger.error(f"Не удалось создать папку бэкапов {backup_path}: {e}", exc_info=True)
             self.settings.set('backup_path', backup_path)
             self.settings.set('compress_backups', self.compress_backups_var.get())
             self.settings.set('photo_quality', self._safe_int(self.photo_quality_entry.get(), 85, lo=1, hi=100))

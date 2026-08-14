@@ -3,11 +3,14 @@
 
 """Мини-таблица для управления выполненными работами"""
 
+import logging
 import customtkinter as ctk
 from tkinter import ttk, messagebox
 
 from database import WorkItem, WorkItemsManager
 from gui.widgets.premium import PremiumLabel, PremiumCombobox
+
+logger = logging.getLogger(__name__)
 
 
 class WorkItemsTable:
@@ -158,7 +161,7 @@ class WorkItemsTable:
                      'price': (it.get('additional_info') or '').strip()}
                     for it in items]
         except Exception as e:
-            print(f"Ошибка загрузки шаблонов работ: {e}")
+            logger.error(f"Ошибка загрузки шаблонов работ: {e}", exc_info=True)
             return []
 
     def add_from_template(self):

@@ -3,12 +3,15 @@
 
 """Диалог с QR-кодом для подключения к PWA-версии."""
 
+import logging
 import io
 import customtkinter as ctk
 from tkinter import messagebox
 from PIL import Image, ImageTk
 
 from gui.widgets.modern import ModernCard, ModernButton, ModernLabel
+
+logger = logging.getLogger(__name__)
 
 
 class PWAQRDialog(ctk.CTkToplevel):
@@ -155,7 +158,7 @@ class PWAQRDialog(ctk.CTkToplevel):
             if self.on_stop:
                 self.on_stop()
         except Exception as e:
-            print(f"Ошибка остановки сервера: {e}")
+            logger.error(f"Ошибка остановки сервера: {e}", exc_info=True)
         self._close()
 
     def _close(self):

@@ -3,6 +3,7 @@
 
 """Основной класс для работы с базой данных"""
 
+import logging
 import sqlite3
 import json
 import os
@@ -13,6 +14,7 @@ from config import DB_PATH
 from utils.constants import DICTIONARY_TYPES
 from utils.formatters import normalize_phone_digits, parse_price_to_float
 
+logger = logging.getLogger(__name__)
 
 # Поля, которые могли добавляться со временем и отсутствуют в старых БД.
 # Используется для миграций ALTER TABLE ADD COLUMN.
@@ -240,7 +242,8 @@ class Database:
 
             self.conn.commit()
         except sqlite3.Error as e:
-            print(f"Ошибка создания таблиц: {e}")
+            logger.error(f"Ошибка создания таблиц: {e}", exc_info=True)
+            raise  # Пробрасываем ошибку дальше, чтобы приложение не работало с неполной схемой
 
     def _create_indexes(self, cursor) -> None:
         """Создаёт индексы на часто запрашиваемые поля (безопасно при повторах)."""
@@ -258,7 +261,7 @@ class Database:
             try:
                 cursor.execute(sql)
             except sqlite3.Error as e:
-                print(f"Индекс {idx_name} не создан: {e}")
+                logger.warning(f"Индекс {idx_name} не создан: {e}")
 
     def _run_migrations(self, cursor) -> None:
         """Применение миграций: добавление отсутствующих колонок + заполнение REAL-цен."""
@@ -270,14 +273,14 @@ class Database:
                 if col not in existing_cols:
                     try:
                         cursor.execute(f"ALTER TABLE devices ADD COLUMN {col} {definition}")
-                        print(f"Миграция: добавлена колонка devices.{col}")
+                        logger.info(f"Миграция: добавлена колонка devices.{col}")
                     except sqlite3.Error as e:
-                        print(f"Миграция (devices.{col}) не выполнена: {e}")
+                        logger.warning(f"Миграция (devices.{col}) не выполнена: {e}")
 
             # Миграция данных: заполняем REAL-колонки из TEXT-полей
             self._migrate_prices_to_real(cursor)
         except sqlite3.Error as e:
-            print(f"Ошибка чтения схемы для миграций: {e}")
+            logger.error(f"Ошибка чтения схемы для миграций: {e}", exc_info=True)
 
     def _migrate_prices_to_real(self, cursor) -> None:
         """Заполняет REAL-колонки цен из существующих TEXT-полей.
@@ -297,7 +300,7 @@ class Database:
             if count == 0:
                 return
 
-            print(f"Миграция цен: конвертация {count} записей в REAL...")
+            logger.info(f"Миграция цен: конвертация {count} записей в REAL...")
             # SQLite не умеет CAST с REPLACE в одном UPDATE для всех — делаем построчно
             cursor.execute("SELECT id, total_price, prepayment, expense FROM devices WHERE total_price_num = 0")
             rows = cursor.fetchall()
@@ -309,7 +312,7 @@ class Database:
                 cursor.execute(
                     "UPDATE devices SET total_price_num = ?, prepayment_num = ?, expense_num = ? WHERE id = ?",
                     (tp, pp, ex, dev_id))
-            print(f"✅ Мигрировано {len(rows)} записей")
+            logger.info(f"✅ Мигрировано {len(rows)} записей")
 
             # Миграция работ и фото в отдельные таблицы (если они пусты)
             cursor.execute('SELECT COUNT(*) FROM work_items_db')
@@ -321,9 +324,9 @@ class Database:
                     self.sync_photos_to_db(dev_row['id'], dev_row['photos'] or '')
                 cursor.execute('SELECT COUNT(*) FROM work_items_db')
                 new_wi = cursor.fetchone()[0]
-                print(f"✅ Мигрировано работ в work_items_db: {new_wi}")
+                logger.info(f"✅ Мигрировано работ в work_items_db: {new_wi}")
         except Exception as e:
-            print(f"Ошибка миграции цен: {e}")
+            logger.error(f"Ошибка миграции цен: {e}", exc_info=True)
 
     # ==================== СЛОВАРИ ====================
 
@@ -342,7 +345,7 @@ class Database:
             self.conn.commit()
             return current
         except sqlite3.Error as e:
-            print(f"Ошибка получения номера заказа: {e}")
+            logger.error(f"Ошибка получения номера заказа: {e}", exc_info=True)
             return 1
 
     def get_dict_values(self, dict_type: str) -> List[str]:
@@ -368,7 +371,7 @@ class Database:
             self._dict_cache[dict_type] = values  # кешируем
             return values
         except sqlite3.Error as e:
-            print(f"Ошибка получения словаря: {e}")
+            logger.error(f"Ошибка получения словаря: {e}", exc_info=True)
             return []
 
     def _invalidate_dict_cache(self, dict_type: str = None):
@@ -391,7 +394,7 @@ class Database:
             ''', (dict_type,))
             return [dict(row) for row in cursor.fetchall()]
         except sqlite3.Error as e:
-            print(f"Ошибка получения элементов словаря: {e}")
+            logger.error(f"Ошибка получения элементов словаря: {e}", exc_info=True)
             return []
 
     def add_dict_value(self, dict_type: str, value: str, additional_info: str = "") -> bool:
@@ -415,7 +418,7 @@ class Database:
         except sqlite3.IntegrityError:
             return False
         except sqlite3.Error as e:
-            print(f"Ошибка добавления в словарь: {e}")
+            logger.error(f"Ошибка добавления в словарь: {e}", exc_info=True)
             return False
 
     def update_dict_value(self, item_id: int, value: str, additional_info: str = "") -> bool:
@@ -431,7 +434,7 @@ class Database:
             self._invalidate_dict_cache()
             return True
         except sqlite3.Error as e:
-            print(f"Ошибка обновления словаря: {e}")
+            logger.error(f"Ошибка обновления словаря: {e}", exc_info=True)
             return False
 
     def delete_dict_value(self, item_id: int) -> bool:
@@ -443,7 +446,23 @@ class Database:
             self._invalidate_dict_cache()
             return True
         except sqlite3.Error as e:
-            print(f"Ошибка удаления из словаря: {e}")
+            logger.error(f"Ошибка удаления из словаря: {e}", exc_info=True)
+            return False
+
+    def delete_device(self, device_id: int) -> bool:
+        """Удаление устройства и связанных записей (work_items, photos)."""
+        try:
+            cursor = self.conn.cursor()
+            # Удаляем связанные записи сначала (CASCADE может не сработать на старых БД)
+            cursor.execute('DELETE FROM work_items_db WHERE device_id = ?', (device_id,))
+            cursor.execute('DELETE FROM photos_db WHERE device_id = ?', (device_id,))
+            # Удаляем само устройство
+            cursor.execute('DELETE FROM devices WHERE id = ?', (device_id,))
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Ошибка удаления устройства: {e}", exc_info=True)
+            self.conn.rollback()
             return False
 
     def get_statistics(self) -> Dict[str, int]:
@@ -531,7 +550,7 @@ class Database:
             self.conn.commit()
             return device_id
         except sqlite3.Error as e:
-            print(f"Ошибка добавления устройства: {e}")
+            logger.error(f"Ошибка добавления устройства: {e}", exc_info=True)
             self.conn.rollback()
             return None
 
@@ -569,7 +588,7 @@ class Database:
                     VALUES (?, ?, ?, ?, ?, ?)
                 ''', (device_id, desc, price, qty, total, i))
         except Exception as e:
-            print(f"Ошибка синхронизации work_items_db: {e}")
+            logger.warning(f"Ошибка синхронизации work_items_db: {e}")
 
     def get_work_items_from_db(self, device_id: int) -> List[Dict[str, Any]]:
         """Получает работы заказа из отдельной таблицы (быстро, без JSON-парсинга)."""
@@ -583,7 +602,7 @@ class Database:
                      'quantity': r['quantity'], 'total': r['total']}
                     for r in cursor.fetchall()]
         except sqlite3.Error as e:
-            print(f"Ошибка получения work_items_db: {e}")
+            logger.warning(f"Ошибка получения work_items_db: {e}")
             return []
 
     # ==================== ФОТО (photos_db) ====================
@@ -606,7 +625,7 @@ class Database:
                     VALUES (?, ?, ?, ?)
                 ''', (device_id, path, fname, i))
         except Exception as e:
-            print(f"Ошибка синхронизации photos_db: {e}")
+            logger.warning(f"Ошибка синхронизации photos_db: {e}")
 
     def get_photos_from_db(self, device_id: int) -> List[Dict[str, Any]]:
         """Получает фото заказа из отдельной таблицы."""
@@ -618,7 +637,7 @@ class Database:
             ''', (device_id,))
             return [dict(r) for r in cursor.fetchall()]
         except sqlite3.Error as e:
-            print(f"Ошибка получения photos_db: {e}")
+            logger.warning(f"Ошибка получения photos_db: {e}")
             return []
 
     def add_photo_to_db(self, device_id: int, file_path: str) -> bool:
@@ -635,7 +654,7 @@ class Database:
             self.conn.commit()
             return True
         except sqlite3.Error as e:
-            print(f"Ошибка добавления фото в БД: {e}")
+            logger.warning(f"Ошибка добавления фото в БД: {e}")
             return False
 
     # ==================== УСТРОЙСТВА (списки) ====================
@@ -656,7 +675,7 @@ class Database:
 
             return [dict(row) for row in cursor.fetchall()]
         except sqlite3.Error as e:
-            print(f"Ошибка получения устройств: {e}")
+            logger.error(f"Ошибка получения устройств: {e}", exc_info=True)
             return []
 
     def get_device(self, device_id: int) -> Optional[Dict[str, Any]]:
@@ -667,7 +686,7 @@ class Database:
             row = cursor.fetchone()
             return dict(row) if row else None
         except sqlite3.Error as e:
-            print(f"Ошибка получения устройства: {e}")
+            logger.error(f"Ошибка получения устройства: {e}")
             return None
 
     def get_device_by_order_number(self, order_number: str) -> Optional[Dict[str, Any]]:
@@ -678,7 +697,7 @@ class Database:
             row = cursor.fetchone()
             return dict(row) if row else None
         except sqlite3.Error as e:
-            print(f"Ошибка получения устройства: {e}")
+            logger.error(f"Ошибка получения устройства: {e}")
             return None
 
     def search_devices(self, search_text: str, include_completed: bool = True) -> List[Dict[str, Any]]:
@@ -729,7 +748,7 @@ class Database:
 
             return results
         except sqlite3.Error as e:
-            print(f"Ошибка поиска: {e}")
+            logger.error(f"Ошибка поиска: {e}")
             return []
 
     @staticmethod
@@ -832,7 +851,7 @@ class Database:
             cursor.execute(query, params)
             return [dict(row) for row in cursor.fetchall()]
         except sqlite3.Error as e:
-            print(f"Ошибка получения устройств: {e}")
+            logger.error(f"Ошибка получения устройств: {e}")
             return []
 
     def update_device(self, device_id: int, device_data: Dict[str, Any]) -> bool:
@@ -922,7 +941,7 @@ class Database:
             self.conn.commit()
             return True
         except sqlite3.Error as e:
-            print(f"Ошибка обновления устройства: {e}")
+            logger.error(f"Ошибка обновления устройства: {e}")
             self.conn.rollback()
             return False
 
@@ -945,7 +964,7 @@ class Database:
             self.conn.commit()
             return True
         except sqlite3.Error as e:
-            print(f"Ошибка обновления статуса: {e}")
+            logger.error(f"Ошибка обновления статуса: {e}")
             self.conn.rollback()
             return False
 
@@ -971,7 +990,7 @@ class Database:
             self.conn.commit()
             return True
         except sqlite3.Error as e:
-            print(f"Ошибка добавления завершенного ремонта: {e}")
+            logger.error(f"Ошибка добавления завершенного ремонта: {e}")
             return False
 
     # ==================== ФИНАНСОВЫЕ МЕТОДЫ ====================
@@ -998,7 +1017,7 @@ class Database:
 
             return [dict(row) for row in cursor.fetchall()]
         except sqlite3.Error as e:
-            print(f"Ошибка получения финансов: {e}")
+            logger.error(f"Ошибка получения финансов: {e}")
             return []
 
     def get_finance_summary(self, period: str = 'all') -> Dict[str, float]:
@@ -1031,7 +1050,7 @@ class Database:
                 'total_profit': row['total_profit'] if row['total_profit'] else 0
             }
         except sqlite3.Error as e:
-            print(f"Ошибка получения сводки: {e}")
+            logger.error(f"Ошибка получения сводки: {e}")
             return {'total_income': 0, 'total_expense': 0, 'total_profit': 0}
 
     def update_finance_expense(self, order_number: str, expense: float) -> bool:
@@ -1046,7 +1065,7 @@ class Database:
             self.conn.commit()
             return True
         except sqlite3.Error as e:
-            print(f"Ошибка обновления расхода: {e}")
+            logger.error(f"Ошибка обновления расхода: {e}")
             return False
 
     # ==================== КЛИЕНТЫ (объединённые) ====================
@@ -1068,7 +1087,7 @@ class Database:
             self.conn.commit()
             return cursor.lastrowid
         except sqlite3.Error as e:
-            print(f"Ошибка get_or_create_client: {e}")
+            logger.error(f"Ошибка get_or_create_client: {e}")
             return None
 
     def add_to_repair_history_main(self, client_id: int, device_id: int,
@@ -1120,7 +1139,7 @@ class Database:
             self._recalc_client_stats(client_id)
             self.conn.commit()
         except sqlite3.Error as e:
-            print(f"Ошибка add_to_repair_history_main: {e}")
+            logger.error(f"Ошибка add_to_repair_history_main: {e}")
 
     def _recalc_client_stats(self, client_id: int) -> None:
         """Пересчитывает агрегаты клиента из repair_history_main."""
@@ -1142,7 +1161,7 @@ class Database:
             ''', (row['total'] or 0, row['completed'] or 0,
                   row['first_date'], row['last_date'], client_id))
         except sqlite3.Error as e:
-            print(f"Ошибка _recalc_client_stats: {e}")
+            logger.error(f"Ошибка _recalc_client_stats: {e}")
 
     def get_client_history_main(self, client_name: str, client_phone: str) -> List[Dict[str, Any]]:
         """Получает историю ремонтов клиента из основной БД.
@@ -1171,7 +1190,7 @@ class Database:
                 ''', (client_name, client_phone))
             return [dict(r) for r in cursor.fetchall()]
         except sqlite3.Error as e:
-            print(f"Ошибка get_client_history_main: {e}")
+            logger.error(f"Ошибка get_client_history_main: {e}")
             return []
 
     def get_client_stats_main(self, client_name: str, client_phone: str) -> Dict[str, Any]:
@@ -1248,11 +1267,11 @@ class Database:
                         self.add_to_repair_history_main(client_id, device_id, device_data)
                     migrated += 1
                     cl_conn.close()
-                    print(f"✅ Мигрирован клиент: {client_name} ({len(repairs)} ремонтов)")
+                    logger.info(f"Мигрирован клиент: {client_name} ({len(repairs)} ремонтов)")
                 except Exception as e:
-                    print(f"Ошибка миграции {db_path}: {e}")
+                    logger.error(f"Ошибка миграции {db_path}: {e}")
         except Exception as e:
-            print(f"Ошибка миграции клиентских БД: {e}")
+            logger.error(f"Ошибка миграции клиентских БД: {e}")
         return migrated
 
     @staticmethod

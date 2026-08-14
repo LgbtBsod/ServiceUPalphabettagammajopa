@@ -9,6 +9,7 @@
 
 import os
 import sys
+import logging
 import subprocess
 import tempfile
 import customtkinter as ctk
@@ -16,6 +17,8 @@ from tkinter import messagebox
 from datetime import datetime
 
 from gui.widgets.modern import ModernCard, ModernButton, ModernLabel
+
+logger = logging.getLogger(__name__)
 
 
 def _pypdfium_available() -> bool:
@@ -43,7 +46,7 @@ def _render_pdf_to_image(pdf_path: str, scale: float = 2.0):
         img = bmp.to_pil()
         return img, n_pages
     except Exception as e:
-        print(f"Ошибка рендера PDF: {e}")
+        logger.error(f"Ошибка рендера PDF: {e}", exc_info=True)
         return None, 0
 
 
@@ -292,7 +295,7 @@ class ActPreviewWindow(ctk.CTkToplevel):
                 text_color=self.colors['success']
             )
         except Exception as e:
-            print(f"Ошибка предпросмотра PDF: {e}")
+            logger.error(f"Ошибка предпросмотра PDF: {e}", exc_info=True)
             try:
                 self.pdf_label = ctk.CTkLabel(
                     self.preview_container, text=f"❌ Ошибка: {e}",
