@@ -11,12 +11,14 @@ from datetime import datetime
 
 from config import CLIENTS_DB_DIR
 import logging
-from .sqlalchemy_models import Base, ClientModel, DeviceModel, WorkItemModel, ExpenseModel
+from .sqlalchemy_models import Base, Client, Device, WorkTemplate, Settings
 from .repositories.sqlite_connection import SQLAlchemyConnection
 from .repositories.client_repository import ClientRepository
-from .db_config import DB_CONFIG
+from .db_config import get_db_config
 
 logger = logging.getLogger(__name__)
+
+DB_CONFIG = get_db_config()
 
 
 
