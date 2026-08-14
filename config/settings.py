@@ -19,18 +19,21 @@ class DatabaseSettings(BaseSettings):
     
     model_config = SettingsConfigDict(env_prefix="DB_", env_file=".env", extra='ignore')
     
-    path: str = Field(default="data/serviceup.db", description="Path to SQLite database")
+    path: Path = Field(default=Path("data/serviceup.db"), description="Path to SQLite database")
     echo: bool = Field(default=False, description="Echo SQL queries for debugging")
     pool_size: int = Field(default=5, description="Connection pool size")
     max_overflow: int = Field(default=10, description="Max overflow connections")
     
     @field_validator('path')
     @classmethod
-    def validate_path(cls, v: str) -> str:
-        """Ensure database directory exists"""
-        db_path = Path(v)
+    def validate_path(cls, v: str | Path) -> Path:
+        """Ensure database directory exists and return absolute Path"""
+        db_path = Path(v) if isinstance(v, str) else v
+        # Make path absolute relative to project root
+        if not db_path.is_absolute():
+            db_path = Path(__file__).parent.parent / db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        return str(db_path)
+        return db_path
 
 
 class AppSettings(BaseSettings):
@@ -39,13 +42,24 @@ class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="APP_", env_file=".env", extra='ignore')
     
     name: str = Field(default="ServiceUP", description="Application name")
-    version: str = Field(default="20.0.0", description="Application version")
+    version: str = Field(default="23.0", description="Application version")
     debug: bool = Field(default=False, description="Debug mode")
     language: str = Field(default="ru_RU", description="Default language code")
-    data_dir: str = Field(default="data", description="Data directory")
-    backup_dir: str = Field(default="backups", description="Backup directory")
+    data_dir: Path = Field(default=Path("data"), description="Data directory")
+    backup_dir: Path = Field(default=Path("backups"), description="Backup directory")
     log_level: str = Field(default="INFO", description="Logging level")
     max_workers: int = Field(default=4, description="Max thread pool workers")
+    
+    @field_validator('data_dir', 'backup_dir')
+    @classmethod
+    def validate_dirs(cls, v: str | Path) -> Path:
+        """Ensure directories are absolute paths"""
+        dir_path = Path(v) if isinstance(v, str) else v
+        # Make path absolute relative to project root
+        if not dir_path.is_absolute():
+            dir_path = Path(__file__).parent.parent / dir_path
+        dir_path.mkdir(parents=True, exist_ok=True)
+        return dir_path
     
     @field_validator('log_level')
     @classmethod
@@ -160,9 +174,9 @@ def is_debug() -> bool:
     return get_settings().debug or get_settings().app.debug
 
 
-def get_db_path() -> str:
-    """Get database path"""
-    return get_settings().database.path
+def get_db_path() -> Path:
+    """Get database path as Path object"""
+    return Path(get_settings().database.path)
 
 
 def get_data_dir() -> Path:
@@ -220,8 +234,8 @@ def get_export_dir() -> Path:
 
 
 def get_config_path() -> Path:
-    """Get main config file path"""
-    return Path(get_settings().app.data_dir).parent / "service_center.config"
+    """Get main config file path (absolute)"""
+    return Path(__file__).parent.parent / "service_center.config"
 
 
 def get_license_key_file() -> Path:
@@ -232,21 +246,23 @@ def get_license_key_file() -> Path:
 # =============================================================================
 # LEGACY COMPATIBILITY ALIASES (DEPRECATED - migrate to new API)
 # These maintain backward compatibility with old config.py usage.
-# Will be removed in version 20.0 - update your code to use the new functions above.
+# =============================================================================
+# Legacy compatibility aliases (DEPRECATED - will be removed in v25.0)
+# Will be removed in version 25.0 - update your code to use the new functions above.
 # =============================================================================
 
 BASE_DIR: Path = Path(__file__).parent.parent  # workspace root
 APP_VERSION: str = get_version()
 APP_NAME: str = get_app_name()
-DB_PATH: str = str(get_db_path())
-CONFIG_PATH: str = str(get_config_path())
-BACKUP_DIR: str = str(get_backup_dir())
-EXPORT_DIR: str = str(get_export_dir())
-PHOTOS_DIR: str = str(get_photos_dir())
-THUMBNAILS_DIR: str = str(get_thumbnails_dir())
-CLIENTS_DB_DIR: str = str(get_clients_db_dir())
-REPORTS_DIR: str = str(get_reports_dir())
-TEMPLATES_DIR: str = str(get_templates_dir())
+DB_PATH: Path = get_db_path()
+CONFIG_PATH: Path = get_config_path()
+BACKUP_DIR: Path = get_backup_dir()
+EXPORT_DIR: Path = get_export_dir()
+PHOTOS_DIR: Path = get_photos_dir()
+THUMBNAILS_DIR: Path = get_thumbnails_dir()
+CLIENTS_DB_DIR: Path = get_clients_db_dir()
+REPORTS_DIR: Path = get_reports_dir()
+TEMPLATES_DIR: Path = get_templates_dir()
 
 
 # License secret key - loaded from environment or default

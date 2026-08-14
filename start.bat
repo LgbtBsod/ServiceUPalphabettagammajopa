@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 >nul
-title ServiceUP v15.0 - Сервисный центр
+title ServiceUP v22.0 - Сервисный центр
 
 echo ╔══════════════════════════════════════════════╗
-echo ║              ServiceUP v15.0                 ║
+echo ║              ServiceUP v22.0                 ║
 echo ║         УЧЁТ РЕМОНТА ТЕХНИКИ                 ║
 echo ╚══════════════════════════════════════════════╝
 echo.
@@ -16,6 +16,20 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+
+REM Переход в директорию скрипта
+cd /d "%~dp0"
+
+REM Обновление pip
+echo 🔄 Обновление pip...
+python -m pip install --upgrade pip --quiet
+
+REM Очистка временных файлов
+echo 🧹 Очистка временных файлов...
+if exist "__pycache__" rmdir /s /q "__pycache__" 2>nul
+for /d /r . %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d" 2>nul
+del /q /s "*.pyc" 2>nul
+del /q /s "*.pyo" 2>nul
 
 REM Установка зависимостей из requirements.txt
 echo 🔍 Проверка зависимостей...
