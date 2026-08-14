@@ -1,17 +1,22 @@
 """
-Database infrastructure module - реализации репозиториев для работы с БД.
+Database Infrastructure Layer.
+
+Реализации репозиториев и подключений к базам данных.
 """
 
-from .repositories import (
-    DeviceRepository,
+from infrastructure.db.repositories import (
+    BaseRepository,
     ClientRepository,
-    UnitOfWork,
-    DatabaseConnection,
+    DeviceRepository,
 )
+from infrastructure.db.connection import DatabaseConnection, get_db_connection
+from infrastructure.db.unit_of_work import UnitOfWork
 
 __all__ = [
-    'DeviceRepository',
-    'ClientRepository',
-    'UnitOfWork',
-    'DatabaseConnection',
+    "BaseRepository",
+    "ClientRepository",
+    "DeviceRepository",
+    "DatabaseConnection",
+    "get_db_connection",
+    "UnitOfWork",
 ]
