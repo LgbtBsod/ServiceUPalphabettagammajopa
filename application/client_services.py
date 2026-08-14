@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Protocol
 from concurrent.futures import ThreadPoolExecutor
 
+from core.base import BaseService
 from shared.kernel import Repository, UnitOfWork
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ class ClientStats:
     average_order_value: float
 
 
-class ClientAppService:
+class ClientAppService(BaseService):
     """
     Сервис приложения для управления клиентами.
     
@@ -54,14 +55,28 @@ class ClientAppService:
         self,
         uow_factory: UnitOfWorkFactory,
         max_workers: int = 2,
+        name: str = "ClientAppService",
     ):
+        super().__init__(name=name)
         self._uow_factory = uow_factory
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
 
     def get_client_by_id(self, client_id: int) -> Optional[Dict[str, Any]]:
         """Получение клиента по ID (Query)."""
+        return self.safe_execute(
+            lambda: self._get_client_by_id_impl(client_id),
+            default=None
+        )
+    
+    def _get_client_by_id_impl(self, client_id: int) -> Optional[Dict[str, Any]]:
+        """Реализация получения клиента."""
         with self._uow_factory() as uow:
-            return uow.clients.get_by_id(client_id)
+            client = uow.clients.get_by_id(client_id)
+            if client:
+                self.log.debug(f"Client {client_id} retrieved successfully")
+            else:
+                self.log.warning(f"Client {client_id} not found")
+            return client
 
     def search_clients(
         self,

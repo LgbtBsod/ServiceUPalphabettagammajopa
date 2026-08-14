@@ -309,10 +309,10 @@ class ActPanel:
         self.margins_combo.set(str(self.template_data.get("page_margin_mm", 6)))
         self.margins_combo.grid(row=row, column=1, sticky="w", padx=(8, 0), pady=3)
 
-        # --- Поля документа ---
+        # --- Поля документа с Drag-and-Drop ---
         fields_card = ModernCard(parent, self.colors)
         fields_card.pack(fill="x", pady=5)
-        ctk.CTkLabel(fields_card, text="📋 Поля документа",
+        ctk.CTkLabel(fields_card, text="📋 Поля документа (перетаскивайте для изменения порядка)",
                      font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=12, pady=(8, 4))
 
         ff = ctk.CTkFrame(fields_card, fg_color="transparent")
@@ -320,20 +320,39 @@ class ActPanel:
 
         current_fields = self.template_data.get("fields", [])
         self.field_vars = {}
-        row, col = 0, 0
-        for field_key, field_label in FIELD_LABELS.items():
-            var = ctk.BooleanVar(value=field_key in current_fields)
-            self.field_vars[field_key] = var
-            # after(0,...) гарантирует, что variable уже обновлён при рендере
-            # (в CTkCheckBox command может сработать раньше обновления variable)
-            cb = ctk.CTkCheckBox(ff, text=field_label, variable=var,
-                                 fg_color=self.colors['accent'],
-                                 command=lambda: self.after(10, self.update_preview))
-            cb.grid(row=row, column=col, sticky="w", padx=(0, 12), pady=3)
-            col += 1
-            if col > 1:
-                col = 0
-                row += 1
+        self.field_widgets = {}  # key -> (frame, checkbox, label, gripper)
+        
+        # Контейнер для drag-and-drop элементов
+        self.fields_container = ctk.CTkScrollableFrame(ff, fg_color="transparent", height=280)
+        self.fields_container.pack(fill="both", expand=True)
+        
+        # Создаём элементы списка полей
+        for idx, field_key in enumerate(current_fields):
+            self._create_field_item(field_key, idx)
+        
+        # Кнопка добавления поля
+        add_frame = ctk.CTkFrame(ff, fg_color="transparent")
+        add_frame.pack(fill="x", pady=(8, 0))
+        
+        ctk.CTkLabel(add_frame, text="Добавить поле:", 
+                     font=ctk.CTkFont(size=11)).pack(side="left", padx=(0, 8))
+        
+        self.add_field_combo = ctk.CTkComboBox(
+            add_frame,
+            values=[FIELD_LABELS[k] for k in FIELD_LABELS.keys() if k not in current_fields],
+            width=200, height=28
+        )
+        self.add_field_combo.pack(side="left", padx=(0, 8))
+        
+        ModernButton(add_frame, self.colors, variant="secondary", text="+ Добавить",
+                     command=self._add_field, width=100).pack(side="left")
+        
+        # Инструкция
+        hint_label = ctk.CTkLabel(
+            ff, text="💡 Перетаскивайте поля за ⋮⋮ для изменения порядка",
+            font=ctk.CTkFont(size=10), text_color=self.colors['text_secondary']
+        )
+        hint_label.pack(pady=(4, 0))
 
         # --- Дополнительный текст ---
         text_card = ModernCard(parent, self.colors)
@@ -389,6 +408,194 @@ class ActPanel:
             font=ctk.CTkFont(size=12), text_color=self.colors['text_secondary']
         )
         self.preview_label.pack(expand=True, pady=40)
+
+    # ------------------------------------------------------------------
+    # Drag-and-Drop логика для полей
+    # ------------------------------------------------------------------
+
+    def _create_field_item(self, field_key: str, index: int):
+        """Создаёт элемент списка поля с поддержкой drag-and-drop."""
+        frame = ctk.CTkFrame(self.fields_container, fg_color=self.colors['bg_secondary'], height=32)
+        frame.pack(fill="x", pady=1, padx=2)
+        frame.pack_propagate(False)
+        
+        # Gripper (ручка для перетаскивания)
+        gripper = ctk.CTkLabel(
+            frame, text="⋮⋮", font=ctk.CTkFont(size=14),
+            text_color=self.colors['text_secondary'],
+            cursor="hand2"
+        )
+        gripper.pack(side="left", padx=(4, 0))
+        
+        # Checkbox
+        var = ctk.BooleanVar(value=True)
+        self.field_vars[field_key] = var
+        checkbox = ctk.CTkCheckBox(
+            frame, text="", variable=var,
+            fg_color=self.colors['accent'], width=20,
+            command=lambda: self.after(10, self.update_preview)
+        )
+        checkbox.pack(side="left", padx=(4, 0))
+        
+        # Label с названием поля
+        label = ctk.CTkLabel(
+            frame, text=FIELD_LABELS.get(field_key, field_key),
+            font=ctk.CTkFont(size=11), anchor="w"
+        )
+        label.pack(side="left", fill="x", expand=True, padx=(6, 0))
+        
+        # Кнопка удаления
+        del_btn = ctk.CTkLabel(
+            frame, text="✖", font=ctk.CTkFont(size=12),
+            text_color=self.colors['error'], cursor="hand2"
+        )
+        del_btn.pack(side="right", padx=(0, 4))
+        del_btn.bind("<Button-1>", lambda e, k=field_key: self._remove_field(k))
+        
+        # Сохраняем ссылки на виджеты
+        self.field_widgets[field_key] = {
+            'frame': frame,
+            'checkbox': checkbox,
+            'label': label,
+            'gripper': gripper,
+            'var': var
+        }
+        
+        # Привязываем события drag-and-drop к gripper и frame
+        self._bind_drag_events(frame, gripper, field_key)
+
+    def _bind_drag_events(self, frame, gripper, field_key):
+        """Привязывает события мыши для drag-and-drop."""
+        # Храним данные о перетаскивании в атрибутах frame
+        frame.drag_data = {'item': field_key, 'y': 0}
+        
+        gripper.bind("<ButtonPress-1>", lambda e: self._on_drag_start(e, frame, field_key))
+        gripper.bind("<B1-Motion>", lambda e: self._on_drag_motion(e, frame))
+        gripper.bind("<ButtonRelease-1>", lambda e: self._on_drag_drop(e, frame))
+        
+        # Также привязываем к самому frame для удобства
+        frame.bind("<ButtonPress-1>", lambda e: self._on_drag_start(e, frame, field_key))
+        frame.bind("<B1-Motion>", lambda e: self._on_drag_motion(e, frame))
+        frame.bind("<ButtonRelease-1>", lambda e: self._on_drag_drop(e, frame))
+
+    def _on_drag_start(self, event, frame, field_key):
+        """Начало перетаскивания."""
+        frame.drag_data['item'] = field_key
+        frame.drag_data['y'] = event.y_root
+        frame.configure(fg_color=self.colors['accent'])
+
+    def _on_drag_motion(self, event, frame):
+        """Перемещение во время перетаскивания."""
+        delta = event.y_root - frame.drag_data['y']
+        frame.drag_data['y'] = event.y_root
+        
+        # Находим текущий индекс элемента
+        current_items = self._get_field_order()
+        try:
+            idx = current_items.index(frame.drag_data['item'])
+        except ValueError:
+            return
+        
+        # Определяем направление перемещения
+        if delta > 20:  # Движение вниз
+            if idx < len(current_items) - 1:
+                self._swap_fields(idx, idx + 1)
+                frame.drag_data['y'] = event.y_root
+        elif delta < -20:  # Движение вверх
+            if idx > 0:
+                self._swap_fields(idx, idx - 1)
+                frame.drag_data['y'] = event.y_root
+
+    def _on_drag_drop(self, event, frame):
+        """Завершение перетаскивания."""
+        frame.configure(fg_color=self.colors['bg_secondary'])
+        self.update_preview()
+
+    def _get_field_order(self):
+        """Возвращает текущий порядок полей из UI."""
+        order = []
+        for widget in self.fields_container.winfo_children():
+            for key, widgets in self.field_widgets.items():
+                if widgets['frame'] == widget:
+                    order.append(key)
+                    break
+        return order
+
+    def _swap_fields(self, idx1, idx2):
+        """Меняет местами два поля в списке."""
+        order = self._get_field_order()
+        if idx1 < len(order) and idx2 < len(order):
+            order[idx1], order[idx2] = order[idx2], order[idx1]
+            self._rebuild_field_list(order)
+
+    def _rebuild_field_list(self, new_order):
+        """Перестраивает список полей в новом порядке."""
+        # Сохраняем состояния checkbox
+        states = {k: self.field_vars[k].get() for k in self.field_widgets}
+        
+        # Удаляем все виджеты
+        for widget in self.fields_container.winfo_children():
+            widget.destroy()
+        self.field_widgets.clear()
+        
+        # Пересоздаём в новом порядке
+        for idx, field_key in enumerate(new_order):
+            self._create_field_item(field_key, idx)
+            # Восстанавливаем состояние checkbox
+            if field_key in self.field_vars:
+                self.field_vars[field_key].set(states.get(field_key, True))
+        
+        # Обновляем template_data
+        self.template_data['fields'] = new_order
+
+    def _add_field(self):
+        """Добавляет выбранное поле в список."""
+        selected_label = self.add_field_combo.get()
+        if not selected_label or selected_label == "—":
+            return
+        
+        # Находим ключ поля по метке
+        field_key = None
+        for k, v in FIELD_LABELS.items():
+            if v == selected_label:
+                field_key = k
+                break
+        
+        if field_key is None or field_key in self.field_widgets:
+            return
+        
+        # Добавляем поле в конец списка
+        current_order = self._get_field_order()
+        current_order.append(field_key)
+        self._rebuild_field_list(current_order)
+        
+        # Обновляем combobox
+        self._update_add_field_combo()
+        self.update_preview()
+
+    def _remove_field(self, field_key):
+        """Удаляет поле из списка."""
+        if field_key not in self.field_widgets:
+            return
+        
+        current_order = self._get_field_order()
+        if field_key in current_order:
+            current_order.remove(field_key)
+            self._rebuild_field_list(current_order)
+        
+        # Обновляем combobox
+        self._update_add_field_combo()
+        self.update_preview()
+
+    def _update_add_field_combo(self):
+        """Обновляет список доступных для добавления полей."""
+        current_fields = set(self._get_field_order())
+        available = [FIELD_LABELS[k] for k in FIELD_LABELS.keys() if k not in current_fields]
+        self.add_field_combo.configure(values=available)
+        if available:
+            self.add_field_combo.set(available[0] if available else "—")
+        else:
+            self.add_field_combo.set("—")
 
     # ------------------------------------------------------------------
     # Действия с логотипом/QR
@@ -460,7 +667,14 @@ class ActPanel:
                 self.template_data["page_margin_mm"] = int(self.margins_combo.get())
             except (ValueError, TypeError):
                 self.template_data["page_margin_mm"] = 6
-        self.template_data["fields"] = [k for k, v in self.field_vars.items() if v.get()]
+        # Поля документа с учётом порядка из Drag-and-Drop
+        if hasattr(self, '_get_field_order') and hasattr(self, 'field_widgets') and self.field_widgets:
+            # Используем порядок из UI + фильтр по checkbox
+            ordered_fields = self._get_field_order()
+            self.template_data["fields"] = [k for k in ordered_fields if k in self.field_vars and self.field_vars[k].get()]
+        else:
+            # Fallback для старого кода
+            self.template_data["fields"] = [k for k, v in self.field_vars.items() if v.get()]
         if self.act_type == "receipt":
             self.template_data["conditions"] = self.conditions_text.get("1.0", "end-1c").strip()
         else:

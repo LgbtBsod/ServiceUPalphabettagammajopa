@@ -1206,14 +1206,14 @@ class DeviceFormDialog(ctk.CTkToplevel):
         условия, логотип) к актам, печатаемым из формы заказа.
         """
         import json
-        import os as _os
+        from pathlib import Path
         try:
             # device_form.py в gui/dialogs/, корень проекта = 3x dirname
-            project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-            template_dir = _os.path.join(project_root, 'reports', 'templates')
+            project_root = Path(__file__).parent.parent.parent
+            template_dir = project_root / 'reports' / 'templates'
             filename = 'receipt_act.json' if act_type == 'receipt' else 'completion_act.json'
-            path = _os.path.join(template_dir, filename)
-            if _os.path.exists(path):
+            path = template_dir / filename
+            if path.exists():
                 with open(path, 'r', encoding='utf-8') as f:
                     return json.load(f)
         except Exception as e:

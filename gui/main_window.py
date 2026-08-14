@@ -1245,13 +1245,13 @@ class ServiceCenterApp:
         условия, логотип) к актам, печатаемым из главного окна.
         """
         import json
-        import os as _os
+        from pathlib import Path
         try:
-            reports_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'reports')
-            template_dir = _os.path.join(reports_dir, 'templates')
+            reports_dir = Path(__file__).parent.parent / 'reports'
+            template_dir = reports_dir / 'templates'
             filename = 'receipt_act.json' if act_type == 'receipt' else 'completion_act.json'
-            path = _os.path.join(template_dir, filename)
-            if _os.path.exists(path):
+            path = template_dir / filename
+            if path.exists():
                 with open(path, 'r', encoding='utf-8') as f:
                     return json.load(f)
         except Exception as e:
