@@ -1,13 +1,12 @@
-"""
-Global pytest fixtures and configuration.
-"""
-import pytest
-from pathlib import Path
-from unittest.mock import MagicMock, Mock
-from typing import Generator
+"""Global pytest fixtures and configuration."""
 
 # Import project modules
 import sys
+from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
@@ -15,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 def event_loop():
     """Create an instance of the default event loop for each test session."""
     import asyncio
+
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()

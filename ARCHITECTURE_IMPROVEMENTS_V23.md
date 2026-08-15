@@ -44,7 +44,7 @@ service.register_adapter(NotificationChannel.TELEGRAM, telegram_adapter)
 await service.send(
     channel=NotificationChannel.TELEGRAM,
     recipient="123456789",
-    body=NotificationMessage(title="Заказ", message="Новый заказ #123")
+    body=NotificationMessage(title="Заказ", message="Новый заказ #123"),
 )
 ```
 
@@ -101,10 +101,12 @@ bt = get_bluetooth_service()
 devices = await bt.scan_devices(timeout=5)
 await bt.connect_device("00:1A:7D:DA:71:13")
 
+
 # Обработка входящего звонка
 def on_incoming_call(call_info):
     print(f"Входящий: {call_info.contact_name}")
-    
+
+
 bt.set_incoming_call_callback(on_incoming_call)
 ```
 
@@ -170,9 +172,11 @@ AppException (базовый)
 ```python
 from gui.dialogs.integration_settings import show_integration_settings
 
+
 def on_save(settings: dict):
     # Сохранение настроек
     pass
+
 
 show_integration_settings(parent_window, on_save=on_save)
 ```
@@ -355,10 +359,12 @@ pytest tests/ --cov=services --cov-report=html
 # 1. Создать файл services/notifications/adapters/new_adapter.py
 from .base import NotificationAdapterProtocol
 
+
 class NewAdapter(NotificationAdapterProtocol):
     async def send(self, recipient: str, message: NotificationMessage) -> bool:
         # Реализация
         pass
+
 
 # 2. Зарегистрировать в NotificationService
 service.register_adapter(NotificationChannel.NEW, NewAdapter())
@@ -373,6 +379,7 @@ bt = get_bluetooth_service()
 # Callback'и
 bt.set_device_connected_callback(lambda d: print(f"Connected: {d.name}"))
 bt.set_incoming_call_callback(lambda c: print(f"Call from: {c.contact_name}"))
+
 
 # Асинхронные операции
 async def main():

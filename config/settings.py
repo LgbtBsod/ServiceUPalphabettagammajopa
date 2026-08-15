@@ -1,14 +1,13 @@
-"""
-Configuration Management Module
+"""Configuration Management Module
 Uses pydantic-settings for robust configuration management (SSOT principle)
 Replaces manual .ini/.json parsing with standard best-practice library
 """
 
 from __future__ import annotations
+
 import os
-from pathlib import Path
-from typing import Optional, List
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,15 +15,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class DatabaseSettings(BaseSettings):
     """Database configuration settings"""
-    
-    model_config = SettingsConfigDict(env_prefix="DB_", env_file=".env", extra='ignore')
-    
-    path: Path = Field(default=Path("data/serviceup.db"), description="Path to SQLite database")
+
+    model_config = SettingsConfigDict(env_prefix="DB_", env_file=".env", extra="ignore")
+
+    path: Path = Field(
+        default=Path("data/serviceup.db"), description="Path to SQLite database"
+    )
     echo: bool = Field(default=False, description="Echo SQL queries for debugging")
     pool_size: int = Field(default=5, description="Connection pool size")
     max_overflow: int = Field(default=10, description="Max overflow connections")
-    
-    @field_validator('path')
+
+    @field_validator("path")
     @classmethod
     def validate_path(cls, v: str | Path) -> Path:
         """Ensure database directory exists and return absolute Path"""
@@ -38,9 +39,11 @@ class DatabaseSettings(BaseSettings):
 
 class AppSettings(BaseSettings):
     """Application general settings"""
-    
-    model_config = SettingsConfigDict(env_prefix="APP_", env_file=".env", extra='ignore')
-    
+
+    model_config = SettingsConfigDict(
+        env_prefix="APP_", env_file=".env", extra="ignore"
+    )
+
     name: str = Field(default="ServiceUP", description="Application name")
     version: str = Field(default="23.0", description="Application version")
     debug: bool = Field(default=False, description="Debug mode")
@@ -49,8 +52,8 @@ class AppSettings(BaseSettings):
     backup_dir: Path = Field(default=Path("backups"), description="Backup directory")
     log_level: str = Field(default="INFO", description="Logging level")
     max_workers: int = Field(default=4, description="Max thread pool workers")
-    
-    @field_validator('data_dir', 'backup_dir')
+
+    @field_validator("data_dir", "backup_dir")
     @classmethod
     def validate_dirs(cls, v: str | Path) -> Path:
         """Ensure directories are absolute paths"""
@@ -60,8 +63,8 @@ class AppSettings(BaseSettings):
             dir_path = Path(__file__).parent.parent / dir_path
         dir_path.mkdir(parents=True, exist_ok=True)
         return dir_path
-    
-    @field_validator('log_level')
+
+    @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, v: str) -> str:
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -72,59 +75,66 @@ class AppSettings(BaseSettings):
 
 class LicenseSettings(BaseSettings):
     """License configuration settings"""
-    
-    model_config = SettingsConfigDict(env_prefix="LIC_", env_file=".env", extra='ignore')
-    
+
+    model_config = SettingsConfigDict(
+        env_prefix="LIC_", env_file=".env", extra="ignore"
+    )
+
     key_file: str = Field(default="license.key", description="License key file path")
-    hmac_secret: str = Field(default="change_this_secret_key_in_production", description="HMAC secret for license validation")
+    hmac_secret: str = Field(
+        default="change_this_secret_key_in_production",
+        description="HMAC secret for license validation",
+    )
     trial_days: int = Field(default=14, description="Trial period in days")
 
 
 class NotificationSettings(BaseSettings):
     """Notification service settings"""
-    
-    model_config = SettingsConfigDict(env_prefix="NOTIF_", env_file=".env", extra='ignore')
-    
+
+    model_config = SettingsConfigDict(
+        env_prefix="NOTIF_", env_file=".env", extra="ignore"
+    )
+
     sms_enabled: bool = Field(default=False, description="Enable SMS notifications")
     email_enabled: bool = Field(default=False, description="Enable email notifications")
-    telegram_enabled: bool = Field(default=False, description="Enable Telegram notifications")
+    telegram_enabled: bool = Field(
+        default=False, description="Enable Telegram notifications"
+    )
     push_enabled: bool = Field(default=False, description="Enable push notifications")
-    
+
     # SMTP settings
-    smtp_host: Optional[str] = Field(default=None, description="SMTP server host")
+    smtp_host: str | None = Field(default=None, description="SMTP server host")
     smtp_port: int = Field(default=587, description="SMTP server port")
-    smtp_user: Optional[str] = Field(default=None, description="SMTP username")
-    smtp_password: Optional[str] = Field(default=None, description="SMTP password")
-    
+    smtp_user: str | None = Field(default=None, description="SMTP username")
+    smtp_password: str | None = Field(default=None, description="SMTP password")
+
     # Telegram settings
-    telegram_bot_token: Optional[str] = Field(default=None, description="Telegram bot token")
-    telegram_chat_id: Optional[str] = Field(default=None, description="Telegram chat ID")
+    telegram_bot_token: str | None = Field(
+        default=None, description="Telegram bot token"
+    )
+    telegram_chat_id: str | None = Field(default=None, description="Telegram chat ID")
 
 
 class Settings(BaseSettings):
-    """
-    Main Settings class - SSOT for all application configuration
+    """Main Settings class - SSOT for all application configuration
     Combines all sub-settings into one unified interface
     """
-    
+
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra='ignore'
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
     )
-    
+
     # Nested settings
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     app: AppSettings = Field(default_factory=AppSettings)
     license: LicenseSettings = Field(default_factory=LicenseSettings)
     notification: NotificationSettings = Field(default_factory=NotificationSettings)
-    
+
     # Direct access shortcuts for common settings
     debug: bool = Field(default=False)
     environment: str = Field(default="development")
-    
-    @field_validator('environment')
+
+    @field_validator("environment")
     @classmethod
     def validate_environment(cls, v: str) -> str:
         valid_envs = ["development", "staging", "production"]
@@ -133,13 +143,12 @@ class Settings(BaseSettings):
         return v.lower()
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
-    """
-    Get cached settings instance (Singleton pattern)
+    """Get cached settings instance (Singleton pattern)
     Uses LRU cache for performance - settings loaded only once
     Thread-safe by default in Python 3.14+
-    
+
     Returns:
         Settings: Unified settings instance
     """
@@ -147,10 +156,9 @@ def get_settings() -> Settings:
 
 
 def reload_settings() -> Settings:
-    """
-    Force reload settings (clears cache)
+    """Force reload settings (clears cache)
     Use when .env file changes at runtime
-    
+
     Returns:
         Settings: Fresh settings instance
     """
@@ -202,6 +210,7 @@ def get_default_language() -> str:
 # =============================================================================
 # PATH HELPERS - SSOT for all directory paths (replaces legacy config.py)
 # =============================================================================
+
 
 def get_reports_dir() -> Path:
     """Get reports directory as Path object"""
@@ -266,14 +275,16 @@ TEMPLATES_DIR: Path = get_templates_dir()
 
 
 # License secret key - loaded from environment or default
-_LICENSE_SECRET_DEFAULT = b'ServiceUP_2024_License_Secret_Key_v1!'
+_LICENSE_SECRET_DEFAULT = b"ServiceUP_2024_License_Secret_Key_v1!"
 _env_secret = os.getenv("SERVICEUP_LICENSE_SECRET")
-LICENSE_SECRET_KEY: bytes = _env_secret.encode() if _env_secret else _LICENSE_SECRET_DEFAULT
+LICENSE_SECRET_KEY: bytes = (
+    _env_secret.encode() if _env_secret else _LICENSE_SECRET_DEFAULT
+)
 
 
 def ensure_directories() -> None:
     """Create all necessary directories.
-    
+
     This function ensures all application directories exist.
     Uses pathlib for modern, cross-platform path handling.
     """
@@ -286,52 +297,52 @@ def ensure_directories() -> None:
         get_reports_dir(),
         get_templates_dir(),
     ]
-    
+
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)
 
 
 # Export public API
 __all__ = [
-    # Core settings classes
-    'Settings',
-    'DatabaseSettings',
-    'AppSettings',
-    'LicenseSettings',
-    'NotificationSettings',
-    # Getter functions
-    'get_settings',
-    'reload_settings',
-    'get_app_name',
-    'get_version',
-    'is_debug',
-    'get_db_path',
-    'get_data_dir',
-    'get_backup_dir',
-    'get_max_workers',
-    'get_default_language',
-    # Path helpers
-    'get_reports_dir',
-    'get_templates_dir',
-    'get_photos_dir',
-    'get_thumbnails_dir',
-    'get_clients_db_dir',
-    'get_export_dir',
-    'get_config_path',
-    'get_license_key_file',
+    "APP_NAME",
+    "APP_VERSION",
+    "BACKUP_DIR",
     # Legacy compatibility (DEPRECATED)
-    'BASE_DIR',
-    'APP_VERSION',
-    'APP_NAME',
-    'DB_PATH',
-    'CONFIG_PATH',
-    'BACKUP_DIR',
-    'EXPORT_DIR',
-    'PHOTOS_DIR',
-    'THUMBNAILS_DIR',
-    'CLIENTS_DB_DIR',
-    'REPORTS_DIR',
-    'TEMPLATES_DIR',
-    'LICENSE_SECRET_KEY',
-    'ensure_directories',
+    "BASE_DIR",
+    "CLIENTS_DB_DIR",
+    "CONFIG_PATH",
+    "DB_PATH",
+    "EXPORT_DIR",
+    "LICENSE_SECRET_KEY",
+    "PHOTOS_DIR",
+    "REPORTS_DIR",
+    "TEMPLATES_DIR",
+    "THUMBNAILS_DIR",
+    "AppSettings",
+    "DatabaseSettings",
+    "LicenseSettings",
+    "NotificationSettings",
+    # Core settings classes
+    "Settings",
+    "ensure_directories",
+    "get_app_name",
+    "get_backup_dir",
+    "get_clients_db_dir",
+    "get_config_path",
+    "get_data_dir",
+    "get_db_path",
+    "get_default_language",
+    "get_export_dir",
+    "get_license_key_file",
+    "get_max_workers",
+    "get_photos_dir",
+    # Path helpers
+    "get_reports_dir",
+    # Getter functions
+    "get_settings",
+    "get_templates_dir",
+    "get_thumbnails_dir",
+    "get_version",
+    "is_debug",
+    "reload_settings",
 ]

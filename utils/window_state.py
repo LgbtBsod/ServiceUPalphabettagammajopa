@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """Сохранение/восстановление геометрии окон в config-файле.
 
@@ -26,16 +25,16 @@
 помещалось (важно для 1280x720 и при смене монитора).
 """
 
+import contextlib
 import logging
 import re
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 # Ключ в настройках, под которым хранятся все геометрии окон
 GEOMETRY_KEY = "window_geometry"
 
-_GEOMETRY_RE = re.compile(r'^(\d+)x(\d+)([+-]\d+)([+-]\d+)$')
+_GEOMETRY_RE = re.compile(r"^(\d+)x(\d+)([+-]\d+)([+-]\d+)$")
 
 
 def _parse_geometry(geo: str):
@@ -47,7 +46,7 @@ def _parse_geometry(geo: str):
         return None
     try:
         return int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -59,9 +58,15 @@ def _screen_size(window) -> tuple:
         return 1920, 1080
 
 
-def restore_window_geometry(settings, window_key: str, window,
-                            default_w: int = 800, default_h: int = 600,
-                            min_w: Optional[int] = None, min_h: Optional[int] = None) -> None:
+def restore_window_geometry(
+    settings,
+    window_key: str,
+    window,
+    default_w: int = 800,
+    default_h: int = 600,
+    min_w: int | None = None,
+    min_h: int | None = None,
+) -> None:
     """Восстанавливает геометрию окна из настроек или применяет дефолт.
 
     Ограничивает размер экраном и центрирует при первом запуске.
@@ -94,16 +99,12 @@ def restore_window_geometry(settings, window_key: str, window,
         x = max(0, (sw - w) // 2)
         y = max(0, (sh - h) // 2 - 20)
 
-    try:
+    with contextlib.suppress(Exception):
         window.geometry(f"{w}x{h}+{x}+{y}")
-    except Exception:
-        pass
 
     if min_w is not None or min_h is not None:
-        try:
+        with contextlib.suppress(Exception):
             window.minsize(min_w or 100, min_h or 100)
-        except Exception:
-            pass
 
 
 def save_window_geometry(settings, window_key: str, window) -> None:
@@ -114,7 +115,7 @@ def save_window_geometry(settings, window_key: str, window) -> None:
     try:
         geo = window.geometry()
         # Нормализуем: Tk может вернуть 'WxH+X+Y' или 'WxH'
-        if '+' not in geo:
+        if "+" not in geo:
             # Нет позиции — добавим текущую
             x = window.winfo_x()
             y = window.winfo_y()

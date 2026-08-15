@@ -93,8 +93,7 @@ initialize_db_access(db_config)
 generator = ReportDataGenerator()
 
 report = generator.generate_full_report(
-    start_date=datetime(2025, 1, 1),
-    end_date=datetime(2025, 1, 31)
+    start_date=datetime(2025, 1, 1), end_date=datetime(2025, 1, 31)
 )
 
 # 3. Проверка аналитики
@@ -112,12 +111,13 @@ print(f"Кэш хиты: {stats['cache']['hit_rate']:.1f}%")
 from plugins.clients import ClientPlugin
 from infrastructure.db_access import get_db_access
 
+
 class MyClientService(BaseService):
     def __init__(self):
         super().__init__()
         self.db = get_db_access()
-    
-    @track_db_access(operation_type='Command', table_name='clients')
+
+    @track_db_access(operation_type="Command", table_name="clients")
     def create_client(self, data: dict) -> int:
         # Только через DataAccessManager!
         return self.db.insert_record(ClientTable, data)

@@ -12,10 +12,11 @@
 # modules/my_module_impl/__init__.py
 from modules._module_call import ModuleBase, log, CoreException
 
+
 class MyModule(ModuleBase):
     name = "my_module"
     version = "1.0.0"
-    
+
     def on_init(self):
         self.log.info("Module initialized")
 ```
@@ -85,31 +86,31 @@ modules/crm_integration_impl/
 # modules/crm_integration_impl/__init__.py
 from modules._module_call import ModuleBase, log, CoreException, ServiceException
 
+
 class CRMIntegrationModule(ModuleBase):
     name = "crm_integration"
     version = "1.0.0"
-    
+
     def on_init(self):
         self.log.info(f"🔗 {self.name} v{self.version} инициализирован")
-        
+
         # Безопасное выполнение с авто-логированием
         result = self.safe_execute(
-            lambda: self._connect_to_crm(),
-            default=None,
-            raise_on_error=False
+            lambda: self._connect_to_crm(), default=None, raise_on_error=False
         )
-        
+
     def _connect_to_crm(self):
         # Бизнес-логика подключения к CRM
         return {"status": "connected"}
-    
+
     def on_start(self):
         # Получение сервиса из DI контейнера
         order_service = self.get_service("order_service")
         self.log.info("▶️ Модуль запущен")
-        
+
     def on_stop(self):
         self.log.info("⏹️ Модуль остановлен")
+
 
 __all__ = ["CRMIntegrationModule"]
 ```
@@ -149,6 +150,7 @@ from core.logging.exceptions import CoreException
 
 logger = logging.getLogger(__name__)
 
+
 class OldModule(ModuleBase):
     def __init__(self, app_container=None):
         super().__init__(app_container)
@@ -158,6 +160,7 @@ class OldModule(ModuleBase):
 ### После (v24.1):
 ```python
 from modules._module_call import ModuleBase, log, CoreException
+
 
 class NewModule(ModuleBase):
     def on_init(self):
@@ -173,7 +176,8 @@ class NewModule(ModuleBase):
 1. **Добавьте импорт в `_module_call.py`**:
 ```python
 from core.new_feature import NewFeature
-__all__.append('NewFeature')
+
+__all__.append("NewFeature")
 ```
 
 2. **Все модули автоматически получат доступ**:

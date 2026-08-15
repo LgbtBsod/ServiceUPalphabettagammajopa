@@ -80,7 +80,8 @@ class MyModule(ModuleBase):
 ```python
 def register_gui_components(self, gui_factory):
     gui_factory.register_panel("analytics", AnalyticsPanel)
-    
+
+
 def register_routes(self, router):
     @router.get("/api/v1/custom")
     async def custom_endpoint(): ...

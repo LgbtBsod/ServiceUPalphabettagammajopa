@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """Простые tooltips (всплывающие подсказки) для виджетов Tkinter/customtkinter."""
+
+import contextlib
 
 
 class ToolTip:
@@ -26,6 +27,7 @@ class ToolTip:
             return
         try:
             import tkinter as tk
+
             x = self.widget.winfo_rootx() + 20
             y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
 
@@ -33,26 +35,30 @@ class ToolTip:
             tw.wm_overrideredirect(True)
             tw.wm_geometry(f"+{x}+{y}")
 
-            label = tk.Label(tw, text=self.text, justify="left",
-                             background="#1c1c1e", foreground="#ffffff",
-                             relief="solid", borderwidth=0,
-                             font=("Segoe UI", 10), padx=8, pady=4)
+            label = tk.Label(
+                tw,
+                text=self.text,
+                justify="left",
+                background="#1c1c1e",
+                foreground="#ffffff",
+                relief="solid",
+                borderwidth=0,
+                font=("Segoe UI", 10),
+                padx=8,
+                pady=4,
+            )
             label.pack()
         except Exception:
             pass
 
     def _hide(self, event=None):
         if self._after_id:
-            try:
+            with contextlib.suppress(Exception):
                 self.widget.after_cancel(self._after_id)
-            except Exception:
-                pass
             self._after_id = None
         if self._tip_window:
-            try:
+            with contextlib.suppress(Exception):
                 self._tip_window.destroy()
-            except Exception:
-                pass
             self._tip_window = None
 
 

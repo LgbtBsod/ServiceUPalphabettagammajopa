@@ -1,25 +1,23 @@
-"""
-Domain events module - события предметной области.
-"""
+"""Domain events module - события предметной области."""
 
 from .events import (
-    EventType,
+    ClientCreatedEvent,
     DomainEvent,
+    EventType,
+    OrderCompletedEvent,
     OrderCreatedEvent,
     OrderStatusChangedEvent,
-    OrderCompletedEvent,
-    ClientCreatedEvent,
-    WorkItemAddedEvent,
     PhotoAddedEvent,
+    WorkItemAddedEvent,
 )
 
 __all__ = [
-    'EventType',
-    'DomainEvent',
-    'OrderCreatedEvent',
-    'OrderStatusChangedEvent',
-    'OrderCompletedEvent',
-    'ClientCreatedEvent',
-    'WorkItemAddedEvent',
-    'PhotoAddedEvent',
+    "ClientCreatedEvent",
+    "DomainEvent",
+    "EventType",
+    "OrderCompletedEvent",
+    "OrderCreatedEvent",
+    "OrderStatusChangedEvent",
+    "PhotoAddedEvent",
+    "WorkItemAddedEvent",
 ]

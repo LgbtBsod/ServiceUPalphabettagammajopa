@@ -43,14 +43,14 @@ order.created = Заказ #{id} успешно создан
 from i18n import t, set_language, get_i18n
 
 # Получить перевод
-text = t('buttons.button.save')  # "Сохранить"
+text = t("buttons.button.save")  # "Сохранить"
 
 # С параметрами подстановки
-message = t('order.order.created', id=123)  # "Заказ #123 успешно создан"
+message = t("order.order.created", id=123)  # "Заказ #123 успешно создан"
 
 # Сменить язык
-set_language('en_US')
-text = t('buttons.button.save')  # "Save"
+set_language("en_US")
+text = t("buttons.button.save")  # "Save"
 ```
 
 ### Через сервис
@@ -61,13 +61,13 @@ from i18n import I18NService
 i18n = I18NService()
 
 # Получить перевод
-text = i18n.get('buttons.button.save')
+text = i18n.get("buttons.button.save")
 
 # Сменить язык
-i18n.set_language('en_US')
+i18n.set_language("en_US")
 
 # Получить доступный язык
-name = i18n.get_language_name('ru_RU')  # "Русский"
+name = i18n.get_language_name("ru_RU")  # "Русский"
 ```
 
 ### В GUI коде (CustomTkinter)
@@ -77,13 +77,11 @@ from i18n import t
 
 # При создании виджетов
 self.btn_save = CTkButton(
-    master=self,
-    text=t('buttons.button.save'),
-    command=self.save_handler
+    master=self, text=t("buttons.button.save"), command=self.save_handler
 )
 
 # При динамическом обновлении
-self.label_status.configure(text=t('status.status.success'))
+self.label_status.configure(text=t("status.status.success"))
 ```
 
 ### В обработчиках ошибок
@@ -115,9 +113,9 @@ except DatabaseError as e:
 
 ```python
 SUPPORTED_LOCALES: ClassVar[dict[str, LocaleInfo]] = {
-    'ru_RU': LocaleInfo('ru_RU', 'Russian', 'Русский', is_default=True),
-    'en_US': LocaleInfo('en_US', 'English (US)', 'English'),
-    'xx_XX': LocaleInfo('xx_XX', 'Language', 'Native Name'),
+    "ru_RU": LocaleInfo("ru_RU", "Russian", "Русский", is_default=True),
+    "en_US": LocaleInfo("en_US", "English (US)", "English"),
+    "xx_XX": LocaleInfo("xx_XX", "Language", "Native Name"),
 }
 ```
 
@@ -165,7 +163,7 @@ SUPPORTED_LOCALES: ClassVar[dict[str, LocaleInfo]] = {
 
 1. **Используйте полный путь к ключам** для ясности:
    ```python
-   t('buttons.button.save')  # ✅ Ясно и понятно
+   t("buttons.button.save")  # ✅ Ясно и понятно
    ```
 
 2. **Группируйте связанные тексты** в одной секции:
@@ -178,12 +176,12 @@ SUPPORTED_LOCALES: ClassVar[dict[str, LocaleInfo]] = {
 
 3. **Используйте параметры подстановки** для динамических значений:
    ```python
-   t('order.order.created', id=order_id)
+   t("order.order.created", id=order_id)
    ```
 
 4. **Кэшируйте часто используемые переводы**:
    ```python
-   SAVE_TEXT = t('buttons.button.save')  # Кэшировать
+   SAVE_TEXT = t("buttons.button.save")  # Кэшировать
    ```
 
 ### ❌ Не делайте
@@ -192,18 +190,18 @@ SUPPORTED_LOCALES: ClassVar[dict[str, LocaleInfo]] = {
    ```python
    # ❌ Плохо
    label = "Сохранить"
-   
+
    # ✅ Хорошо
-   label = t('buttons.button.save')
+   label = t("buttons.button.save")
    ```
 
 2. **Не используйте сложные выражения** в переводах:
    ```python
    # ❌ Плохо
-   text = t('complex.text') + " " + str(count)
-   
+   text = t("complex.text") + " " + str(count)
+
    # ✅ Хорошо
-   text = t('simple.text', count=count)
+   text = t("simple.text", count=count)
    ```
 
 3. **Не меняйте структуру ключей** после релиза:
@@ -233,20 +231,20 @@ SUPPORTED_LOCALES: ClassVar[dict[str, LocaleInfo]] = {
 ```python
 def test_i18n():
     from i18n import I18NService, t, set_language
-    
+
     i18n = I18NService()
-    
+
     # Test Russian
-    assert i18n.get('buttons.button.save') == 'Сохранить'
-    
+    assert i18n.get("buttons.button.save") == "Сохранить"
+
     # Test English
-    i18n.set_language('en_US')
-    assert i18n.get('buttons.button.save') == 'Save'
-    
+    i18n.set_language("en_US")
+    assert i18n.get("buttons.button.save") == "Save"
+
     # Test interpolation
-    i18n.set_language('ru_RU')
-    assert 'Заказ #123' in i18n.get('order.order.created', id=123)
-    
+    i18n.set_language("ru_RU")
+    assert "Заказ #123" in i18n.get("order.order.created", id=123)
+
     print("✅ All tests passed!")
 ```
 
@@ -266,8 +264,8 @@ show_error("Произошла ошибка")
 # Новый код с i18n
 from i18n import t
 
-label = CTkLabel(master, text=t('buttons.button.save'))
-show_error(t('error.error.generic'))
+label = CTkLabel(master, text=t("buttons.button.save"))
+show_error(t("error.error.generic"))
 ```
 
 ## Поддержка

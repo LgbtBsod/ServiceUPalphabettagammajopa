@@ -1,18 +1,31 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """Виджеты для интерфейса"""
 
+from gui.widgets.dashboard import PremiumDashboard
 from gui.widgets.modern import (
-    ModernCard, ModernButton, ModernEntry, ModernLabel, 
-    ModernCombobox, ModernTextbox, ModernCheckbox, ModernSwitch
+    ModernButton,
+    ModernCard,
+    ModernCheckbox,
+    ModernCombobox,
+    ModernEntry,
+    ModernLabel,
+    ModernSwitch,
+    ModernTextbox,
 )
 from gui.widgets.thumbnail import ThumbnailWidget
-from gui.widgets.dashboard import PremiumDashboard
 from gui.widgets.work_table import WorkItemsTable
 
 __all__ = [
-    'ModernCard', 'ModernButton', 'ModernEntry', 'ModernLabel',
-    'ModernCombobox', 'ModernTextbox', 'ModernCheckbox', 'ModernSwitch',
-    'ThumbnailWidget', 'PremiumDashboard', 'WorkItemsTable'
+    "ModernButton",
+    "ModernCard",
+    "ModernCheckbox",
+    "ModernCombobox",
+    "ModernEntry",
+    "ModernLabel",
+    "ModernSwitch",
+    "ModernTextbox",
+    "PremiumDashboard",
+    "ThumbnailWidget",
+    "WorkItemsTable",
 ]

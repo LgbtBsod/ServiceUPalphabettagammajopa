@@ -1,35 +1,33 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
-"""
-Модуль событий домена.
+"""Модуль событий домена.
 
 Экспортирует компоненты Domain Events для использования в приложении.
 """
 
 from .domain_events import (
-    EventType,
+    ClientAnalyticsHandler,
     DomainEvent,
-    EventHandler,
     EventBus,
-    event_handler,
-    create_event,
-    event_bus,
+    EventHandler,
+    EventType,
     # Обработчики по умолчанию
     OrderNotificationHandler,
     OrderStatusLoggerHandler,
-    ClientAnalyticsHandler,
+    create_event,
+    event_bus,
+    event_handler,
 )
 
 __all__ = [
-    'EventType',
-    'DomainEvent',
-    'EventHandler',
-    'EventBus',
-    'event_handler',
-    'create_event',
-    'event_bus',
-    'OrderNotificationHandler',
-    'OrderStatusLoggerHandler',
-    'ClientAnalyticsHandler',
+    "ClientAnalyticsHandler",
+    "DomainEvent",
+    "EventBus",
+    "EventHandler",
+    "EventType",
+    "OrderNotificationHandler",
+    "OrderStatusLoggerHandler",
+    "create_event",
+    "event_bus",
+    "event_handler",
 ]

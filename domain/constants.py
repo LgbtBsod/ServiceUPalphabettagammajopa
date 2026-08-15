@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
-"""
-Domain Constants - Single Source of Truth for business dictionaries.
+"""Domain Constants - Single Source of Truth for business dictionaries.
 
 This module contains all business-related constants and dictionaries
 used throughout the application. Following SSOT principle, these are
@@ -15,8 +13,8 @@ Principles applied:
 """
 
 from __future__ import annotations
-from typing import Final
 
+from typing import Final
 
 # =============================================================================
 # ORDER STATUSES
@@ -81,10 +79,10 @@ WARRANTIES: Final[list[str]] = [
 # =============================================================================
 
 DICTIONARY_TYPES: Final[dict[str, dict]] = {
-    'work': {
-        'name': 'Выполненные работы',
-        'icon': '🔨',
-        'default_values': [
+    "work": {
+        "name": "Выполненные работы",
+        "icon": "🔨",
+        "default_values": [
             "Диагностика",
             "Установка ОС",
             "Замена аккумулятора",
@@ -100,12 +98,12 @@ DICTIONARY_TYPES: Final[dict[str, dict]] = {
             "Замена кулера",
             "Апгрейд ОЗУ",
             "Замена HDD на SSD",
-        ]
+        ],
     },
-    'appearance': {
-        'name': 'Внешний вид',
-        'icon': '👁️',
-        'default_values': [
+    "appearance": {
+        "name": "Внешний вид",
+        "icon": "👁️",
+        "default_values": [
             "Отличное состояние",
             "Хорошее состояние",
             "Среднее состояние",
@@ -116,12 +114,12 @@ DICTIONARY_TYPES: Final[dict[str, dict]] = {
             "Разбит экран",
             "Трещина на корпусе",
             "Отсутствуют детали",
-        ]
+        ],
     },
-    'completeness': {
-        'name': 'Комплектация',
-        'icon': '📦',
-        'default_values': [
+    "completeness": {
+        "name": "Комплектация",
+        "icon": "📦",
+        "default_values": [
             "Полная комплектация",
             "Без ЗУ",
             "Без аккумулятора",
@@ -131,12 +129,12 @@ DICTIONARY_TYPES: Final[dict[str, dict]] = {
             "В заводской упаковке",
             "Без крышки",
             "Неполная комплектация",
-        ]
+        ],
     },
-    'brands': {
-        'name': 'Бренды',
-        'icon': '🏢',
-        'default_values': [
+    "brands": {
+        "name": "Бренды",
+        "icon": "🏢",
+        "default_values": [
             "Apple",
             "Samsung",
             "Xiaomi",
@@ -148,12 +146,12 @@ DICTIONARY_TYPES: Final[dict[str, dict]] = {
             "LG",
             "Sony",
             "Другое",
-        ]
+        ],
     },
-    'device_types': {
-        'name': 'Типы устройств',
-        'icon': '📱',
-        'default_values': [
+    "device_types": {
+        "name": "Типы устройств",
+        "icon": "📱",
+        "default_values": [
             "Ноутбук",
             "ПК",
             "Смартфон",
@@ -165,23 +163,23 @@ DICTIONARY_TYPES: Final[dict[str, dict]] = {
             "Фотоаппарат",
             "Игровая консоль",
             "Другое",
-        ]
+        ],
     },
-    'engineers': {
-        'name': 'Инженеры',
-        'icon': '👨‍🔧',
-        'default_values': [
+    "engineers": {
+        "name": "Инженеры",
+        "icon": "👨‍🔧",
+        "default_values": [
             "Иноагент",
             "Петров П.П.",
             "Сидоров С.С.",
             "Козлов А.А.",
             "Михайлов М.М.",
-        ]
+        ],
     },
-    'client_statuses': {
-        'name': 'Статусы клиента',
-        'icon': '👤',
-        'default_values': CLIENT_STATUSES,  # Reference to single source
+    "client_statuses": {
+        "name": "Статусы клиента",
+        "icon": "👤",
+        "default_values": CLIENT_STATUSES,  # Reference to single source
     },
 }
 
@@ -191,15 +189,15 @@ DICTIONARY_TYPES: Final[dict[str, dict]] = {
 # =============================================================================
 
 __all__ = [
-    # Order constants
-    'STATUSES',
-    'DEFAULT_STATUS',
-    'PRIORITIES',
-    'DEFAULT_PRIORITY',
     # Client constants
-    'CLIENT_STATUSES',
-    # Warranty constants
-    'WARRANTIES',
+    "CLIENT_STATUSES",
+    "DEFAULT_PRIORITY",
+    "DEFAULT_STATUS",
     # Reference data
-    'DICTIONARY_TYPES',
+    "DICTIONARY_TYPES",
+    "PRIORITIES",
+    # Order constants
+    "STATUSES",
+    # Warranty constants
+    "WARRANTIES",
 ]

@@ -31,11 +31,13 @@ service = NotificationService()
 service.register_adapter(NotificationChannel.TELEGRAM, TelegramAdapter(token))
 service.register_adapter(NotificationChannel.EMAIL, EmailAdapter(smtp_config))
 
-await service.send(NotificationMessage(
-    channel=NotificationChannel.TELEGRAM,
-    recipient="123456789",
-    body="Ваш заказ готов!",
-))
+await service.send(
+    NotificationMessage(
+        channel=NotificationChannel.TELEGRAM,
+        recipient="123456789",
+        body="Ваш заказ готов!",
+    )
+)
 ```
 
 ---
@@ -72,7 +74,7 @@ metrics = service.get_dashboard_metrics()
 report_path = service.generate_period_report(
     date_from=date(2024, 1, 1),
     date_to=date(2024, 1, 31),
-    report_type='excel',
+    report_type="excel",
 )
 ```
 

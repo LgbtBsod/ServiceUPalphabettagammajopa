@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """Генератор ключей активации для ServiceUP.
 
@@ -11,10 +10,8 @@
     Ключ активации: XXXX-XXXX-XXXX-XXXX
 """
 
-import hmac
 import hashlib
-import sys
-import os
+import hmac
 
 # Секретный ключ — ДОЛЖЕН БЫТЬ одинаковым с utils/license_manager.py!
 # Вынесен в config.py для централизованного управления
@@ -23,7 +20,7 @@ from config import LICENSE_SECRET_KEY as SECRET_KEY
 
 def generate_key(hwid: str) -> str:
     """Генерирует ключ активации из HWID."""
-    msg = hwid.replace('-', '').upper().encode('utf-8')
+    msg = hwid.replace("-", "").upper().encode("utf-8")
     digest = hmac.new(SECRET_KEY, msg, hashlib.sha256).hexdigest()
     short = digest[:16].upper()
     return f"{short[0:4]}-{short[4:8]}-{short[8:12]}-{short[12:16]}"
@@ -36,15 +33,17 @@ def main():
     print()
 
     while True:
-        hwid = input("Введите HWID клиента (или 'выход' для закрытия): ").strip().upper()
-        if hwid.lower() in ('выход', 'exit', 'quit', 'q', ''):
+        hwid = (
+            input("Введите HWID клиента (или 'выход' для закрытия): ").strip().upper()
+        )
+        if hwid.lower() in ("выход", "exit", "quit", "q", ""):
             break
 
         # Нормализуем — убираем дефисы и добавляем обратно
-        hwid_clean = hwid.replace('-', '').replace(' ', '')
+        hwid_clean = hwid.replace("-", "").replace(" ", "")
         if len(hwid_clean) != 16:
             print(f"  ⚠️ HWID должен содержать 16 символов (получено {len(hwid_clean)})")
-            print(f"  Формат: XXXX-XXXX-XXXX-XXXX")
+            print("  Формат: XXXX-XXXX-XXXX-XXXX")
             print()
             continue
 
@@ -61,5 +60,5 @@ def main():
         print()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

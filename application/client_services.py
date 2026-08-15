@@ -1,5 +1,4 @@
-"""
-Client Application Services - Use Cases для управления клиентами.
+"""Client Application Services - Use Cases для управления клиентами.
 
 Следует принципам:
 - SRP: каждый метод решает одну задачу
@@ -10,26 +9,28 @@ Client Application Services - Use Cases для управления клиент
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Protocol
-from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Protocol
 
 from core.base import BaseService
-from shared.kernel import Repository, UnitOfWork
+from shared.kernel import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
 
 class UnitOfWorkFactory(Protocol):
     """Протокол фабрики Unit of Work."""
+
     def __call__(self) -> UnitOfWork: ...
 
 
 @dataclass(slots=True)
 class ClientSearchResult:
     """Результат поиска клиентов."""
-    clients: List[Dict[str, Any]]
+
+    clients: list[dict[str, Any]]
     total_count: int
     page: int = 1
     page_size: int = 20
@@ -38,16 +39,16 @@ class ClientSearchResult:
 @dataclass(slots=True)
 class ClientStats:
     """Статистика по клиенту."""
+
     total_orders: int
     total_spent: float
-    last_order_date: Optional[str]
+    last_order_date: str | None
     average_order_value: float
 
 
 class ClientAppService(BaseService):
-    """
-    Сервис приложения для управления клиентами.
-    
+    """Сервис приложения для управления клиентами.
+
     Координирует работу доменных сервисов и репозиториев.
     """
 
@@ -61,14 +62,13 @@ class ClientAppService(BaseService):
         self._uow_factory = uow_factory
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
 
-    def get_client_by_id(self, client_id: int) -> Optional[Dict[str, Any]]:
+    def get_client_by_id(self, client_id: int) -> dict[str, Any] | None:
         """Получение клиента по ID (Query)."""
         return self.safe_execute(
-            lambda: self._get_client_by_id_impl(client_id),
-            default=None
+            lambda: self._get_client_by_id_impl(client_id), default=None
         )
-    
-    def _get_client_by_id_impl(self, client_id: int) -> Optional[Dict[str, Any]]:
+
+    def _get_client_by_id_impl(self, client_id: int) -> dict[str, Any] | None:
         """Реализация получения клиента."""
         with self._uow_factory() as uow:
             client = uow.clients.get_by_id(client_id)
@@ -80,14 +80,12 @@ class ClientAppService(BaseService):
 
     def search_clients(
         self,
-        query: Optional[str] = None,
-        phone: Optional[str] = None,
+        query: str | None = None,
+        phone: str | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> ClientSearchResult:
-        """
-        Поиск клиентов с фильтрацией и пагинацией (Query).
-        """
+        """Поиск клиентов с фильтрацией и пагинацией (Query)."""
         with self._uow_factory() as uow:
             clients, total = uow.clients.search(
                 query=query,
@@ -95,7 +93,7 @@ class ClientAppService(BaseService):
                 offset=(page - 1) * page_size,
                 limit=page_size,
             )
-            
+
             return ClientSearchResult(
                 clients=clients,
                 total_count=total,
@@ -103,10 +101,9 @@ class ClientAppService(BaseService):
                 page_size=page_size,
             )
 
-    def get_client_stats(self, client_id: int) -> Optional[ClientStats]:
-        """
-        Получение статистики по клиенту (Query).
-        
+    def get_client_stats(self, client_id: int) -> ClientStats | None:
+        """Получение статистики по клиенту (Query).
+
         Включает:
         - Количество заказов
         - Общая сумма покупок
@@ -115,63 +112,61 @@ class ClientAppService(BaseService):
         """
         with self._uow_factory() as uow:
             stats_data = uow.clients.get_stats(client_id)
-            
+
             if not stats_data:
                 return None
-            
+
             return ClientStats(
-                total_orders=stats_data.get('total_orders', 0),
-                total_spent=float(stats_data.get('total_spent', 0)),
-                last_order_date=stats_data.get('last_order_date'),
-                average_order_value=float(stats_data.get('average_order_value', 0)),
+                total_orders=stats_data.get("total_orders", 0),
+                total_spent=float(stats_data.get("total_spent", 0)),
+                last_order_date=stats_data.get("last_order_date"),
+                average_order_value=float(stats_data.get("average_order_value", 0)),
             )
 
-    def create_or_update_client(self, client_data: Dict[str, Any]) -> int:
-        """
-        Создание или обновление клиента (Command).
-        
+    def create_or_update_client(self, client_data: dict[str, Any]) -> int:
+        """Создание или обновление клиента (Command).
+
         Если клиент с таким телефоном существует - обновляет данные.
         Иначе создает нового.
-        
+
         Args:
             client_data: Данные клиента (phone, full_name, email, etc.)
-            
+
         Returns:
             ID клиента.
         """
-        phone = client_data.get('phone')
+        phone = client_data.get("phone")
         if not phone:
             raise ValueError("Телефон клиента обязателен")
-        
+
         with self._uow_factory() as uow:
             # Поиск существующего клиента
             existing = uow.clients.find_by_phone(phone)
-            
+
             if existing:
                 # Обновление
-                client_data['id'] = existing['id']
-                client_data['updated_at'] = datetime.now().isoformat()
+                client_data["id"] = existing["id"]
+                client_data["updated_at"] = datetime.now().isoformat()
                 uow.clients.update(client_data)
                 logger.info(f"Клиент {existing['id']} обновлен")
-                return existing['id']
+                return existing["id"]
             else:
                 # Создание
-                client_data['created_at'] = datetime.now().isoformat()
-                client_data['updated_at'] = client_data['created_at']
+                client_data["created_at"] = datetime.now().isoformat()
+                client_data["updated_at"] = client_data["created_at"]
                 created = uow.clients.add(client_data)
                 logger.info(f"Клиент создан: {created.get('id')}")
-                return created.get('id')
+                return created.get("id")
 
     def merge_clients(self, source_id: int, target_id: int) -> bool:
-        """
-        Объединение двух записей клиентов (Command).
-        
+        """Объединение двух записей клиентов (Command).
+
         Переносит все заказы от source к target, затем удаляет source.
-        
+
         Args:
             source_id: ID клиента, которого нужно удалить.
             target_id: ID клиента, к которому присоединить.
-            
+
         Returns:
             True если успешно.
         """
@@ -179,13 +174,13 @@ class ClientAppService(BaseService):
             with self._uow_factory() as uow:
                 # Перенос заказов
                 uow.clients.transfer_orders(source_id, target_id)
-                
+
                 # Удаление дубликата
                 uow.clients.delete(source_id)
-                
+
                 logger.info(f"Клиенты объединены: {source_id} -> {target_id}")
                 return True
-                
+
         except Exception as e:
             logger.error(f"Ошибка объединения клиентов: {e}", exc_info=True)
             return False

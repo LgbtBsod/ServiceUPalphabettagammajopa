@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """Эффекты окна для стиля macOS: прозрачность, размытие фона, скруглённые углы.
 
@@ -14,15 +13,17 @@
 чтобы приложение работало на любой системе.
 """
 
+import contextlib
 import sys
+from ctypes import sizeof
 
 
 def _is_windows():
-    return sys.platform == 'win32'
+    return sys.platform == "win32"
 
 
 def _is_mac():
-    return sys.platform == 'darwin'
+    return sys.platform == "darwin"
 
 
 def apply_window_translucency(window, theme="light", enabled=True):
@@ -61,7 +62,7 @@ def _apply_alpha_overlay(window, theme):
     """
     try:
         # Лёгкая прозрачность, чтобы проступал рабочий стол/другие окна
-        window.attributes('-alpha', 0.97)
+        window.attributes("-alpha", 0.97)
         return True
     except Exception:
         return False
@@ -76,13 +77,12 @@ def _apply_mac_vibrancy(window, theme):
     try:
         # Tk на macOS поддерживает -transparentcolor/-alpha, но настоящий
         # vibrancy требует обращения к NSWindow. Пытаемся мягко.
-        import ctypes
         # На macOS ct=-ypes неудобен; используем доступ через Tk wm attributes.
-        window.attributes('-alpha', 0.96)
+        window.attributes("-alpha", 0.96)
         return True
     except Exception:
         try:
-            window.attributes('-alpha', 0.96)
+            window.attributes("-alpha", 0.96)
             return True
         except Exception:
             return False
@@ -110,22 +110,18 @@ def _apply_windows_acrylic(window, theme):
 
         hwnd = window.winfo_id()
         # Для CTk/Toplevel нужно найти настоящее top-level HWND
-        try:
+        with contextlib.suppress(Exception):
             hwnd = ctypes.windll.user32.GetParent(hwnd) or hwnd
-        except Exception:
-            pass
 
         # Тёмный/светлый режим заголовка
         dark = 1 if theme == "dark" else 0
-        try:
+        with contextlib.suppress(Exception):
             dwmapi.DwmSetWindowAttribute(
                 wintypes.HWND(hwnd),
                 wintypes.DWORD(DWMWA_USE_IMMERSIVE_DARK_MODE),
                 ctypes.byref(wintypes.DWORD(dark)),
-                wintypes.DWORD(sizeof(wintypes.DWORD)) if 'sizeof' in dir() else ctypes.sizeof(wintypes.DWORD),
+                sizeof(wintypes.DWORD),
             )
-        except Exception:
-            pass
 
         # Acrylic backdrop (значение 3)
         try:
@@ -152,16 +148,22 @@ def _extend_frame(window):
     """Расширяет client area в рамку окна для прозрачного фона (Windows)."""
     try:
         import ctypes
+
         hwnd = ctypes.windll.user32.GetParent(window.winfo_id()) or window.winfo_id()
+
         # margins = {-1,-1,-1,-1} => extend across whole window
         class _MARGINS(ctypes.Structure):
-            _fields_ = [("cxLeftWidth", ctypes.c_int),
-                        ("cxRightWidth", ctypes.c_int),
-                        ("cyTopHeight", ctypes.c_int),
-                        ("cyBottomHeight", ctypes.c_int)]
+            _fields_ = [
+                ("cxLeftWidth", ctypes.c_int),
+                ("cxRightWidth", ctypes.c_int),
+                ("cyTopHeight", ctypes.c_int),
+                ("cyBottomHeight", ctypes.c_int),
+            ]
+
         margins = _MARGINS(-1, -1, -1, -1)
         ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(
-            ctypes.c_void_p(hwnd), ctypes.byref(margins))
+            ctypes.c_void_p(hwnd), ctypes.byref(margins)
+        )
     except Exception:
         pass
 
@@ -176,15 +178,14 @@ def apply_rounded_corners(window, radius=12):
     try:
         import ctypes
         from ctypes import wintypes
+
         dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
         DWMWA_WINDOW_CORNER_PREFERENCE = 33
         # 1 = square, 2 = round small, 3 = round medium(default)
         preference = wintypes.DWORD(2)
         hwnd = window.winfo_id()
-        try:
+        with contextlib.suppress(Exception):
             hwnd = ctypes.windll.user32.GetParent(hwnd) or hwnd
-        except Exception:
-            pass
         res = dwmapi.DwmSetWindowAttribute(
             wintypes.HWND(hwnd),
             wintypes.DWORD(DWMWA_WINDOW_CORNER_PREFERENCE),
@@ -202,8 +203,6 @@ def apply_dialog_translucency(window, theme="light"):
     Диалоги обычно должны оставаться читаемыми, поэтому применяем только
     тонкое alpha + скругление углов, без полного acrylic.
     """
-    try:
-        window.attributes('-alpha', 0.98)
-    except Exception:
-        pass
+    with contextlib.suppress(Exception):
+        window.attributes("-alpha", 0.98)
     apply_rounded_corners(window, radius=10)

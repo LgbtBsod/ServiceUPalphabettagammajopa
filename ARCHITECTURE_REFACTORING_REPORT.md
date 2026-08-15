@@ -34,17 +34,16 @@
 ```python
 from core.events import EventBus, Event, on_event, get_event_bus
 
+
 # Подписка через декоратор
 @on_event("order.created", priority=EventPriority.HIGH)
 def handle_order_created(event: Event):
     print(f"Order created: {event.data}")
 
+
 # Публикация
 event_bus = get_event_bus()
-event_bus.publish(Event(
-    event_type="order.created",
-    data={"order_id": 123}
-))
+event_bus.publish(Event(event_type="order.created", data={"order_id": 123}))
 ```
 
 ---
@@ -79,6 +78,7 @@ order_service = container.resolve(OrderService)
 
 # Автоматическое создание
 order_service = container.create(OrderServiceImpl)
+
 
 # Декоратор
 @inject
@@ -238,18 +238,23 @@ from infrastructure.cache import MemoryCache
 container = DIContainer()
 
 # 2. Регистрация зависимостей
-container.register_singleton(DatabaseConnection, lambda c: DatabaseConnection("./data.db"))
+container.register_singleton(
+    DatabaseConnection, lambda c: DatabaseConnection("./data.db")
+)
 container.register_singleton(MemoryCache, lambda c: MemoryCache())
 container.register_transient(OrderRepository)
+
 
 # 3. Подписка на события
 @on_event("order.created")
 def send_notification(event: Event):
     print(f"Sending notification for order {event.data['order_id']}")
 
+
 @on_event("order.completed")
 def update_analytics(event: Event):
     print(f"Updating analytics for order {event.data['order_id']}")
+
 
 # 4. Использование
 db_conn = container.resolve(DatabaseConnection)
@@ -260,10 +265,7 @@ order = order_repo.get_by_id(1)
 
 # Публикация события
 event_bus = get_event_bus()
-event_bus.publish(Event(
-    event_type="order.created",
-    data={"order_id": order.id}
-))
+event_bus.publish(Event(event_type="order.created", data={"order_id": order.id}))
 ```
 
 ---

@@ -1,5 +1,4 @@
-"""
-Аналитика обращений к данным (Data Access Analytics)
+"""Аналитика обращений к данным (Data Access Analytics)
 
 Отслеживает все обращения к DataAccessManager:
 - Кто вызывает (ядро, плагины, модули)
@@ -12,15 +11,15 @@
 """
 
 from .db_access_analytics import (
-    DataAccessMetric,
     DataAccessAnalytics,
+    DataAccessMetric,
     get_analytics,
-    track_db_access
+    track_db_access,
 )
 
 __all__ = [
-    'DataAccessMetric',
-    'DataAccessAnalytics',
-    'get_analytics',
-    'track_db_access'
+    "DataAccessAnalytics",
+    "DataAccessMetric",
+    "get_analytics",
+    "track_db_access",
 ]

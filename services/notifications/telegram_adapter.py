@@ -1,6 +1,13 @@
 """Telegram Bot API Adapter"""
-from .notification_service import NotificationMessage, NotificationResult, NotificationChannel
+
 import httpx
+
+from .notification_service import (
+    NotificationChannel,
+    NotificationMessage,
+    NotificationResult,
+)
+
 
 class TelegramAdapter:
     """Telegram Bot API adapter"""
@@ -24,7 +31,7 @@ class TelegramAdapter:
                 )
                 response.raise_for_status()
                 data = response.json()
-                
+
                 if data.get("ok"):
                     return NotificationResult(
                         success=True,

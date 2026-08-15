@@ -1,5 +1,4 @@
-"""
-Module Call Wrapper - Пример файла-обертки для модуля
+"""Module Call Wrapper - Пример файла-обертки для модуля
 
 Этот файл демонстрирует паттерн file-wrapper для модульной архитектуры v24.2:
 1. Файл-обертка импортирует всё из реализации (plugins/* или modules/*_impl)
@@ -20,11 +19,11 @@ Module Call Wrapper - Пример файла-обертки для модуля
 
 3. В plugins/myfeature/__init__.py:
    from core.module_registry import ModuleBase
-   
+
    class MyFeatureModule(ModuleBase):
        name = "myfeature"
        version = "1.0.0"
-       
+
        def on_init(self):
            self.log.info(f"{self.name} initialized")
 
@@ -37,4 +36,3 @@ Module Call Wrapper - Пример файла-обертки для модуля
 # Для создания модуля следуйте инструкции выше
 
 __all__ = []  # Пустой список, так как это только пример
-

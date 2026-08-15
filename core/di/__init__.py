@@ -1,33 +1,32 @@
-"""
-Core DI Module.
+"""Core DI Module.
 
 Система внедрения зависимостей (Dependency Injection).
 """
 
 from core.di.container import (
+    CircularDependencyError,
     DIContainer,
     DIScope,
-    ServiceLifetime,
-    ServiceDescriptor,
     ResolutionError,
-    CircularDependencyError,
+    ServiceDescriptor,
+    ServiceLifetime,
     ServiceNotFoundError,
-    get_container,
-    reset_container,
-    inject,
     auto_wire,
+    get_container,
+    inject,
+    reset_container,
 )
 
 __all__ = [
+    "CircularDependencyError",
     "DIContainer",
     "DIScope",
-    "ServiceLifetime",
-    "ServiceDescriptor",
     "ResolutionError",
-    "CircularDependencyError",
+    "ServiceDescriptor",
+    "ServiceLifetime",
     "ServiceNotFoundError",
-    "get_container",
-    "reset_container",
-    "inject",
     "auto_wire",
+    "get_container",
+    "inject",
+    "reset_container",
 ]

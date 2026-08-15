@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """Модели данных"""
 
 import json
+import logging
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_price_to_float(price) -> float:
@@ -13,16 +15,16 @@ def _safe_price_to_float(price) -> float:
     if price is None or price == "":
         return 0.0
     try:
-        cleaned = str(price).replace('\u00a0', ' ').replace(',', '.')
-        chars = [c for c in cleaned if c.isdigit() or c == '.']
+        cleaned = str(price).replace("\u00a0", " ").replace(",", ".")
+        chars = [c for c in cleaned if c.isdigit() or c == "."]
         if not chars:
             return 0.0
-        s = ''.join(chars)
-        if s.count('.') > 1:
-            parts = s.split('.')
-            s = parts[0] + '.' + ''.join(parts[1:])
+        s = "".join(chars)
+        if s.count(".") > 1:
+            parts = s.split(".")
+            s = parts[0] + "." + "".join(parts[1:])
         return float(s)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return 0.0
 
 
@@ -36,16 +38,17 @@ def _safe_int(value, default=1) -> int:
         return value
     try:
         return int(str(value).strip())
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         try:
             return int(float(str(value).strip()))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return default
 
 
 @dataclass
 class WorkItem:
     """Модель выполненной работы"""
+
     description: str = ""
     price: str = ""
     quantity: int = 1
@@ -56,28 +59,29 @@ class WorkItem:
         qty = _safe_int(self.quantity, 1)
         return price_val * qty
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Преобразование в словарь"""
         return {
-            'description': self.description,
-            'price': self.price,
-            'quantity': _safe_int(self.quantity, 1)
+            "description": self.description,
+            "price": self.price,
+            "quantity": _safe_int(self.quantity, 1),
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'WorkItem':
+    def from_dict(cls, data: dict[str, Any]) -> WorkItem:
         """Создание из словаря"""
         return cls(
-            description=data.get('description', ''),
-            price=data.get('price', ''),
-            quantity=_safe_int(data.get('quantity', 1), 1)
+            description=data.get("description", ""),
+            price=data.get("price", ""),
+            quantity=_safe_int(data.get("quantity", 1), 1),
         )
 
 
 @dataclass
 class Device:
     """Модель устройства/заказа"""
-    id: Optional[int] = None
+
+    id: int | None = None
     order_number: str = ""
     receipt_date: str = ""
     completion_date: str = ""
@@ -103,72 +107,73 @@ class Device:
     photos: str = ""
     created_at: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Преобразование в словарь"""
         return {
-            'id': self.id,
-            'order_number': self.order_number,
-            'receipt_date': self.receipt_date,
-            'completion_date': self.completion_date,
-            'ready_date': self.ready_date,
-            'device_type': self.device_type,
-            'brand': self.brand,
-            'model': self.model,
-            'serial_number': self.serial_number,
-            'defect': self.defect,
-            'appearance': self.appearance,
-            'completeness': self.completeness,
-            'work_items_json': self.work_items,
-            'client_name': self.client_name,
-            'client_status': self.client_status,
-            'phone': self.phone,
-            'total_price': self.total_price,
-            'prepayment': self.prepayment,
-            'status': self.status,
-            'priority': self.priority,
-            'engineer': self.engineer,
-            'warranty': self.warranty,
-            'notes': self.notes,
-            'photos': self.photos,
-            'created_at': self.created_at
+            "id": self.id,
+            "order_number": self.order_number,
+            "receipt_date": self.receipt_date,
+            "completion_date": self.completion_date,
+            "ready_date": self.ready_date,
+            "device_type": self.device_type,
+            "brand": self.brand,
+            "model": self.model,
+            "serial_number": self.serial_number,
+            "defect": self.defect,
+            "appearance": self.appearance,
+            "completeness": self.completeness,
+            "work_items_json": self.work_items,
+            "client_name": self.client_name,
+            "client_status": self.client_status,
+            "phone": self.phone,
+            "total_price": self.total_price,
+            "prepayment": self.prepayment,
+            "status": self.status,
+            "priority": self.priority,
+            "engineer": self.engineer,
+            "warranty": self.warranty,
+            "notes": self.notes,
+            "photos": self.photos,
+            "created_at": self.created_at,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Device':
+    def from_dict(cls, data: dict[str, Any]) -> Device:
         """Создание из словаря"""
         return cls(
-            id=data.get('id'),
-            order_number=data.get('order_number', ''),
-            receipt_date=data.get('receipt_date', ''),
-            completion_date=data.get('completion_date', ''),
-            ready_date=data.get('ready_date', ''),
-            device_type=data.get('device_type', ''),
-            brand=data.get('brand', ''),
-            model=data.get('model', ''),
-            serial_number=data.get('serial_number', ''),
-            defect=data.get('defect', ''),
-            appearance=data.get('appearance', ''),
-            completeness=data.get('completeness', ''),
-            work_items=data.get('work_items_json', ''),
-            client_name=data.get('client_name', ''),
-            client_status=data.get('client_status', 'Новый'),
-            phone=data.get('phone', ''),
-            total_price=data.get('total_price', ''),
-            prepayment=data.get('prepayment', ''),
-            status=data.get('status', 'Диагностика'),
-            priority=data.get('priority', 'Обычный'),
-            engineer=data.get('engineer', ''),
-            warranty=data.get('warranty', ''),
-            notes=data.get('notes', ''),
-            photos=data.get('photos', ''),
-            created_at=data.get('created_at', '')
+            id=data.get("id"),
+            order_number=data.get("order_number", ""),
+            receipt_date=data.get("receipt_date", ""),
+            completion_date=data.get("completion_date", ""),
+            ready_date=data.get("ready_date", ""),
+            device_type=data.get("device_type", ""),
+            brand=data.get("brand", ""),
+            model=data.get("model", ""),
+            serial_number=data.get("serial_number", ""),
+            defect=data.get("defect", ""),
+            appearance=data.get("appearance", ""),
+            completeness=data.get("completeness", ""),
+            work_items=data.get("work_items_json", ""),
+            client_name=data.get("client_name", ""),
+            client_status=data.get("client_status", "Новый"),
+            phone=data.get("phone", ""),
+            total_price=data.get("total_price", ""),
+            prepayment=data.get("prepayment", ""),
+            status=data.get("status", "Диагностика"),
+            priority=data.get("priority", "Обычный"),
+            engineer=data.get("engineer", ""),
+            warranty=data.get("warranty", ""),
+            notes=data.get("notes", ""),
+            photos=data.get("photos", ""),
+            created_at=data.get("created_at", ""),
         )
 
 
 @dataclass
 class WorkItemsManager:
     """Менеджер для работы с работами"""
-    items: List[WorkItem] = field(default_factory=list)
+
+    items: list[WorkItem] = field(default_factory=list)
 
     def add_item(self, item: WorkItem) -> None:
         """Добавление работы"""
@@ -219,4 +224,4 @@ class WorkItemsManager:
             for item_data in items_data:
                 self.add_item(WorkItem.from_dict(item_data))
         except (ValueError, TypeError) as e:
-            logger.error(f"Ошибка разбора работ: {e}")
+            logger.exception(f"Ошибка разбора работ: {e}")
