@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """Автоматически скрывающиеся скроллбары для ttk.Treeview и других виджетов.
 
@@ -15,6 +14,7 @@
     # для контейнера нужно как обычно (tree в (0,0), vsb в (0,1), hsb в (1,0)).
 """
 
+import contextlib
 from tkinter import ttk
 
 
@@ -24,6 +24,7 @@ def _make_visibility_checker(scrollbar, widget, orient):
     Для vertical: если вся высота контента <= высоты виджета — скрываем.
     Для horizontal: аналогично по ширине.
     """
+
     def check(*_args):
         try:
             if orient == "vertical":
@@ -43,6 +44,7 @@ def _make_visibility_checker(scrollbar, widget, orient):
         except Exception:
             # Виджет мог быть уничтожен
             pass
+
     return check
 
 
@@ -59,8 +61,18 @@ def attach_auto_scrollbars(parent, widget, row=0, column=0):
     """
     vsb = ttk.Scrollbar(parent, orient="vertical", command=widget.yview)
     hsb = ttk.Scrollbar(parent, orient="horizontal", command=widget.xview)
-    widget.configure(yscrollcommand=lambda f, l: (_on_scroll(vsb, f, l), vsb.event_generate("<<AutoScrollCheck>>")))
-    widget.configure(xscrollcommand=lambda f, l: (_on_scroll(hsb, f, l), hsb.event_generate("<<AutoScrollCheck>>")))
+    widget.configure(
+        yscrollcommand=lambda f, l: (
+            _on_scroll(vsb, f, l),
+            vsb.event_generate("<<AutoScrollCheck>>"),
+        )
+    )
+    widget.configure(
+        xscrollcommand=lambda f, l: (
+            _on_scroll(hsb, f, l),
+            hsb.event_generate("<<AutoScrollCheck>>"),
+        )
+    )
 
     widget.grid(row=row, column=column, sticky="nsew")
     vsb.grid(row=row, column=column + 1, sticky="ns")
@@ -73,10 +85,8 @@ def attach_auto_scrollbars(parent, widget, row=0, column=0):
     widget.bind("<<AutoScrollCheck>>", lambda e: (check_v(), check_h()), add="+")
     widget.bind("<Configure>", lambda e: (check_v(), check_h()), add="+")
     # Привязка событий Treeview на добавление/удаление строк
-    try:
+    with contextlib.suppress(Exception):
         widget.bind("<<TreeviewSelect>>", lambda e: (check_v(), check_h()), add="+")
-    except Exception:
-        pass
     # Периодическая проверка (ловит программные изменения содержимого)
     _schedule_periodic_check(widget, check_v, check_h)
 
@@ -87,10 +97,8 @@ def attach_auto_scrollbars(parent, widget, row=0, column=0):
 
 def _on_scroll(scrollbar, first, last):
     """Проксирует set() скроллбару."""
-    try:
+    with contextlib.suppress(Exception):
         scrollbar.set(first, last)
-    except Exception:
-        pass
 
 
 def _schedule_periodic_check(widget, check_v, check_h, interval_ms=800):
@@ -99,6 +107,7 @@ def _schedule_periodic_check(widget, check_v, check_h, interval_ms=800):
     Это надёжно ловит программные вставки/удаления строк, которые не дают
     событий <Configure>. Планирует сам себя, пока виджет существует.
     """
+
     def tick():
         try:
             if not widget.winfo_exists():
@@ -108,4 +117,5 @@ def _schedule_periodic_check(widget, check_v, check_h, interval_ms=800):
             widget.after(interval_ms, tick)
         except Exception:
             pass
+
     widget.after(interval_ms, tick)

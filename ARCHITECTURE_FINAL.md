@@ -22,13 +22,15 @@ from infrastructure.db_access import (
     Query,
 )
 
+
 # Пример использования через CQRS
 class GetOrderById(Query):
     def __init__(self, order_id: int):
         self.order_id = order_id
-    
+
     def execute(self, session):
         return session.query(Order).filter(Order.id == self.order_id).first()
+
 
 # Выполнение запроса
 result = db_execute_query(GetOrderById(123))
@@ -61,18 +63,18 @@ from infrastructure.analytics import (
 
 # Получение метрик дашборда
 service = get_analytics_service()
-metrics = service.get_dashboard_metrics(filters={'status': 'active'})
+metrics = service.get_dashboard_metrics(filters={"status": "active"})
 
 # Генерация отчёта в отдельном потоке
 future = service.generate_report(
-    report_type='revenue',
+    report_type="revenue",
     period_start=datetime(2025, 1, 1),
     period_end=datetime.now(),
 )
 
 report = future.result()
 json_output = report.to_json()
-report.save_to_file('reports/revenue.json')
+report.save_to_file("reports/revenue.json")
 ```
 
 **Принципы:**
@@ -130,16 +132,20 @@ from core.events import Event, get_event_bus, on_event, async_on_event
 
 # Публикация события
 event_bus = get_event_bus()
-event_bus.publish(Event(
-    event_type="order.created",
-    source="order_service",
-    data={'order_id': 123},
-))
+event_bus.publish(
+    Event(
+        event_type="order.created",
+        source="order_service",
+        data={"order_id": 123},
+    )
+)
+
 
 # Синхронная подписка
 @on_event("order.created")
 def handle_order_created(event: Event):
     print(f"Order created: {event.data['order_id']}")
+
 
 # Асинхронная подписка
 @async_on_event("order.completed", priority=100)
@@ -169,6 +175,7 @@ container.register_singleton(DatabaseConnection)
 container.register_transient(ClientRepository)
 container.register_instance(ConfigService())
 
+
 # Автоматическое разрешение
 @auto_wire
 class OrderService(BaseService):
@@ -179,6 +186,7 @@ class OrderService(BaseService):
         config: ConfigService,
     ):
         super().__init__()
+
 
 # Использование
 service = container.resolve(OrderService)
@@ -260,17 +268,19 @@ from infrastructure.analytics import get_analytics_service
 from gui.threading import run_in_db_thread, run_in_pdf_thread
 from core.events import Event, get_event_bus
 
+
 class CreateOrderCommand(Command):
     def __init__(self, client_id: int, device_data: dict):
         self.client_id = client_id
         self.device_data = device_data
-    
+
     def execute(self, session):
         # Создаём заказ через SQLAlchemy ORM
         order = Order(client_id=self.client_id, **self.device_data)
         session.add(order)
         session.flush()
         return order.id
+
 
 # 1. Выполняем команду в DB потоке
 future = run_in_db_thread(
@@ -280,24 +290,20 @@ order_id = future.result()
 
 # 2. Публикуем событие
 event_bus = get_event_bus()
-event_bus.publish(Event(
-    event_type="order.created",
-    source="order_service",
-    data={'order_id': order_id},
-))
+event_bus.publish(
+    Event(
+        event_type="order.created",
+        source="order_service",
+        data={"order_id": order_id},
+    )
+)
 
 # 3. Генерируем PDF в отдельном потоке
-pdf_future = run_in_pdf_thread(
-    generate_order_pdf,
-    order_id
-)
+pdf_future = run_in_pdf_thread(generate_order_pdf, order_id)
 
 # 4. Обновляем дашборд в UI потоке
 analytics = get_analytics_service()
-run_in_ui_thread(
-    update_dashboard,
-    analytics.get_dashboard_metrics()
-)
+run_in_ui_thread(update_dashboard, analytics.get_dashboard_metrics())
 ```
 
 ---

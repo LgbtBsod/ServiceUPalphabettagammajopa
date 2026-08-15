@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """Функции форматирования данных"""
 
 import re
 from datetime import datetime
 
-
-_PHONE_DIGITS_RE = re.compile(r'\D')
+_PHONE_DIGITS_RE = re.compile(r"\D")
 
 
 def normalize_phone_digits(phone) -> str:
@@ -19,7 +17,7 @@ def normalize_phone_digits(phone) -> str:
     """
     if phone is None:
         return ""
-    return _PHONE_DIGITS_RE.sub('', str(phone))
+    return _PHONE_DIGITS_RE.sub("", str(phone))
 
 
 def normalize_phone(phone) -> str:
@@ -35,11 +33,11 @@ def normalize_phone(phone) -> str:
     if not digits:
         return ""
     # Нормализуем к 11 цифрам с кодом страны
-    if len(digits) == 11 and digits[0] in ('7', '8'):
-        digits = '7' + digits[1:]
+    if len(digits) == 11 and digits[0] in ("7", "8"):
+        digits = "7" + digits[1:]
     elif len(digits) == 10:
-        digits = '7' + digits
-    if len(digits) == 11 and digits[0] == '7':
+        digits = "7" + digits
+    if len(digits) == 11 and digits[0] == "7":
         return f"+7 ({digits[1:4]}) {digits[4:7]}-{digits[7:9]}-{digits[9:11]}"
     # Неизвестный формат — возвращаем очищенные цифры как есть
     return digits
@@ -51,7 +49,9 @@ def format_phone(phone):
         return ""
     digits = normalize_phone_digits(phone)
     if len(digits) == 11:
-        return f"+{digits[0]} ({digits[1:4]}) {digits[4:7]}-{digits[7:9]}-{digits[9:11]}"
+        return (
+            f"+{digits[0]} ({digits[1:4]}) {digits[4:7]}-{digits[7:9]}-{digits[9:11]}"
+        )
     if len(digits) == 10:
         return f"+7 ({digits[0:3]}) {digits[3:6]}-{digits[6:8]}-{digits[8:10]}"
     return str(phone)
@@ -62,12 +62,12 @@ def format_price(price):
     if price is None or price == "":
         return "0 ₽"
     try:
-        price_str = re.sub(r'[^\d,.]', '', str(price)).replace(',', '.')
+        price_str = re.sub(r"[^\d,.]", "", str(price)).replace(",", ".")
         price_val = float(price_str)
         # Используем NBSP (\u00a0) как разделитель тысяч — единый формат
         # во всём приложении, чтобы сортировка/парсинг были согласованы.
-        return f"{price_val:,.2f} ₽".replace(',', ' ').replace('\xa0', ' ')
-    except (ValueError, TypeError):
+        return f"{price_val:,.2f} ₽".replace(",", " ").replace("\xa0", " ")
+    except ValueError, TypeError:
         return f"{price} ₽"
 
 
@@ -76,12 +76,12 @@ def format_date(date_str):
     if not date_str:
         return ""
     try:
-        if ' ' in str(date_str):
+        if " " in str(date_str):
             dt = datetime.strptime(str(date_str)[:19], "%Y-%m-%d %H:%M:%S")
         else:
             dt = datetime.strptime(str(date_str)[:10], "%Y-%m-%d")
         return dt.strftime("%d.%m.%Y")
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         try:
             return str(date_str)[:10]
         except Exception:
@@ -97,14 +97,14 @@ def parse_price_to_float(price) -> float:
     if price is None or price == "":
         return 0.0
     try:
-        cleaned = str(price).replace('\u00a0', ' ').replace('\xa0', ' ')
-        cleaned = re.sub(r'[^\d,.]', '', cleaned).replace(',', '.')
+        cleaned = str(price).replace("\u00a0", " ").replace("\xa0", " ")
+        cleaned = re.sub(r"[^\d,.]", "", cleaned).replace(",", ".")
         # Если осталось несколько точек — оставляем первую как десятичную
-        if cleaned.count('.') > 1:
-            parts = cleaned.split('.')
-            cleaned = parts[0] + '.' + ''.join(parts[1:])
+        if cleaned.count(".") > 1:
+            parts = cleaned.split(".")
+            cleaned = parts[0] + "." + "".join(parts[1:])
         return float(cleaned)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return 0.0
 
 
@@ -112,7 +112,7 @@ def format_order_number_for_display(order_number):
     """Форматирование номера заказа для отображения"""
     try:
         return str(int(order_number))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return str(order_number)
 
 
@@ -121,7 +121,7 @@ def format_order_number_for_db(order_number):
     try:
         num = int(order_number)
         return f"{num:05d}"
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return str(order_number)
 
 
@@ -137,11 +137,11 @@ def get_days_since_receipt(receipt_date):
             return 0
         if isinstance(receipt_date, datetime):
             dt = receipt_date
-        elif ' ' in str(receipt_date):
+        elif " " in str(receipt_date):
             dt = datetime.strptime(str(receipt_date)[:19], "%Y-%m-%d %H:%M:%S")
         else:
             dt = datetime.strptime(str(receipt_date)[:10], "%Y-%m-%d")
         delta = datetime.now() - dt
         return delta.days
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return 0

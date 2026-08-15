@@ -3,7 +3,7 @@
 from .order_machine import OrderStateMachine, OrderStatus, StateTransition
 
 __all__ = [
-    'OrderStateMachine',
-    'OrderStatus',
-    'StateTransition',
+    "OrderStateMachine",
+    "OrderStatus",
+    "StateTransition",
 ]

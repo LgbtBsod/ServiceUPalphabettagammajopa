@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """Менеджер лицензий: триал 14 дней + активация ключом по HWID.
 
@@ -14,26 +13,25 @@
 нельзя подделать без секретного ключа.
 """
 
-import os
-import json
-import hmac
 import hashlib
+import hmac
+import json
 import logging
-from datetime import datetime, timedelta
-from typing import Optional
+import os
+import sys
+from datetime import datetime
 
-from config import BASE_DIR
-from utils.hardware import get_hwid, get_hwid_short
+from config import BASE_DIR, LICENSE_SECRET_KEY as SECRET_KEY
+from utils.hardware import get_hwid
 
 logger = logging.getLogger(__name__)
 
 # Секретный ключ для HMAC — вынесен в config.py для централизованного управления
 # ВАЖНО: не меняйте после первой активации клиентов!
-from config import LICENSE_SECRET_KEY as SECRET_KEY
 
 TRIAL_DAYS = 14
-REG_KEY_PATH = r'SOFTWARE\ServiceUP'
-LICENSE_FILE = os.path.join(BASE_DIR, '.license')
+REG_KEY_PATH = r"SOFTWARE\ServiceUP"
+LICENSE_FILE = os.path.join(BASE_DIR, ".license")
 
 
 def _generate_license_key(hwid: str) -> str:
@@ -41,7 +39,7 @@ def _generate_license_key(hwid: str) -> str:
 
     Это тот же алгоритм, что в keygen.py — ключ проверяется локально.
     """
-    msg = hwid.replace('-', '').upper().encode('utf-8')
+    msg = hwid.replace("-", "").upper().encode("utf-8")
     digest = hmac.new(SECRET_KEY, msg, hashlib.sha256).hexdigest()
     # Берём 16 символов, форматируем XXXX-XXXX-XXXX-XXXX
     short = digest[:16].upper()
@@ -50,7 +48,7 @@ def _generate_license_key(hwid: str) -> str:
 
 def _compute_checksum(data: str) -> str:
     """Контрольная сумма для проверки целостности данных."""
-    return hmac.new(SECRET_KEY, data.encode('utf-8'), hashlib.md5).hexdigest()
+    return hmac.new(SECRET_KEY, data.encode("utf-8"), hashlib.md5).hexdigest()
 
 
 class LicenseManager:
@@ -63,31 +61,34 @@ class LicenseManager:
     # Реестр Windows (двойное хранение даты старта триала)
     # ------------------------------------------------------------------
 
-    def _reg_read(self, name: str) -> Optional[str]:
+    def _reg_read(self, name: str) -> str | None:
         """Читает значение из реестра Windows."""
         import sys
-        if sys.platform != 'win32':
+
+        if sys.platform != "win32":
             return None
         try:
             import winreg
+
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, REG_KEY_PATH) as key:
                 val, _ = winreg.QueryValueEx(key, name)
                 return str(val)
-        except (FileNotFoundError, OSError, PermissionError):
+        except FileNotFoundError, OSError, PermissionError:
             try:
                 # Пробуем HKCU (без прав админа)
                 import winreg
+
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_KEY_PATH) as key:
                     val, _ = winreg.QueryValueEx(key, name)
                     return str(val)
-            except (FileNotFoundError, OSError):
+            except FileNotFoundError, OSError:
                 return None
         except Exception:
             return None
 
     def _reg_write(self, name: str, value: str) -> bool:
         """Записывает значение в реестр Windows."""
-        if sys.platform != 'win32':
+        if sys.platform != "win32":
             return False
         try:
             import winreg
@@ -99,7 +100,7 @@ class LicenseManager:
                 with winreg.CreateKeyEx(root, REG_KEY_PATH, 0, winreg.KEY_WRITE) as key:
                     winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
                 return True
-            except (PermissionError, OSError):
+            except PermissionError, OSError:
                 continue
             except Exception:
                 continue
@@ -109,15 +110,15 @@ class LicenseManager:
     # Файл лицензии
     # ------------------------------------------------------------------
 
-    def _read_license_file(self) -> Optional[dict]:
+    def _read_license_file(self) -> dict | None:
         """Читает файл .license с проверкой HMAC."""
         try:
             if not os.path.exists(LICENSE_FILE):
                 return None
-            with open(LICENSE_FILE, 'r', encoding='utf-8') as f:
+            with open(LICENSE_FILE, encoding="utf-8") as f:
                 data = json.load(f)
             # Проверяем подпись
-            signature = data.pop('signature', '')
+            signature = data.pop("signature", "")
             payload = json.dumps(data, sort_keys=True)
             expected = _compute_checksum(payload)
             if not hmac.compare_digest(signature, expected):
@@ -133,14 +134,17 @@ class LicenseManager:
         try:
             payload = json.dumps(data, sort_keys=True)
             data_with_sig = dict(data)
-            data_with_sig['signature'] = _compute_checksum(payload)
-            with open(LICENSE_FILE, 'w', encoding='utf-8') as f:
+            data_with_sig["signature"] = _compute_checksum(payload)
+            with open(LICENSE_FILE, "w", encoding="utf-8") as f:
                 json.dump(data_with_sig, f, indent=2)
             # Скрываем файл на Windows
-            if sys.platform == 'win32':
+            if sys.platform == "win32":
                 try:
                     import ctypes
-                    ctypes.windll.kernel32.SetFileAttributesW(LICENSE_FILE, 0x2)  # FILE_ATTRIBUTE_HIDDEN
+
+                    ctypes.windll.kernel32.SetFileAttributesW(
+                        LICENSE_FILE, 0x2
+                    )  # FILE_ATTRIBUTE_HIDDEN
                 except Exception:
                     pass
             return True
@@ -163,11 +167,11 @@ class LicenseManager:
         """
         # 1. Проверяем активацию
         lic = self._read_license_file()
-        if lic and lic.get('activated') and lic.get('hwid') == self.hwid:
+        if lic and lic.get("activated") and lic.get("hwid") == self.hwid:
             # Проверяем ключ
-            stored_key = lic.get('key', '')
+            stored_key = lic.get("key", "")
             if stored_key and stored_key == _generate_license_key(self.hwid):
-                return 'activated'
+                return "activated"
 
         # 2. Проверяем триал
         trial_start = self._get_trial_start()
@@ -176,7 +180,7 @@ class LicenseManager:
             # Первый запуск — начинаем триал
             now = datetime.now()
             self._set_trial_start(now)
-            return 'trial_active'
+            return "trial_active"
 
         # Вычисляем оставшиеся дни
         now = datetime.now()
@@ -185,14 +189,14 @@ class LicenseManager:
         # Защита от отката даты
         last_seen = self._get_last_seen_date()
         if last_seen and now < last_seen:
-            return 'corrupted'
+            return "corrupted"
 
         self._set_last_seen_date(now)
 
         if days_passed < TRIAL_DAYS:
-            return 'trial_active'
+            return "trial_active"
         else:
-            return 'trial_expired'
+            return "trial_expired"
 
     def get_trial_days_left(self) -> int:
         """Возвращает количество оставшихся дней триала (0 если истёк)."""
@@ -213,15 +217,15 @@ class LicenseManager:
         expected_key = _generate_license_key(self.hwid)
         if hmac.compare_digest(key, expected_key):
             data = {
-                'activated': True,
-                'hwid': self.hwid,
-                'key': expected_key,
-                'activated_at': datetime.now().isoformat(),
+                "activated": True,
+                "hwid": self.hwid,
+                "key": expected_key,
+                "activated_at": datetime.now().isoformat(),
             }
             self._write_license_file(data)
             # Записываем в реестр тоже
-            self._reg_write('license_key', expected_key)
-            self._reg_write('hwid', self.hwid)
+            self._reg_write("license_key", expected_key)
+            self._reg_write("hwid", self.hwid)
             return True
         return False
 
@@ -231,7 +235,7 @@ class LicenseManager:
 
     def is_activated(self) -> bool:
         """Быстрая проверка — активирована ли лицензия."""
-        return self.check_license() == 'activated'
+        return self.check_license() == "activated"
 
     def deactivate(self) -> bool:
         """Деактивирует лицензию (удаляет файл)."""
@@ -246,22 +250,22 @@ class LicenseManager:
     # Внутренние методы для дат
     # ------------------------------------------------------------------
 
-    def _get_trial_start(self) -> Optional[datetime]:
+    def _get_trial_start(self) -> datetime | None:
         """Получает дату старта триала (из файла или реестра)."""
         # Из файла
         lic = self._read_license_file()
-        if lic and lic.get('trial_start'):
+        if lic and lic.get("trial_start"):
             try:
-                return datetime.fromisoformat(lic['trial_start'])
-            except (ValueError, TypeError):
+                return datetime.fromisoformat(lic["trial_start"])
+            except ValueError, TypeError:
                 pass
 
         # Из реестра
-        reg_val = self._reg_read('trial_start')
+        reg_val = self._reg_read("trial_start")
         if reg_val:
             try:
                 return datetime.fromisoformat(reg_val)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 pass
 
         return None
@@ -270,38 +274,36 @@ class LicenseManager:
         """Сохраняет дату старта триала."""
         dt_str = dt.isoformat()
         # В реестр
-        self._reg_write('trial_start', dt_str)
+        self._reg_write("trial_start", dt_str)
         # В файл
         lic = self._read_license_file() or {}
-        lic['trial_start'] = dt_str
-        lic['hwid'] = self.hwid
+        lic["trial_start"] = dt_str
+        lic["hwid"] = self.hwid
         self._write_license_file(lic)
 
-    def _get_last_seen_date(self) -> Optional[datetime]:
+    def _get_last_seen_date(self) -> datetime | None:
         """Получает дату последнего запуска (для обнаружения отката)."""
         lic = self._read_license_file()
-        if lic and lic.get('last_seen'):
+        if lic and lic.get("last_seen"):
             try:
-                return datetime.fromisoformat(lic['last_seen'])
-            except (ValueError, TypeError):
+                return datetime.fromisoformat(lic["last_seen"])
+            except ValueError, TypeError:
                 pass
-        reg_val = self._reg_read('last_seen')
+        reg_val = self._reg_read("last_seen")
         if reg_val:
             try:
                 return datetime.fromisoformat(reg_val)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 pass
         return None
 
     def _set_last_seen_date(self, dt: datetime) -> None:
         """Сохраняет дату последнего запуска."""
         dt_str = dt.isoformat()
-        self._reg_write('last_seen', dt_str)
+        self._reg_write("last_seen", dt_str)
         lic = self._read_license_file() or {}
-        lic['last_seen'] = dt_str
-        lic['hwid'] = self.hwid
+        lic["last_seen"] = dt_str
+        lic["hwid"] = self.hwid
         self._write_license_file(lic)
 
 
-# Импорт sys для использования в методах
-import sys

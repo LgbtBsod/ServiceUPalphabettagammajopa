@@ -1,0 +1,117 @@
+# Ruff configuration for Python 3.14 - Clean Architecture & Best Practices
+target-version = "py314"
+
+[lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings  
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+    "DTZ",    # flake8-datetimez
+    "BLE",    # flake8-blind-except
+    "TRY",    # tryceratops
+    "G",      # flake8-logging-format
+    "S",      # flake8-bandit (security)
+    "RUF",    # Ruff-specific rules
+    "PL",     # Pylint
+    "PERF",   # Perflint
+    "N",      # pep8-naming
+]
+
+ignore = [
+    # === CLEAN CODE - допустимые исключения для русскоязычного проекта ===
+    "RUF001",  # ambiguous-unicode-character-string (кириллица в логах/сообщениях OK)
+    "RUF002",  # ambiguous-unicode-character-docstring (кириллица в доках OK)
+    "RUF003",  # ambiguous-unicode-character-comment (кириллица в комментах OK)
+    "G004",    # logging-f-string (f-strings читаемее для сложных логов)
+    
+    # === SRP/SOLID - требуют ручного рефакторинга, не блокируют ===
+    "PLR0915", # too-many-statements (требует выделения методов)
+    "PLR0917", # too-many-positional-arguments (требует dataclasses/NamedTuple)
+    "PLR0912", # too-many-branches (требует Strategy/State паттернов)
+    "PLR0911", # too-many-return-statements (требует упрощения логики)
+    "PLR0913", # too-many-arguments (требует введения параметров объектов)
+    "PLR2004", # magic-value-comparison (требует вынесения в константы)
+    
+    # === DRY - допустимые исключения ===
+    "PLW0603", # global-statement (синглтоны для legacy совместимости)
+    "E501",    # line-too-long (длинные строки с кириллицей)
+    
+    # === Architecture - platform specific ===
+    "PLC0415", # import-outside-top-level (platform-specific импорты внутри функций)
+    
+    # === Error Handling - обоснованные исключения ===
+    "BLE001",  # blind-except (допустимо в UI коде и wrapper функциях)
+    "TRY300",  # try-consider-else (не всегда применимо по смыслу)
+    "TRY003",  # raise-vanilla-args (кириллица в сообщениях об ошибках OK)
+    "TRY401",  # verbose-log-message (exc_info дублирует текст ошибки)
+    "G201",    # logging-exc-info (.exception() не всегда уместно)
+    "S101",    # assert (допустим в тестах и preconditions)
+    "S110",    # try-except-pass (игнорирование не критичных ошибок)
+    "S112",    # try-except-continue (игнорирование ошибок в циклах)
+    
+    # === Timezone - legacy code требует постепенного обновления ===
+    "DTZ005",  # call-datetime-now-without-tzinfo (legacy код)
+    "DTZ007",  # call-datetime-strptime-without-zone (legacy код)
+    "DTZ011",  # call-date-today (legacy код)
+    "DTZ003",  # call-datetime-utcnow (legacy код)
+    "DTZ006",  # call-datetime-fromtimestamp (legacy код)
+    
+    # === Performance - допустимые компромиссы ===
+    "PERF401", # manual-list-comprehension (иногда readable важнее)
+    
+    # === Unused arguments - допустимые случаи (interface compatibility) ===
+    "ARG001",  # unused-function-argument (интерфейсы/переопределения)
+    "ARG002",  # unused-method-argument (интерфейсы/переопределения)
+    "ARG004",  # unused-static-method-argument (utility функции)
+    "ARG005",  # unused-lambda-argument (callback сигнатуры)
+    
+    # === Security - допустимые исключения для internal tools ===
+    "S603",    # subprocess-without-shell-equals-true (internal tools)
+    "S606",    # start-process-with-no-shell (internal tools)
+    "S607",    # start-process-with-partial-path (internal tools)
+    "S608",    # hardcoded-sql-expression (ORM queries)
+    "S104",    # hardcoded-bind-all-interfaces (dev/staging only)
+    "S324",    # hashlib-insecure-hash-function (non-crypto usage)
+    
+    # === Other ===
+    "B904",    # raise-without-from-inside-except (custom exception handling)
+    "E741",    # ambiguous-variable-name (i,l,o в циклах допустимы)
+    "N806",    # non-lowercase-variable-in-function (константы внутри функций OK)
+    "RUF012",  # mutable-class-default (ClassVar для конфигурации)
+    "RUF034",  # useless-if-else (читаемость кода)
+    "SIM102",  # collapsible-if (читаемость вложенных условий)
+    "SIM117",  # multiple-with-statements (читаемость nested context)
+    "TRY301",  # raise-within-try (выделение методов не всегда уместно)
+    "B019",    # cached-instance-method (кэширование методов допустимо)
+    "B024",    # abstract-base-class-without-abstract-method (marker interfaces)
+    "PLC0105", # type-name-incorrect-variance (covariance в generics)
+    "PLW0127", # self-assigning-variable (алиасы для читаемости)
+    "PLW1510", # subprocess-run-without-check (expected failures)
+    "PLW2901", # redefined-loop-name (intentional shadowing)
+    "RUF005",  # collection-literal-concatenation (readability)
+    "RUF006",  # asyncio-dangling-task (fire-and-forget tasks)
+    "F402",    # import-shadowed-by-loop-var (intentional)
+    "N818",    # error-suffix-on-exception-name (custom naming)
+    "UP035",   # deprecated-import (backward compatibility)
+]
+
+[lint.per-file-ignores]
+"**/test_*.py" = ["S101", "ARG", "DTZ"]
+"**/*_test.py" = ["S101", "ARG", "DTZ"]
+"**/tests/**/*.py" = ["S101", "ARG", "DTZ"]
+"**/conftest.py" = ["S101", "ARG", "DTZ"]
+"**/migrations/**/*.py" = ["E501", "S608", "ARG"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[lint.isort]
+known-first-party = ["core", "application", "domain", "infrastructure", "interfaces", "shared", "utils", "services", "models", "managers", "modules", "plugins", "pwa", "reports", "config"]

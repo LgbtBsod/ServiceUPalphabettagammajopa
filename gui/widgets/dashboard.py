@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """Компактный дашборд с аналитикой.
 
@@ -8,9 +7,8 @@
 """
 
 import customtkinter as ctk
-from datetime import datetime, timedelta
 
-from gui.widgets.premium import PremiumCard, PremiumLabel
+from gui.widgets.premium import PremiumCard
 from utils.formatters import get_days_since_receipt
 
 
@@ -34,15 +32,19 @@ class PremiumDashboard(PremiumCard):
 
         # 4 компактных показателя в одну строку
         stats_items = [
-            ("total", "Всего", "📦", self.colors['accent'], False),
-            ("in_repair", "В ремонте", "🔧", self.colors['warning'], False),
-            ("ready", "Готовы", "✅", self.colors['success'], False),
-            ("overdue", "Просроч.", "⏰", self.colors.get('error', '#ff3b30'), True),
+            ("total", "Всего", "📦", self.colors["accent"], False),
+            ("in_repair", "В ремонте", "🔧", self.colors["warning"], False),
+            ("ready", "Готовы", "✅", self.colors["success"], False),
+            ("overdue", "Просроч.", "⏰", self.colors.get("error", "#ff3b30"), True),
         ]
 
         for i, (key, label, icon, color, is_clickable) in enumerate(stats_items):
-            card = ctk.CTkFrame(self.stats_container, fg_color=self.colors['bg_tertiary'],
-                                corner_radius=8, height=44)
+            card = ctk.CTkFrame(
+                self.stats_container,
+                fg_color=self.colors["bg_tertiary"],
+                corner_radius=8,
+                height=44,
+            )
             card.grid(row=0, column=i, padx=3, pady=2, sticky="nsew")
             card.pack_propagate(False)
 
@@ -50,17 +52,25 @@ class PremiumDashboard(PremiumCard):
             inner = ctk.CTkFrame(card, fg_color="transparent")
             inner.pack(expand=True)
 
-            icon_lbl = ctk.CTkLabel(inner, text=icon, font=ctk.CTkFont(size=16),
-                                    text_color=color)
+            icon_lbl = ctk.CTkLabel(
+                inner, text=icon, font=ctk.CTkFont(size=16), text_color=color
+            )
             icon_lbl.pack(side="left", padx=(8, 4))
 
-            value_lbl = ctk.CTkLabel(inner, text="0",
-                                     font=ctk.CTkFont(size=16, weight="bold"),
-                                     text_color=color)
+            value_lbl = ctk.CTkLabel(
+                inner,
+                text="0",
+                font=ctk.CTkFont(size=16, weight="bold"),
+                text_color=color,
+            )
             value_lbl.pack(side="left", padx=(0, 4))
 
-            name_lbl = ctk.CTkLabel(inner, text=label, font=ctk.CTkFont(size=10),
-                                    text_color=self.colors['text_secondary'])
+            name_lbl = ctk.CTkLabel(
+                inner,
+                text=label,
+                font=ctk.CTkFont(size=10),
+                text_color=self.colors["text_secondary"],
+            )
             name_lbl.pack(side="left", padx=(0, 8))
 
             self.stats_cards[key] = value_lbl
@@ -87,7 +97,7 @@ class PremiumDashboard(PremiumCard):
         stats = self.db.get_statistics()
 
         # Стандартные метрики
-        for key in ('total', 'in_repair', 'ready'):
+        for key in ("total", "in_repair", "ready"):
             if key in self.stats_cards:
                 self.stats_cards[key].configure(text=str(stats.get(key, 0)))
 
@@ -95,10 +105,10 @@ class PremiumDashboard(PremiumCard):
         try:
             overdue = 0
             for d in self.db.get_all_devices(include_completed=False):
-                days = get_days_since_receipt(d.get('receipt_date', ''))
+                days = get_days_since_receipt(d.get("receipt_date", ""))
                 if days > 14:
                     overdue += 1
-            if 'overdue' in self.stats_cards:
-                self.stats_cards['overdue'].configure(text=str(overdue))
+            if "overdue" in self.stats_cards:
+                self.stats_cards["overdue"].configure(text=str(overdue))
         except Exception:
             pass

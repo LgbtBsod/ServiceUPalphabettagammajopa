@@ -54,7 +54,7 @@
 # modules/module_myfeature.py
 from plugins.myfeature import MyFeatureModule
 
-__all__ = ['MyFeatureModule']
+__all__ = ["MyFeatureModule"]
 ```
 
 **Важно**: 
@@ -82,24 +82,25 @@ plugins/myfeature/
 ```python
 from core.module_registry import ModuleBase
 
+
 class MyFeatureModule(ModuleBase):
     name = "myfeature"
     version = "1.0.0"
     description = "Модуль моей фичи"
     author = "Ваше Имя"
     dependencies = []  # Зависимости от других модулей
-    
+
     def on_init(self):
         """Вызывается при инициализации модуля"""
         self.log.info(f"{self.name} initialized")
-        
+
     def on_start(self):
         """Вызывается при запуске приложения"""
         self.log.info(f"{self.name} started")
-        
+
         # Получаем сервис из ядра через DI
         my_service = self.get_service("my_service")
-        
+
     def on_stop(self):
         """Вызывается при остановке приложения"""
         self.log.info(f"{self.name} stopped")
@@ -111,24 +112,21 @@ class MyFeatureModule(ModuleBase):
 
 ```python
 class MyFeatureModule(ModuleBase):
-    
     def on_start(self):
         # 1. Логгер (авто-настроен с именем модуля)
         self.log.info("Starting feature")
         self.log.debug("Debug info")
         self.log.error("Error occurred")
-        
+
         # 2. Безопасное выполнение с логированием
         result = self.safe_execute(
-            lambda: self.risky_operation(),
-            default=None,
-            raise_on_error=False
+            lambda: self.risky_operation(), default=None, raise_on_error=False
         )
-        
+
         # 3. Доступ к DI контейнеру
         order_service = self.get_service("order_service")
         client_repo = self.get_repository("client_repository")
-        
+
         # 4. Обработка ошибок модуля
         try:
             self.do_something()
@@ -143,12 +141,16 @@ class MyFeatureModule(ModuleBase):
 ```python
 from core.logging.exceptions import CoreException
 
+
 class MyFeatureError(CoreException):
     """Базовое исключение для модуля myfeature"""
+
     pass
+
 
 class MyFeatureNotFoundError(MyFeatureError):
     """Ресурс не найден"""
+
     pass
 ```
 
@@ -158,12 +160,13 @@ class MyFeatureNotFoundError(MyFeatureError):
 from core.module_registry import ModuleBase
 from .exceptions import MyFeatureError
 
+
 class MyFeatureModule(ModuleBase):
     name = "myfeature"
-    
+
     # Переопределяем базовое исключение
     ModuleError = MyFeatureError
-    
+
     def on_init(self):
         self.log.info("Module initialized with custom exceptions")
 ```
@@ -222,15 +225,17 @@ class MyFeatureModule(ModuleBase):
 ```python
 # modules/module_logger.py
 from plugins.logger import LoggerModule
-__all__ = ['LoggerModule']
+
+__all__ = ["LoggerModule"]
 
 # plugins/logger/__init__.py
 from core.module_registry import ModuleBase
 
+
 class LoggerModule(ModuleBase):
     name = "logger"
     version = "1.0.0"
-    
+
     def on_start(self):
         self.log.info("Logger module started")
 ```
@@ -240,16 +245,21 @@ class LoggerModule(ModuleBase):
 ```python
 # modules/module_crm.py
 from plugins.crm import CRMModule
-__all__ = ['CRMModule']
+
+__all__ = ["CRMModule"]
 
 # plugins/crm/__init__.py
 from core.module_registry import ModuleBase
 
+
 class CRMModule(ModuleBase):
     name = "crm"
     version = "2.0.0"
-    dependencies = ["clients", "orders"]  # Требуется чтобы эти модули загрузились раньше
-    
+    dependencies = [
+        "clients",
+        "orders",
+    ]  # Требуется чтобы эти модули загрузились раньше
+
     def on_start(self):
         client_service = self.get_service("client_service")
         order_service = self.get_service("order_service")
@@ -262,9 +272,10 @@ class CRMModule(ModuleBase):
 # plugins/dashboard/__init__.py
 from core.module_registry import ModuleBase
 
+
 class DashboardModule(ModuleBase):
     name = "dashboard"
-    
+
     def register_gui_components(self, gui_factory):
         """Регистрация GUI компонентов"""
         panel = DashboardPanel(gui_factory.main_window)
@@ -278,15 +289,17 @@ class DashboardModule(ModuleBase):
 # plugins/api/__init__.py
 from core.module_registry import ModuleBase
 
+
 class ApiModule(ModuleBase):
     name = "api"
-    
+
     def register_routes(self, router):
         """Регистрация API роутов"""
+
         @router.get("/api/v1/status")
         async def get_status():
             return {"status": "ok", "module": self.name}
-        
+
         self.log.info("API routes registered")
 ```
 
@@ -307,22 +320,24 @@ import pytest
 from unittest.mock import Mock
 from plugins.myfeature import MyFeatureModule
 
+
 def test_module_initialization():
     app_container = Mock()
     module = MyFeatureModule(app_container=app_container)
-    
+
     assert module.name == "myfeature"
     assert module.version == "1.0.0"
     assert module.log is not None
 
+
 def test_module_safe_execute():
     app_container = Mock()
     module = MyFeatureModule(app_container=app_container)
-    
+
     result = module.safe_execute(lambda: 42, default=0)
     assert result == 42
-    
-    result = module.safe_execute(lambda: 1/0, default=0)
+
+    result = module.safe_execute(lambda: 1 / 0, default=0)
     assert result == 0  # Без падения, с логированием
 ```
 

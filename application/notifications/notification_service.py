@@ -1,5 +1,4 @@
-"""
-Notification Service - Multi-channel Communication
+"""Notification Service - Multi-channel Communication
 
 SRP: Handles sending notifications through various channels.
 Supports: Telegram, WhatsApp, VK, Max (placeholder), Email, Bluetooth Calls.
@@ -8,22 +7,21 @@ Uses Strategy Pattern for channel selection.
 Uses Adapter Pattern for different messaging APIs.
 """
 
-from abc import ABC, abstractmethod
-from enum import Enum
-from dataclasses import dataclass, field
-from typing import Optional, Protocol
-from datetime import datetime
 import asyncio
-import httpx
-import aiosmtplib
-from email.mime.text import MIMEText
+from dataclasses import dataclass, field
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from enum import StrEnum
+from typing import Protocol
 
-from i18n import t
+import aiosmtplib
+import httpx
 
 
-class NotificationChannel(str, Enum):
+class NotificationChannel(StrEnum):
     """Available notification channels - SSOT"""
+
     TELEGRAM = "telegram"
     WHATSAPP = "whatsapp"
     VK = "vk"
@@ -32,8 +30,9 @@ class NotificationChannel(str, Enum):
     BLUETOOTH_CALL = "bluetooth_call"
 
 
-class NotificationPriority(str, Enum):
+class NotificationPriority(StrEnum):
     """Notification priority levels"""
+
     LOW = "low"
     NORMAL = "normal"
     HIGH = "high"
@@ -43,14 +42,15 @@ class NotificationPriority(str, Enum):
 @dataclass
 class NotificationMessage:
     """Standardized notification message"""
+
     channel: NotificationChannel
     recipient: str  # phone, email, chat_id, etc.
-    subject: Optional[str] = None
+    subject: str | None = None
     body: str = ""
     priority: NotificationPriority = NotificationPriority.NORMAL
     metadata: dict = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
-    
+
     def format_body(self, **kwargs) -> str:
         """Format body with parameters using i18n"""
         return self.body.format(**kwargs)
@@ -59,21 +59,22 @@ class NotificationMessage:
 @dataclass
 class NotificationResult:
     """Result of notification sending attempt"""
+
     success: bool
     channel: NotificationChannel
     recipient: str
-    message_id: Optional[str] = None
-    error: Optional[str] = None
+    message_id: str | None = None
+    error: str | None = None
     sent_at: datetime = field(default_factory=datetime.now)
 
 
 class NotificationStrategy(Protocol):
     """Protocol for notification strategies (Strategy Pattern)"""
-    
+
     async def send(self, message: NotificationMessage) -> NotificationResult:
         """Send notification"""
         ...
-    
+
     async def test_connection(self) -> bool:
         """Test connection to service"""
         ...
@@ -81,11 +82,11 @@ class NotificationStrategy(Protocol):
 
 class TelegramBotAdapter:
     """Telegram Bot API adapter"""
-    
+
     def __init__(self, bot_token: str):
         self.bot_token = bot_token
         self.base_url = f"https://api.telegram.org/bot{bot_token}"
-    
+
     async def send(self, message: NotificationMessage) -> NotificationResult:
         """Send Telegram message"""
         try:
@@ -101,7 +102,7 @@ class TelegramBotAdapter:
                 )
                 response.raise_for_status()
                 data = response.json()
-                
+
                 if data.get("ok"):
                     return NotificationResult(
                         success=True,
@@ -123,7 +124,7 @@ class TelegramBotAdapter:
                 recipient=message.recipient,
                 error=str(e),
             )
-    
+
     async def test_connection(self) -> bool:
         """Test Telegram Bot API connection"""
         try:
@@ -136,12 +137,12 @@ class TelegramBotAdapter:
 
 class WhatsAppAdapter:
     """WhatsApp Business API adapter (using Twilio-like API)"""
-    
+
     def __init__(self, api_key: str, phone_number_id: str):
         self.api_key = api_key
         self.phone_number_id = phone_number_id
         self.base_url = "https://graph.facebook.com/v17.0"
-    
+
     async def send(self, message: NotificationMessage) -> NotificationResult:
         """Send WhatsApp message"""
         # Placeholder implementation
@@ -152,7 +153,7 @@ class WhatsAppAdapter:
             recipient=message.recipient,
             error="WhatsApp integration requires API configuration",
         )
-    
+
     async def test_connection(self) -> bool:
         """Test WhatsApp API connection"""
         return False  # Requires actual API credentials
@@ -160,12 +161,12 @@ class WhatsAppAdapter:
 
 class VKAdapter:
     """VKontakte Messages API adapter"""
-    
+
     def __init__(self, access_token: str, group_id: str):
         self.access_token = access_token
         self.group_id = group_id
         self.base_url = "https://api.vk.com/method"
-    
+
     async def send(self, message: NotificationMessage) -> NotificationResult:
         """Send VK message"""
         # Placeholder implementation
@@ -175,7 +176,7 @@ class VKAdapter:
             recipient=message.recipient,
             error="VK integration requires API configuration",
         )
-    
+
     async def test_connection(self) -> bool:
         """Test VK API connection"""
         return False
@@ -183,7 +184,7 @@ class VKAdapter:
 
 class MaxAdapter:
     """Max messenger adapter (placeholder)"""
-    
+
     async def send(self, message: NotificationMessage) -> NotificationResult:
         """Send Max message"""
         return NotificationResult(
@@ -192,7 +193,7 @@ class MaxAdapter:
             recipient=message.recipient,
             error="Max messenger integration not yet implemented",
         )
-    
+
     async def test_connection(self) -> bool:
         """Test Max connection"""
         return False
@@ -200,7 +201,7 @@ class MaxAdapter:
 
 class EmailAdapter:
     """SMTP Email adapter"""
-    
+
     def __init__(
         self,
         smtp_host: str,
@@ -214,7 +215,7 @@ class EmailAdapter:
         self.username = username
         self.password = password
         self.use_tls = use_tls
-    
+
     async def send(self, message: NotificationMessage) -> NotificationResult:
         """Send email via SMTP"""
         try:
@@ -224,7 +225,7 @@ class EmailAdapter:
             msg["To"] = message.recipient
             msg["Subject"] = message.subject or "ServiceUP Notification"
             msg.attach(MIMEText(message.body, "html"))
-            
+
             # Send email
             await aiosmtplib.send(
                 msg,
@@ -234,7 +235,7 @@ class EmailAdapter:
                 password=self.password,
                 start_tls=self.use_tls,
             )
-            
+
             return NotificationResult(
                 success=True,
                 channel=NotificationChannel.EMAIL,
@@ -248,7 +249,7 @@ class EmailAdapter:
                 recipient=message.recipient,
                 error=str(e),
             )
-    
+
     async def test_connection(self) -> bool:
         """Test SMTP connection"""
         try:
@@ -265,43 +266,41 @@ class EmailAdapter:
 
 
 class BluetoothCallAdapter:
-    """
-    Bluetooth Call adapter - Simulates PC-to-phone call via Bluetooth
-    
+    """Bluetooth Call adapter - Simulates PC-to-phone call via Bluetooth
+
     Uses standard Windows Bluetooth APIs (placeholder for actual implementation)
     """
-    
-    def __init__(self, device_address: Optional[str] = None):
+
+    def __init__(self, device_address: str | None = None):
         self.device_address = device_address
         self.connected = False
-    
+
     async def connect(self) -> bool:
         """Connect to paired Bluetooth device"""
         # Placeholder: In production, use pybluez or platform-specific APIs
         self.connected = True
         return True
-    
+
     async def disconnect(self):
         """Disconnect from Bluetooth device"""
         self.connected = False
-    
+
     async def send(self, message: NotificationMessage) -> NotificationResult:
         """Initiate call via Bluetooth-connected phone"""
-        if not self.connected:
-            if not await self.connect():
-                return NotificationResult(
-                    success=False,
-                    channel=NotificationChannel.BLUETOOTH_CALL,
-                    recipient=message.recipient,
-                    error="Bluetooth device not connected",
-                )
-        
+        if not self.connected and not await self.connect():
+            return NotificationResult(
+                success=False,
+                channel=NotificationChannel.BLUETOOTH_CALL,
+                recipient=message.recipient,
+                error="Bluetooth device not connected",
+            )
+
         try:
             # Placeholder: Use AT commands or platform APIs to initiate call
             # On Windows: Use Windows.Devices.Bluetooth namespace via COM
             # On Linux: Use dbus or bluez libraries
             print(f"[BLUETOOTH_CALL] Initiating call to: {message.recipient}")
-            
+
             return NotificationResult(
                 success=True,
                 channel=NotificationChannel.BLUETOOTH_CALL,
@@ -315,57 +314,55 @@ class BluetoothCallAdapter:
                 recipient=message.recipient,
                 error=str(e),
             )
-    
+
     async def test_connection(self) -> bool:
         """Test Bluetooth connection"""
         return await self.connect()
 
 
 class NotificationService:
-    """
-    Main notification service with channel routing.
-    
+    """Main notification service with channel routing.
+
     Features:
     - Strategy pattern for channel selection
     - Async multi-threaded sending
     - Priority-based queuing
     - Fallback mechanisms
     """
-    
+
     def __init__(self):
         self.adapters: dict[NotificationChannel, NotificationStrategy] = {}
         self.default_channel = NotificationChannel.EMAIL
         self.fallback_enabled = True
-    
+
     def register_adapter(
-        self, 
-        channel: NotificationChannel, 
+        self,
+        channel: NotificationChannel,
         adapter: NotificationStrategy,
     ):
         """Register notification adapter for channel"""
         self.adapters[channel] = adapter
-    
-    def get_adapter(self, channel: NotificationChannel) -> Optional[NotificationStrategy]:
+
+    def get_adapter(self, channel: NotificationChannel) -> NotificationStrategy | None:
         """Get adapter for specific channel"""
         return self.adapters.get(channel)
-    
+
     async def send(
         self,
         message: NotificationMessage,
         use_fallback: bool = True,
     ) -> NotificationResult:
-        """
-        Send notification through specified channel.
-        
+        """Send notification through specified channel.
+
         Args:
             message: Notification message with channel and content
             use_fallback: Try fallback channel if primary fails
-        
+
         Returns:
             NotificationResult with success status
         """
         adapter = self.adapters.get(message.channel)
-        
+
         if not adapter:
             return NotificationResult(
                 success=False,
@@ -373,9 +370,9 @@ class NotificationService:
                 recipient=message.recipient,
                 error=f"No adapter registered for channel: {message.channel}",
             )
-        
+
         result = await adapter.send(message)
-        
+
         # Fallback to default channel if failed
         if not result.success and use_fallback and self.fallback_enabled:
             fallback_adapter = self.adapters.get(self.default_channel)
@@ -388,22 +385,21 @@ class NotificationService:
                     priority=NotificationPriority.HIGH,
                 )
                 result = await fallback_adapter.send(fallback_msg)
-        
+
         return result
-    
+
     async def send_to_all(
         self,
         message: NotificationMessage,
-        channels: Optional[list[NotificationChannel]] = None,
+        channels: list[NotificationChannel] | None = None,
     ) -> list[NotificationResult]:
-        """
-        Send notification to multiple channels concurrently.
-        
+        """Send notification to multiple channels concurrently.
+
         Uses asyncio.gather for parallel execution (Multi-threading).
         """
         if channels is None:
             channels = list(self.adapters.keys())
-        
+
         tasks = []
         for channel in channels:
             msg = NotificationMessage(
@@ -414,9 +410,9 @@ class NotificationService:
                 priority=message.priority,
             )
             tasks.append(self.send(msg, use_fallback=False))
-        
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         # Convert exceptions to NotificationResult
         processed_results = []
         for result in results:
@@ -431,9 +427,9 @@ class NotificationService:
                 )
             else:
                 processed_results.append(result)
-        
+
         return processed_results
-    
+
     async def test_all_connections(self) -> dict[NotificationChannel, bool]:
         """Test connections for all registered adapters"""
         results = {}
@@ -444,9 +440,8 @@ class NotificationService:
 
 # Factory function for easy setup
 def create_notification_service(config: dict) -> NotificationService:
-    """
-    Create and configure notification service from config.
-    
+    """Create and configure notification service from config.
+
     Config example:
     {
         "telegram": {"bot_token": "..."},
@@ -460,13 +455,13 @@ def create_notification_service(config: dict) -> NotificationService:
     }
     """
     service = NotificationService()
-    
+
     if "telegram" in config:
         service.register_adapter(
             NotificationChannel.TELEGRAM,
             TelegramBotAdapter(config["telegram"]["bot_token"]),
         )
-    
+
     if "whatsapp" in config:
         service.register_adapter(
             NotificationChannel.WHATSAPP,
@@ -475,13 +470,13 @@ def create_notification_service(config: dict) -> NotificationService:
                 config["whatsapp"]["phone_number_id"],
             ),
         )
-    
+
     if "vk" in config:
         service.register_adapter(
             NotificationChannel.VK,
             VKAdapter(config["vk"]["access_token"], config["vk"]["group_id"]),
         )
-    
+
     if "email" in config:
         service.register_adapter(
             NotificationChannel.EMAIL,
@@ -492,11 +487,11 @@ def create_notification_service(config: dict) -> NotificationService:
                 config["email"]["password"],
             ),
         )
-    
+
     if "bluetooth" in config:
         service.register_adapter(
             NotificationChannel.BLUETOOTH_CALL,
             BluetoothCallAdapter(config["bluetooth"].get("device_address")),
         )
-    
+
     return service

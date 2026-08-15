@@ -1,5 +1,4 @@
-"""
-Test Module Architecture
+"""Test Module Architecture
 ========================
 
 Модульная система тестирования проекта ServiceUp.
@@ -19,8 +18,9 @@ Test Module Architecture
 5. Mock внешних зависимостей (БД, API, файловая система)
 """
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 # Базовый путь к проекту
 PROJECT_ROOT = Path(__file__).parent.parent

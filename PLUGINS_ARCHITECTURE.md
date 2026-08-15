@@ -114,27 +114,28 @@ from plugins.orders import register_plugin as register_orders
 from plugins.reports import register_plugin as register_reports
 from plugins.pwa import register_plugin as register_pwa
 
+
 def bootstrap_plugins():
     pm = get_plugin_manager()
-    
+
     # Register all plugins
     register_auth()
     register_clients()
     register_orders()
     register_reports()
     register_pwa()
-    
+
     # Enable in dependency order
-    pm.enable('auth')
-    pm.enable('clients')
-    pm.enable('orders')
-    pm.enable('reports')
-    pm.enable('pwa')
-    
+    pm.enable("auth")
+    pm.enable("clients")
+    pm.enable("orders")
+    pm.enable("reports")
+    pm.enable("pwa")
+
     # Check health
     health = pm.health_check_all()
     print(f"Plugins health: {health}")
-    
+
     return pm
 ```
 
@@ -147,15 +148,13 @@ from core.plugin_system import get_plugin_manager
 
 # Get services from plugin API
 pm = get_plugin_manager()
-order_service = pm.get_api('orders')
-client_service = pm.get_api('clients')
+order_service = pm.get_api("orders")
+client_service = pm.get_api("clients")
 
 # Create client
 client = client_service.create_client(
     CreateClientCommand(
-        full_name="Иван Иванов",
-        phone="+7 (999) 123-45-67",
-        email="ivan@example.com"
+        full_name="Иван Иванов", phone="+7 (999) 123-45-67", email="ivan@example.com"
     )
 )
 
@@ -166,12 +165,14 @@ if client:
             client_id=client.id,
             client_name=client.full_name,
             client_phone=client.phone,
-            devices=[{
-                'type': 'smartphone',
-                'brand': 'Apple',
-                'model': 'iPhone 15',
-                'problem': 'Не включается'
-            }]
+            devices=[
+                {
+                    "type": "smartphone",
+                    "brand": "Apple",
+                    "model": "iPhone 15",
+                    "problem": "Не включается",
+                }
+            ],
         )
     )
 ```

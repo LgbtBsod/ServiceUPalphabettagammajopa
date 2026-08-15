@@ -58,10 +58,12 @@
 ```python
 def get_service(service_class: Type[T]) -> T:
     """Получение сервиса через DI контейнер."""
-    
+
+
 def register_service(service_class: Type[T], instance: T) -> None:
     """Регистрация сервиса в контейнере."""
-    
+
+
 def get_event_bus() -> EventBus:
     """Получение шины событий для слабой связанности."""
 ```
@@ -89,13 +91,16 @@ client_service = app.get_service(ClientAppService)
 ```python
 def create_order(client_id: int, items: List[Dict]) -> Order:
     """Создание нового заказа."""
-    
+
+
 def get_order(order_id: int) -> Optional[Order]:
     """Получение заказа по ID."""
-    
+
+
 def update_order_status(order_id: int, status: str) -> bool:
     """Обновление статуса заказа."""
-    
+
+
 def delete_order(order_id: int) -> bool:
     """Удаление заказа."""
 ```
@@ -109,13 +114,16 @@ def delete_order(order_id: int) -> bool:
 ```python
 def create_client(name: str, phone: str, email: Optional[str] = None) -> Client:
     """Создание нового клиента."""
-    
+
+
 def get_client(client_id: int) -> Optional[Client]:
     """Получение клиента по ID."""
-    
+
+
 def search_clients(query: str) -> List[Client]:
     """Поиск клиентов по названию/телефону."""
-    
+
+
 def update_client(client_id: int, **kwargs) -> bool:
     """Обновление данных клиента."""
 ```
@@ -129,22 +137,28 @@ def update_client(client_id: int, **kwargs) -> bool:
 ```python
 def set_template(template_data: Dict) -> PDFBuilder:
     """Установка шаблона отчета."""
-    
+
+
 def reorder_fields(section_index: int, field_order: List[int]) -> PDFBuilder:
     """Переупорядочивание полей (после DnD)."""
-    
+
+
 def add_field(section_index: int, field: Dict) -> PDFBuilder:
     """Добавление поля в секцию."""
-    
+
+
 def remove_field(section_index: int, field_index: int) -> PDFBuilder:
     """Удаление поля из секции."""
-    
+
+
 def set_format(format: str) -> PDFBuilder:
     """Установка формата документа (A4/A5)."""
-    
+
+
 def build() -> bytes:
     """Генерация PDF и возврат байтов."""
-    
+
+
 def save(filepath: str) -> None:
     """Сохранение PDF в файл."""
 ```
@@ -155,11 +169,12 @@ def save(filepath: str) -> None:
 from application.pdf_builder import PDFBuilder
 
 builder = PDFBuilder()
-pdf_bytes = (builder
-    .set_template(template_data)
+pdf_bytes = (
+    builder.set_template(template_data)
     .reorder_fields(0, [2, 0, 1, 3])  # Порядок после DnD
     .set_format("A4")
-    .build())
+    .build()
+)
 ```
 
 ---
@@ -176,12 +191,13 @@ pdf_bytes = (builder
 from core.application import get_app
 from application.order_service import OrderService
 
+
 class MainWindow(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.app = get_app()
         self.order_service = self.app.get_service(OrderService)
-        
+
     def load_orders(self):
         orders = self.order_service.get_all_orders()
         # Отображение в UI
@@ -196,19 +212,24 @@ class MainWindow(ctk.CTk):
 ```python
 def _create_field_item(field: Dict, index: int) -> tk.Frame:
     """Создание элемента списка полей."""
-    
+
+
 def _on_drag_start(event: tk.Event) -> None:
     """Начало перетаскивания."""
-    
+
+
 def _on_drag_motion(event: tk.Event) -> None:
     """Движение элемента с авто-заменой позиций."""
-    
+
+
 def _on_drag_drop(event: tk.Event) -> None:
     """Завершение перетаскивания."""
-    
+
+
 def _get_field_order() -> List[Dict]:
     """Получение текущего порядка полей из UI."""
-    
+
+
 def sync_template_from_ui() -> Dict:
     """Синхронизация данных шаблона с UI."""
 ```
@@ -226,10 +247,12 @@ def sync_template_from_ui() -> Dict:
 ```python
 def get_connection() -> sqlite3.Connection:
     """Получение соединения с БД."""
-    
+
+
 def execute_query(query: str, params: Tuple = ()) -> List[Dict]:
     """Выполнение SELECT запроса."""
-    
+
+
 def execute_command(query: str, params: Tuple = ()) -> int:
     """Выполнение INSERT/UPDATE/DELETE."""
 ```
@@ -243,13 +266,16 @@ def execute_command(query: str, params: Tuple = ()) -> int:
 ```python
 def get_by_id(order_id: int) -> Optional[Order]:
     """Получение заказа по ID."""
-    
+
+
 def get_all() -> List[Order]:
     """Получение всех заказов."""
-    
+
+
 def save(order: Order) -> int:
     """Сохранение заказа, возврат ID."""
-    
+
+
 def delete(order_id: int) -> bool:
     """Удаление заказа."""
 ```
@@ -267,13 +293,16 @@ def delete(order_id: int) -> bool:
 ```python
 def generate_act(template_data: Dict, output_path: str) -> str:
     """Генерация акта и сохранение в файл."""
-    
+
+
 def preview_act(template_data: Dict) -> Image.Image:
     """Предпросмотр акта как изображение."""
-    
+
+
 def add_logo(image_path: str, position: Tuple[int, int]) -> ActPDFGenerator:
     """Добавление логотипа."""
-    
+
+
 def add_qr_code(data: str, position: Tuple[int, int]) -> ActPDFGenerator:
     """Добавление QR-кода."""
 ```
@@ -291,10 +320,12 @@ def add_qr_code(data: str, position: Tuple[int, int]) -> ActPDFGenerator:
 ```python
 def subscribe(event_type: str, handler: Callable) -> None:
     """Подписка на событие."""
-    
+
+
 def unsubscribe(event_type: str, handler: Callable) -> None:
     """Отписка от события."""
-    
+
+
 def publish(event_type: str, data: Any = None) -> None:
     """Публикация события."""
 ```
@@ -374,9 +405,7 @@ client_service = app.get_service(ClientAppService)
 
 # Создание клиента
 client = client_service.create_client(
-    name="ООО Ромашка",
-    phone="+79991234567",
-    email="info@romashka.ru"
+    name="ООО Ромашка", phone="+79991234567", email="info@romashka.ru"
 )
 
 # Создание заказа
@@ -384,8 +413,8 @@ order = order_service.create_order(
     client_id=client.id,
     items=[
         {"name": "Услуга 1", "price": 1000, "quantity": 2},
-        {"name": "Услуга 2", "price": 500, "quantity": 1}
-    ]
+        {"name": "Услуга 2", "price": 500, "quantity": 1},
+    ],
 )
 
 print(f"Заказ #{order.id} создан!")

@@ -17,21 +17,21 @@
 **Единые определения для:**
 ```python
 # Телефоны
-normalize_phone()      # SSOT для нормализации
-format_phone()         # SSOT для отображения
-validate_phone()       # SSOT для валидации
-extract_phone_digits() # SSOT для поиска
+normalize_phone()  # SSOT для нормализации
+format_phone()  # SSOT для отображения
+validate_phone()  # SSOT для валидации
+extract_phone_digits()  # SSOT для поиска
 
 # Деньги
-safe_decimal()         # SSOT для Decimal конвертации
-parse_price_to_float() # SSOT для float конвертации
-format_money()         # SSOT для форматирования
-validate_price()       # SSOT для валидации цен
+safe_decimal()  # SSOT для Decimal конвертации
+parse_price_to_float()  # SSOT для float конвертации
+format_money()  # SSOT для форматирования
+validate_price()  # SSOT для валидации цен
 
 # Даты и строки
-format_date()          # SSOT для дат
-sanitize_string()      # SSOT для очистки строк
-truncate_text()        # SSOT для усечения
+format_date()  # SSOT для дат
+sanitize_string()  # SSOT для очистки строк
+truncate_text()  # SSOT для усечения
 ```
 
 ### 2. **DRY (Don't Repeat Yourself)** — УЛУЧШЕНО ✅
@@ -77,15 +77,15 @@ class DependencyInjectableMixin:  # Только DI
 #### Новые базовые классы:
 
 ```python
-BaseService[T]       # Для сервисов приложения
-BaseRepository[R]    # Для репозиториев (с generic типом)
-BaseViewModel        # Для GUI ViewModels
-BaseGenerator        # Для генераторов отчётов/PDF
-BaseEntity           # Для доменных сущностей
-BaseValueObject      # Для объектов значений
-BaseEvent            # Для доменных событий
-BaseCommand          # Для CQRS команд
-BaseQuery            # Для CQRS запросов
+BaseService[T]  # Для сервисов приложения
+BaseRepository[R]  # Для репозиториев (с generic типом)
+BaseViewModel  # Для GUI ViewModels
+BaseGenerator  # Для генераторов отчётов/PDF
+BaseEntity  # Для доменных сущностей
+BaseValueObject  # Для объектов значений
+BaseEvent  # Для доменных событий
+BaseCommand  # Для CQRS команд
+BaseQuery  # Для CQRS запросов
 ```
 
 ### 4. **COLID (Command-Query Separation)** — ПОДГОТОВЛЕНО ✅
@@ -99,8 +99,9 @@ class CreateOrderCommand(BaseCommand):
     customer_id: int
     items: list[OrderItem]
 
+
 # BaseQuery — для операций чтения
-@dataclass  
+@dataclass
 class GetOrderByIdQuery(BaseQuery):
     order_id: int
 ```
@@ -162,32 +163,26 @@ interfaces/              ← Презентационный слой
 from core.base import BaseService, BaseRepository
 from shared.utils import normalize_phone, safe_decimal
 
+
 # Сервис приложения
 class OrderService(BaseService):
     def create_order(self, data: dict):
         # Автоматическое логирование
         self.logger.info(f"Creating order for {data['client']}")
-        
+
         # Безопасное выполнение с обработкой ошибок
-        return self.safe_execute(
-            self._create_order_impl,
-            data,
-            default=None
-        )
-    
+        return self.safe_execute(self._create_order_impl, data, default=None)
+
     def _create_order_impl(self, data: dict):
         # DI доступ к репозиторию
         repo = self.get_repository(OrderRepository)
         return repo.add(data)
 
+
 # Репозиторий
 class OrderRepository(BaseRepository[Order]):
     def get_by_id(self, id: int) -> Optional[Order]:
-        return self.safe_execute(
-            self._get_by_id_sql,
-            id,
-            default=None
-        )
+        return self.safe_execute(self._get_by_id_sql, id, default=None)
 ```
 
 ---

@@ -1,19 +1,19 @@
 """Bluetooth Service Package."""
 
 from .bluetooth_service import (
-    BluetoothService,
-    get_bluetooth_service,
     BluetoothDevice,
     BluetoothDeviceType,
+    BluetoothService,
     CallInfo,
     CallState,
+    get_bluetooth_service,
 )
 
 __all__ = [
-    "BluetoothService",
-    "get_bluetooth_service",
     "BluetoothDevice",
     "BluetoothDeviceType",
+    "BluetoothService",
     "CallInfo",
     "CallState",
+    "get_bluetooth_service",
 ]

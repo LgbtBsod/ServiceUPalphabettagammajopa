@@ -1,45 +1,42 @@
-"""
-Domain module - бизнес-модели и агрегаты.
+"""Domain module - бизнес-модели и агрегаты.
 
 Содержит чистые бизнес-сущности без зависимостей от инфраструктуры.
 """
 
+from .aggregates import OrderAggregate
+from .constants import (
+    CLIENT_STATUSES,
+    DEFAULT_PRIORITY,
+    DEFAULT_STATUS,
+    DICTIONARY_TYPES,
+    PRIORITIES,
+    STATUSES,
+    WARRANTIES,
+)
 from .entities import (
-    Device,
     Client,
-    WorkItem,
+    Device,
+    FinanceRecord,
     Photo,
     RepairHistory,
-    FinanceRecord,
-)
-
-from .aggregates import OrderAggregate
-
-from .constants import (
-    STATUSES,
-    DEFAULT_STATUS,
-    PRIORITIES,
-    DEFAULT_PRIORITY,
-    CLIENT_STATUSES,
-    WARRANTIES,
-    DICTIONARY_TYPES,
+    WorkItem,
 )
 
 __all__ = [
-    # Entities and aggregates
-    'Device',
-    'Client',
-    'WorkItem',
-    'Photo',
-    'RepairHistory',
-    'FinanceRecord',
-    'OrderAggregate',
+    "CLIENT_STATUSES",
+    "DEFAULT_PRIORITY",
+    "DEFAULT_STATUS",
+    "DICTIONARY_TYPES",
+    "PRIORITIES",
     # Domain constants
-    'STATUSES',
-    'DEFAULT_STATUS',
-    'PRIORITIES',
-    'DEFAULT_PRIORITY',
-    'CLIENT_STATUSES',
-    'WARRANTIES',
-    'DICTIONARY_TYPES',
+    "STATUSES",
+    "WARRANTIES",
+    "Client",
+    # Entities and aggregates
+    "Device",
+    "FinanceRecord",
+    "OrderAggregate",
+    "Photo",
+    "RepairHistory",
+    "WorkItem",
 ]

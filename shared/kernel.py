@@ -1,5 +1,4 @@
-"""
-Shared Kernel - общие типы, константы и утилиты для всех модулей.
+"""Shared Kernel - общие типы, константы и утилиты для всех модулей.
 
 Single Source of Truth (SSOT) для общих определений.
 Следует принципу DRY - не дублировать определения в разных модулях.
@@ -10,17 +9,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum, StrEnum
-from typing import TypeAlias, Protocol, runtime_checkable
+from enum import StrEnum
+from typing import Protocol, Self, runtime_checkable
 from uuid import UUID, uuid4
-
 
 # =============================================================================
 # ENUMS - Single Source of Truth
 # =============================================================================
 
+
 class OrderStatus(StrEnum):
     """Статусы заказа - централизованное определение."""
+
     DIAGNOSTICS = "Диагностика"
     WAITING_PARTS = "Ожидание запчастей"
     IN_PROGRESS = "В работе"
@@ -32,6 +32,7 @@ class OrderStatus(StrEnum):
 
 class Priority(StrEnum):
     """Приоритеты заказа - централизованное определение."""
+
     LOW = "Низкий"
     NORMAL = "Обычный"
     HIGH = "Высокий"
@@ -41,6 +42,7 @@ class Priority(StrEnum):
 
 class ClientStatus(StrEnum):
     """Статусы клиентов."""
+
     NEW = "Новый"
     REGULAR = "Постоянный"
     VIP = "VIP"
@@ -49,6 +51,7 @@ class ClientStatus(StrEnum):
 
 class DeviceType(StrEnum):
     """Типы устройств - централизованный справочник."""
+
     LAPTOP = "Ноутбук"
     PC = "ПК"
     SMARTPHONE = "Смартфон"
@@ -64,6 +67,7 @@ class DeviceType(StrEnum):
 
 class PaymentMethod(StrEnum):
     """Способы оплаты."""
+
     CASH = "Наличные"
     CARD = "Карта"
     TRANSFER = "Перевод"
@@ -72,6 +76,7 @@ class PaymentMethod(StrEnum):
 
 class NotificationType(StrEnum):
     """Типы уведомлений."""
+
     SMS = "sms"
     EMAIL = "email"
     TELEGRAM = "telegram"
@@ -82,25 +87,28 @@ class NotificationType(StrEnum):
 # TYPE ALIASES - читаемые аннотации типов
 # =============================================================================
 
-Money: TypeAlias = Decimal
-PhoneNumber: TypeAlias = str
-Email: TypeAlias = str
-UUIDStr: TypeAlias = str
+type Money = Decimal
+type PhoneNumber = str
+type Email = str
+type UUIDStr = str
 
 
 # =============================================================================
 # PROTOCOLS - интерфейсы для Dependency Injection
 # =============================================================================
 
+
 @runtime_checkable
 class Identifiable(Protocol):
     """Протокол для сущностей с идентификатором."""
+
     id: int | None
 
 
 @runtime_checkable
 class Serializable(Protocol):
     """Протокол для сериализуемых объектов."""
+
     def to_dict(self) -> dict: ...
     @classmethod
     def from_dict(cls, data: dict) -> object: ...
@@ -109,6 +117,7 @@ class Serializable(Protocol):
 @runtime_checkable
 class Auditable(Protocol):
     """Протокол для сущностей с аудитом."""
+
     created_at: datetime
     updated_at: datetime | None
 
@@ -116,6 +125,7 @@ class Auditable(Protocol):
 @runtime_checkable
 class Repository(Protocol):
     """Протокол репозитория - Contract First подход."""
+
     def get_by_id(self, id: int) -> object | None: ...
     def get_all(self) -> list[object]: ...
     def add(self, entity: object) -> object: ...
@@ -126,7 +136,8 @@ class Repository(Protocol):
 @runtime_checkable
 class UnitOfWork(Protocol):
     """Протокол Unit of Work для транзакций."""
-    def __enter__(self) -> UnitOfWork: ...
+
+    def __enter__(self) -> Self: ...
     def __exit__(self, exc_type, exc_val, exc_tb) -> None: ...
     def commit(self) -> None: ...
     def rollback(self) -> None: ...
@@ -135,32 +146,38 @@ class UnitOfWork(Protocol):
 @runtime_checkable
 class EventHandler(Protocol):
     """Протокол обработчика событий."""
+
     def handle(self, event: object) -> None: ...
 
 
 @runtime_checkable
 class NotificationSender(Protocol):
     """Протокол отправителя уведомлений."""
-    def send(self, recipient: str, message: str, subject: str | None = None) -> bool: ...
+
+    def send(
+        self, recipient: str, message: str, subject: str | None = None
+    ) -> bool: ...
 
 
 # =============================================================================
 # VALUE OBJECTS - неизменяемые объекты значений
 # =============================================================================
 
+
 @dataclass(slots=True, frozen=True)
 class MoneyValue:
     """Неизменяемый объект денежного значения."""
-    amount: Decimal = field(default=Decimal('0.00'))
-    currency: str = field(default='RUB')
+
+    amount: Decimal = field(default=Decimal("0.00"))
+    currency: str = field(default="RUB")
 
     def __post_init__(self):
         if self.amount < 0:
             raise ValueError("Сумма не может быть отрицательной")
         # Конвертируем в Decimal если передан float/int
         if not isinstance(self.amount, Decimal):
-            object.__setattr__(self, 'amount', Decimal(str(self.amount)))
-        object.__setattr__(self, 'amount', self.amount.quantize(Decimal('0.01')))
+            object.__setattr__(self, "amount", Decimal(str(self.amount)))
+        object.__setattr__(self, "amount", self.amount.quantize(Decimal("0.01")))
 
     def __str__(self) -> str:
         return f"{self.amount:.2f} {self.currency}"
@@ -170,17 +187,18 @@ class MoneyValue:
             raise ValueError("Нельзя сложить разные валюты")
         return MoneyValue(self.amount + other.amount, self.currency)
 
-    def __mul__(self, factor: int | float | Decimal) -> MoneyValue:
+    def __mul__(self, factor: float | Decimal) -> MoneyValue:
         return MoneyValue(self.amount * Decimal(str(factor)), self.currency)
 
     @classmethod
-    def zero(cls, currency: str = 'RUB') -> MoneyValue:
-        return cls(Decimal('0.00'), currency)
+    def zero(cls, currency: str = "RUB") -> MoneyValue:
+        return cls(Decimal("0.00"), currency)
 
 
 @dataclass(slots=True, frozen=True)
 class DateRange:
     """Неизменяемый диапазон дат."""
+
     start: datetime
     end: datetime
 
@@ -201,6 +219,7 @@ class DateRange:
 @dataclass(slots=True, frozen=True)
 class Address:
     """Неизменяемый объект адреса."""
+
     country: str = "Россия"
     city: str = ""
     street: str = ""
@@ -222,6 +241,7 @@ class Address:
 # CONSTANTS - централизованные константы
 # =============================================================================
 
+
 class Constants:
     """Централизованное хранилище констант приложения."""
 
@@ -238,8 +258,8 @@ class Constants:
     MAX_PHONE_LENGTH = 20
     MAX_EMAIL_LENGTH = 254
     MAX_NAME_LENGTH = 200
-    MIN_PRICE = Decimal('0.00')
-    MAX_PRICE = Decimal('999999999.99')
+    MIN_PRICE = Decimal("0.00")
+    MAX_PRICE = Decimal("999999999.99")
 
     # Пагинация
     DEFAULT_PAGE_SIZE = 20
@@ -264,6 +284,7 @@ class Constants:
 # UTILITIES - общие утилиты
 # =============================================================================
 
+
 def generate_uuid() -> UUID:
     """Генерирует новый UUID."""
     return uuid4()
@@ -287,16 +308,16 @@ def sanitize_string(value: str, max_length: int = 1000) -> str:
     return sanitized[:max_length]
 
 
-def safe_decimal(value: str | int | float | Decimal | None) -> Decimal:
+def safe_decimal(value: str | float | Decimal | None) -> Decimal:
     """Безопасное преобразование в Decimal."""
     if value is None:
-        return Decimal('0.00')
+        return Decimal("0.00")
     if isinstance(value, Decimal):
-        return value.quantize(Decimal('0.01'))
+        return value.quantize(Decimal("0.01"))
     try:
-        return Decimal(str(value)).quantize(Decimal('0.01'))
+        return Decimal(str(value)).quantize(Decimal("0.01"))
     except Exception:
-        return Decimal('0.00')
+        return Decimal("0.00")
 
 
 # =============================================================================
@@ -304,36 +325,36 @@ def safe_decimal(value: str | int | float | Decimal | None) -> Decimal:
 # =============================================================================
 
 __all__ = [
-    # Enums
-    'OrderStatus',
-    'Priority',
-    'ClientStatus',
-    'DeviceType',
-    'PaymentMethod',
-    'NotificationType',
-    # Type Aliases
-    'Money',
-    'PhoneNumber',
-    'Email',
-    'UUIDStr',
-    # Protocols
-    'Identifiable',
-    'Serializable',
-    'Auditable',
-    'Repository',
-    'UnitOfWork',
-    'EventHandler',
-    'NotificationSender',
-    # Value Objects
-    'MoneyValue',
-    'DateRange',
-    'Address',
+    "Address",
+    "Auditable",
+    "ClientStatus",
     # Constants
-    'Constants',
+    "Constants",
+    "DateRange",
+    "DeviceType",
+    "Email",
+    "EventHandler",
+    # Protocols
+    "Identifiable",
+    # Type Aliases
+    "Money",
+    # Value Objects
+    "MoneyValue",
+    "NotificationSender",
+    "NotificationType",
+    # Enums
+    "OrderStatus",
+    "PaymentMethod",
+    "PhoneNumber",
+    "Priority",
+    "Repository",
+    "Serializable",
+    "UUIDStr",
+    "UnitOfWork",
     # Utilities
-    'generate_uuid',
-    'generate_uuid_str',
-    'now_utc',
-    'sanitize_string',
-    'safe_decimal',
+    "generate_uuid",
+    "generate_uuid_str",
+    "now_utc",
+    "safe_decimal",
+    "sanitize_string",
 ]

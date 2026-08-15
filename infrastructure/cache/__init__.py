@@ -1,5 +1,4 @@
-"""
-Cache Infrastructure Layer.
+"""Cache Infrastructure Layer.
 
 Реализации кэша (Memory, Redis).
 """

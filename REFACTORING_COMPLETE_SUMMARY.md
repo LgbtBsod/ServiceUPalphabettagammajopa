@@ -63,14 +63,16 @@ with db_manager.transaction():
 
 ```python
 from domain.state_machines.native_state_machine import (
-    get_order_state_machine, OrderStatus, NativeStateMachine
+    get_order_state_machine,
+    OrderStatus,
+    NativeStateMachine,
 )
 
 # Получение машины состояний
 sm = get_order_state_machine(OrderStatus.DRAFT)
 
 # Переходы с валидацией
-sm.transition_to(OrderStatus.NEW, user='admin', comment='Создан')
+sm.transition_to(OrderStatus.NEW, user="admin", comment="Создан")
 
 # Проверка допустимых переходов
 allowed = sm.get_allowed_transitions()  # [DIAGNOSTICS, CANCELLED]
@@ -83,16 +85,16 @@ for entry in sm.history:
 **Статусы заказа (SSOT)**:
 ```python
 class OrderStatus(Enum):
-    DRAFT              # Черновик
-    NEW                # Новый заказ
-    DIAGNOSTICS        # Диагностика
-    WAITING_PARTS      # Ожидание запчастей
-    REPAIRING          # В ремонте
-    TESTING            # Тестирование
-    READY              # Готов к выдаче
-    ISSUED             # Выдан клиенту (финальный)
-    CANCELLED          # Отменен (финальный)
-    REFUSED            # Отказ от ремонта (финальный)
+    DRAFT  # Черновик
+    NEW  # Новый заказ
+    DIAGNOSTICS  # Диагностика
+    WAITING_PARTS  # Ожидание запчастей
+    REPAIRING  # В ремонте
+    TESTING  # Тестирование
+    READY  # Готов к выдаче
+    ISSUED  # Выдан клиенту (финальный)
+    CANCELLED  # Отменен (финальный)
+    REFUSED  # Отказ от ремонта (финальный)
 ```
 
 **Возможности**:
@@ -118,14 +120,16 @@ from shared.cache import TTLCache, cached_operation, get_cache_stats
 cache = TTLCache(max_size=1000, default_ttl=300.0)
 
 # Ручное использование
-cache.set('order_123', order_data, ttl=60.0)
-order = cache.get('order_123')
+cache.set("order_123", order_data, ttl=60.0)
+order = cache.get("order_123")
+
 
 # Декоратор для функций
 @cached_operation(_order_cache, key_prefix="order:", ttl=60.0)
 def get_order(order_id: str) -> Dict:
     # Тяжелый запрос к БД
     return db.query(...)
+
 
 # Статистика
 stats = get_cache_stats()
@@ -608,9 +612,11 @@ from shared.kernel import UnitOfWork
 from domain.services import OrderService, NotificationService
 from application.order_services import OrderAppService
 
+
 # Создание фабрики Unit of Work
 def uow_factory() -> UnitOfWork:
     return SQLAlchemyUnitOfWork(DB_PATH)
+
 
 # Создание сервисов
 order_service = OrderService(repository=uow_factory().devices)
@@ -624,14 +630,16 @@ app_service = OrderAppService(
 )
 
 # Создание заказа
-result = app_service.create_order({
-    'device_type': 'Ноутбук',
-    'brand': 'Apple',
-    'model': 'MacBook Pro',
-    'client_name': 'Иван Петров',
-    'phone': '+79991234567',
-    'defect': 'Не включается',
-})
+result = app_service.create_order(
+    {
+        "device_type": "Ноутбук",
+        "brand": "Apple",
+        "model": "MacBook Pro",
+        "client_name": "Иван Петров",
+        "phone": "+79991234567",
+        "defect": "Не включается",
+    }
+)
 
 if result.success:
     print(f"Заказ создан: {result.order_number}")
@@ -643,8 +651,10 @@ if result.success:
 from application.backup_services import BackupService
 from shared.kernel import UnitOfWork
 
+
 def uow_factory() -> UnitOfWork:
     return SQLAlchemyUnitOfWork(DB_PATH)
+
 
 backup_service = BackupService(
     uow_factory=uow_factory,
@@ -803,11 +813,13 @@ from shared import batch_process, async_wrap, get_executor
 # Параллельная обработка
 results = batch_process(items, process_func, batch_size=10)
 
+
 # Асинхронная обёртка для sync функции
 @async_wrap
 def slow_io_operation():
     time.sleep(1)
     return result
+
 
 # Запуск в фоне
 task = await run_in_background(heavy_computation, data)
@@ -831,10 +843,10 @@ task = await run_in_background(heavy_computation, data)
 ```python
 from i18n import t, set_language
 
-text = t('buttons.button.save')  # "Сохранить" / "Save"
-msg = t('order.order.created', id=123)  # "Заказ #123 создан"
+text = t("buttons.button.save")  # "Сохранить" / "Save"
+msg = t("order.order.created", id=123)  # "Заказ #123 создан"
 
-set_language('en_US')  # Переключить язык
+set_language("en_US")  # Переключить язык
 ```
 
 ---
@@ -958,12 +970,7 @@ with log_execution_time("create_order"):
 from shared import batch_process
 
 # Обработать 100 заказов параллельно
-orders = batch_process(
-    order_list,
-    process_order,
-    batch_size=10,
-    max_workers=4
-)
+orders = batch_process(order_list, process_order, batch_size=10, max_workers=4)
 ```
 
 #### Интернационализация
@@ -971,10 +978,10 @@ orders = batch_process(
 from i18n import t, set_language
 
 # Получить перевод
-error_msg = t('errors.order.not_found', id=order_id)
+error_msg = t("errors.order.not_found", id=order_id)
 
 # Сменить язык
-set_language('en_US')
+set_language("en_US")
 ```
 
 ---
@@ -1114,15 +1121,17 @@ from events import event_bus, EventType, create_event
 event = create_event(
     event_type=EventType.ORDER_CREATED,
     aggregate_id=order_id,
-    payload={'order_number': '00001', 'total': 5000}
+    payload={"order_number": "00001", "total": 5000},
 )
 event_bus.publish(event)
+
 
 # Подписка на события
 @event_handler([EventType.ORDER_STATUS_CHANGED])
 class MyStatusHandler(EventHandler):
     def handle(self, event: DomainEvent) -> None:
         print(f"Status changed: {event.payload}")
+
 
 # Автоматическая подписка при создании экземпляра
 handler = MyStatusHandler()
@@ -1139,7 +1148,7 @@ overdue_orders = filter_orders(orders, overdue_spec)
 
 # Комбинированная спецификация
 attention_spec = (
-    SpecificationFactory.by_priority('Срочный')
+    SpecificationFactory.by_priority("Срочный")
     .and_(SpecificationFactory.overdue(3))
     .or_(SpecificationFactory.ready_for_pickup())
 )
@@ -1147,7 +1156,7 @@ needs_attention = filter_orders(orders, attention_spec)
 
 # Кастомная спецификация
 custom_spec = SpecificationFactory.custom(
-    lambda o: o.total_cost > 10000 and o.status != 'Выдан'
+    lambda o: o.total_cost > 10000 and o.status != "Выдан"
 )
 ```
 
@@ -1173,30 +1182,33 @@ custom_spec = SpecificationFactory.custom(
 # services/service_layer.py
 from events import event_bus, EventType, create_event
 
+
 class OrderService(BaseService[Order]):
     def create_order(self, order_data: Dict[str, Any]) -> Order:
         with self._get_uow() as uow:
             # ... создание заказа ...
-            
+
             # Публикация события
             event = create_event(
                 event_type=EventType.ORDER_CREATED,
                 aggregate_id=order.id,
-                payload=order.model_dump()
+                payload=order.model_dump(),
             )
             event_bus.publish(event)
-            
+
             return order
-    
-    def update_order_status(self, order_id: int, status: OrderStatus) -> Optional[Order]:
+
+    def update_order_status(
+        self, order_id: int, status: OrderStatus
+    ) -> Optional[Order]:
         with self._get_uow() as uow:
             # ... обновление статуса ...
-            
+
             # Публикация события
             event = create_event(
                 event_type=EventType.ORDER_STATUS_CHANGED,
                 aggregate_id=order_id,
-                payload={'old_status': old_status, 'new_status': status.value}
+                payload={"old_status": old_status, "new_status": status.value},
             )
             event_bus.publish(event)
 ```
@@ -1207,17 +1219,18 @@ class OrderService(BaseService[Order]):
 # database/repositories/device_repository.py
 from specifications import Specification, OrderCandidate
 
+
 class DeviceRepository(BaseRepository[Device]):
     def find_by_specification(self, spec: Specification) -> List[Device]:
         """Поиск устройств по спецификации."""
         all_devices = self.get_all()
-        
+
         # Конвертация в кандидаты для проверки
         candidates = [self._to_candidate(d) for d in all_devices]
         filtered = [c for c in candidates if spec.is_satisfied_by(c)]
-        
+
         return [self._from_candidate(c) for c in filtered]
-    
+
     def _to_candidate(self, device: Device) -> OrderCandidate:
         """Конвертация устройства в кандидата."""
         return OrderCandidate(
@@ -1227,7 +1240,7 @@ class DeviceRepository(BaseRepository[Device]):
             receipt_date=device.receipt_date,
             ready_date=device.ready_date,
             total_cost=device.total_cost,
-            days_in_service=get_days_since_receipt(device.receipt_date)
+            days_in_service=get_days_since_receipt(device.receipt_date),
         )
 ```
 
@@ -1357,8 +1370,8 @@ def create_services() -> Dict[str, BaseService]
 from services.service_layer import create_services
 
 services = create_services()
-order_service = services['orders']
-client_service = services['clients']
+order_service = services["orders"]
+client_service = services["clients"]
 ```
 
 ### Прямое использование фабрики БД
@@ -1378,12 +1391,12 @@ with uow:
 from database import DatabaseFactory, DatabaseConfig
 
 config = DatabaseConfig(
-    db_type='postgresql',
-    host='localhost',
+    db_type="postgresql",
+    host="localhost",
     port=5432,
-    database='service_center',
-    user='postgres',
-    password='secret'
+    database="service_center",
+    user="postgres",
+    password="secret",
 )
 
 factory = DatabaseFactory(config)
@@ -1412,17 +1425,20 @@ services = create_services(factory)
 ```python
 # Старый способ (продолжает работать)
 from database import Database
+
 db = Database()
 
 # Новый способ (рекомендуется)
 from database import get_database_factory
+
 factory = get_database_factory()
 uow = factory.create_unit_of_work()
 
 # Или через сервисы
 from services.service_layer import create_services
+
 services = create_services()
-order = services['orders'].create_order(order_data)
+order = services["orders"].create_order(order_data)
 ```
 
 ## Тестирование
@@ -1524,11 +1540,11 @@ class DatabaseConfig:
     password: Optional[str] = None
     pool_size: int = 5
     echo: bool = False
-    
+
     @classmethod
-    def from_env(cls) -> 'DatabaseConfig':
+    def from_env(cls) -> "DatabaseConfig":
         """Создание из переменных окружения"""
-        
+
     def get_connection_string(self) -> str:
         """Получение SQLAlchemy URL строки"""
 ```
@@ -1543,19 +1559,24 @@ class DatabaseConfig:
 ```python
 class DatabaseConnection(ABC):
     @abstractmethod
-    def connect(self) -> Any: pass
-    
+    def connect(self) -> Any:
+        pass
+
     @abstractmethod
-    def execute(self, query: str, params: tuple = ()) -> Any: pass
-    
+    def execute(self, query: str, params: tuple = ()) -> Any:
+        pass
+
     @abstractmethod
-    def commit(self) -> None: pass
-    
+    def commit(self) -> None:
+        pass
+
     @abstractmethod
-    def rollback(self) -> None: pass
-    
+    def rollback(self) -> None:
+        pass
+
     @contextmanager
-    def transaction(self): pass
+    def transaction(self):
+        pass
 ```
 
 **Преимущества:**
@@ -1591,14 +1612,14 @@ class UnitOfWork:
         self._connection = connection
         self._devices: Optional[DeviceRepository] = None
         self._clients: Optional[ClientRepository] = None
-    
+
     @property
     def devices(self) -> DeviceRepository:
         if self._devices is None:
             self._devices = DeviceRepository(self._connection)
         return self._devices
-    
-    def __enter__(self) -> 'UnitOfWork': ...
+
+    def __enter__(self) -> "UnitOfWork": ...
     def __exit__(self, exc_type, exc_val, exc_tb) -> None: ...
 ```
 
@@ -1650,18 +1671,20 @@ conn.connect()
 device_repo = DeviceRepository(conn)
 
 # Создание
-device = device_repo.create({
-    'order_number': 'ORD-001',
-    'client_name': 'Иван Иванов',
-    'phone': '+79991234567',
-    'status': 'Диагностика'
-})
+device = device_repo.create(
+    {
+        "order_number": "ORD-001",
+        "client_name": "Иван Иванов",
+        "phone": "+79991234567",
+        "status": "Диагностика",
+    }
+)
 
 # Поиск
-devices = device_repo.search('Иван')
+devices = device_repo.search("Иван")
 
 # Обновление
-device_repo.update(device.id, {'status': 'Готов'})
+device_repo.update(device.id, {"status": "Готов"})
 
 conn.disconnect()
 ```
@@ -1673,12 +1696,10 @@ from database.repositories import UnitOfWork
 
 with UnitOfWork(connection) as uow:
     # Создаем клиента и заказ атомарно
-    client = uow.clients.create({'name': 'Клиент', 'phone': '+79990001111'})
-    device = uow.devices.create({
-        'order_number': 'ORD-002',
-        'client_id': client['id'],
-        'status': 'Новый'
-    })
+    client = uow.clients.create({"name": "Клиент", "phone": "+79990001111"})
+    device = uow.devices.create(
+        {"order_number": "ORD-002", "client_id": client["id"], "status": "Новый"}
+    )
     # При ошибке оба изменения откажутся
 ```
 
@@ -1793,7 +1814,7 @@ devices = device_repo.get_all()
 **Было:**
 ```python
 # database/db_manager.py
-cursor.execute('SELECT * FROM devices WHERE id = ?', (device_id,))
+cursor.execute("SELECT * FROM devices WHERE id = ?", (device_id,))
 result = cursor.fetchall()
 ```
 
@@ -1916,30 +1937,30 @@ python -m pytest database/tests/test_repositories.py -v
 from database.db_config import DatabaseConfig
 
 # SQLite
-sqlite_config = DatabaseConfig(db_type='sqlite', database='test.db')
+sqlite_config = DatabaseConfig(db_type="sqlite", database="test.db")
 print(sqlite_config.get_connection_string())
 # sqlite:///test.db
 
 # PostgreSQL
 pg_config = DatabaseConfig(
-    db_type='postgresql',
-    host='localhost',
+    db_type="postgresql",
+    host="localhost",
     port=5432,
-    database='service_center',
-    user='postgres',
-    password='secret'
+    database="service_center",
+    user="postgres",
+    password="secret",
 )
 print(pg_config.get_connection_string())
 # postgresql+psycopg2://postgres:secret@localhost:5432/service_center
 
 # MySQL
 mysql_config = DatabaseConfig(
-    db_type='mysql',
-    host='localhost',
+    db_type="mysql",
+    host="localhost",
     port=3306,
-    database='service_center',
-    user='root',
-    password='secret'
+    database="service_center",
+    user="root",
+    password="secret",
 )
 print(mysql_config.get_connection_string())
 # mysql+pymysql://root:secret@localhost:3306/service_center
@@ -2132,8 +2153,8 @@ qrcode>=7.0           # QR коды
 ```python
 # БЫЛО:
 client_data = {
-    'name': 'Иванов И.И.',
-    'phone': '+79991234567',
+    "name": "Иванов И.И.",
+    "phone": "+79991234567",
 }
 # Валидация вручную через validators.validate_phone()
 
@@ -2141,9 +2162,9 @@ client_data = {
 from models import Client, ClientStatus
 
 client = Client(
-    full_name='Иванов Иван Иванович',
-    phone='+7 (999) 123-45-67',
-    email='ivan@example.com',
+    full_name="Иванов Иван Иванович",
+    phone="+7 (999) 123-45-67",
+    email="ivan@example.com",
     status=ClientStatus.REGULAR,
 )
 # Валидация автоматическая, телефон нормализован
@@ -2153,9 +2174,9 @@ client = Client(
 ```python
 # БЫЛО:
 order = {
-    'number': '00001',
-    'status': 'Диагностика',
-    'price': '1000',
+    "number": "00001",
+    "status": "Диагностика",
+    "price": "1000",
 }
 # Расчет total_cost вручную
 
@@ -2164,13 +2185,13 @@ from models import Order, DeviceType, OrderStatus
 from decimal import Decimal
 
 order = Order(
-    order_number='00001',
+    order_number="00001",
     device_type=DeviceType.LAPTOP,
-    brand='Apple',
-    model='MacBook Pro',
-    defects='Не включается',
-    diagnostic_cost=Decimal('1500.00'),
-    repair_cost=Decimal('8500.00'),
+    brand="Apple",
+    model="MacBook Pro",
+    defects="Не включается",
+    diagnostic_cost=Decimal("1500.00"),
+    repair_cost=Decimal("8500.00"),
     # total_cost рассчитается автоматически: 10000.00
 )
 ```
@@ -2399,7 +2420,7 @@ from infrastructure.licensing import LicenseService
 
 license_service = LicenseService()
 status = license_service.check_license()
-if status == 'trial_expired':
+if status == "trial_expired":
     # Показать диалог активации
     pass
 ```
@@ -2430,8 +2451,8 @@ Legacy модули сохраняются для постепенной миг�
 ```python
 from typing import List, Optional, Dict, Any, Protocol
 
-def get_devices(filters: Optional[Dict[str, Any]] = None) -> List[Device]:
-    ...
+
+def get_devices(filters: Optional[Dict[str, Any]] = None) -> List[Device]: ...
 ```
 
 ### 2. Dataclasses
@@ -2484,14 +2505,15 @@ logger.error(f"Ошибка создания заказа: {e}", exc_info=True)
 import unittest
 from unittest.mock import Mock
 
+
 class TestOrderService(unittest.TestCase):
     def test_create_order(self):
         mock_repo = Mock(spec=DeviceRepository)
         mock_repo.get_next_order_number.return_value = 1
-        
+
         service = OrderService(mock_repo)
         success, order, message = service.create_order(...)
-        
+
         self.assertTrue(success)
         self.assertEqual(order.device.order_number, "000001")
 ```
@@ -2649,10 +2671,7 @@ from dashboard_main import create_dashboard_service
 service = create_dashboard_service()
 
 # Получить данные дашборда
-dashboard = service.get_dashboard_data(
-    date_from="2025-01-01",
-    status="completed"
-)
+dashboard = service.get_dashboard_data(date_from="2025-01-01", status="completed")
 
 # Использовать в GUI
 render_gui(dashboard)
@@ -3122,6 +3141,7 @@ def validate_phone(phone):
 ```python
 import phonenumbers
 
+
 def validate_phone(phone):
     try:
         parsed = phonenumbers.parse(phone, "RU")
@@ -3144,15 +3164,16 @@ def validate_phone(phone):
 **Что было:**
 ```python
 def format_price(price):
-    return f"{price_val:,.2f} ₽".replace(',', ' ')
+    return f"{price_val:,.2f} ₽".replace(",", " ")
 ```
 
 **Что станет:**
 ```python
 from babel.numbers import format_currency
 
-def format_price(price, locale='ru_RU'):
-    return format_currency(price, 'RUB', locale=locale)
+
+def format_price(price, locale="ru_RU"):
+    return format_currency(price, "RUB", locale=locale)
 ```
 
 **Почему:**
@@ -3177,8 +3198,9 @@ def format_date(date_str):
 ```python
 from babel.dates import format_date
 
-def format_date(date_obj, locale='ru_RU'):
-    return format_date(date_obj, format='short', locale=locale)
+
+def format_date(date_obj, locale="ru_RU"):
+    return format_date(date_obj, format="short", locale=locale)
 ```
 
 **Почему:**
@@ -3201,6 +3223,7 @@ def validate_phone(phone):
 **Что стало:**
 ```python
 from typing import Optional
+
 
 def validate_phone(phone: Optional[str]) -> bool:
     if not phone:
@@ -3297,6 +3320,7 @@ print("❌ Критическая ошибка:", e)
 **Что станет:**
 ```python
 import logging
+
 logger = logging.getLogger(__name__)
 logger.error("Критическая ошибка", exc_info=e)
 ```
@@ -3520,19 +3544,18 @@ from core import get_event_bus, EventType, Event
 
 bus = get_event_bus()
 
+
 def on_order_created(event: Event):
     print(f"Заказ создан: {event.payload}")
+
 
 bus.subscribe(EventType.ORDER_CREATED, on_order_created)
 
 # Публикация события
 from domain.entities import Order
+
 order = Order(...)
-bus.publish(Event(
-    type=EventType.ORDER_CREATED,
-    payload=order,
-    source="order_service"
-))
+bus.publish(Event(type=EventType.ORDER_CREATED, payload=order, source="order_service"))
 ```
 
 ### Использование Skeleton Loader
@@ -3560,8 +3583,10 @@ from core import get_app, AppState
 
 app = get_app()
 
+
 def on_state_change(new_state: AppState):
     print(f"Состояние изменилось: {new_state.name}")
+
 
 app.subscribe_state(on_state_change)
 app.subscribe_progress(lambda p: print(f"{p.percentage}% - {p.stage}"))
@@ -3615,18 +3640,18 @@ await app.run()
 ```python
 from domain.state_machines import OrderStateMachine, OrderStatus
 
-sm = OrderStateMachine('ORD-001')
-sm.create_order()           # DRAFT → NEW
-sm.start_diagnostics()      # NEW → DIAGNOSTICS
-sm.approve_estimate()       # DIAGNOSTICS → WAITING_PARTS
-sm.parts_received()         # WAITING_PARTS → IN_PROGRESS
-sm.complete_repair()        # IN_PROGRESS → TESTING
-sm.pass_testing()           # TESTING → READY
-sm.deliver_to_client()      # READY → CLOSED
+sm = OrderStateMachine("ORD-001")
+sm.create_order()  # DRAFT → NEW
+sm.start_diagnostics()  # NEW → DIAGNOSTICS
+sm.approve_estimate()  # DIAGNOSTICS → WAITING_PARTS
+sm.parts_received()  # WAITING_PARTS → IN_PROGRESS
+sm.complete_repair()  # IN_PROGRESS → TESTING
+sm.pass_testing()  # TESTING → READY
+sm.deliver_to_client()  # READY → CLOSED
 
 # История переходов
 for h in sm.get_history():
-    print(f'{h.triggered_by}: {h.from_state.value} -> {h.to_state.value}')
+    print(f"{h.triggered_by}: {h.from_state.value} -> {h.to_state.value}")
 ```
 
 ---
@@ -3659,27 +3684,29 @@ from application.notifications import (
 )
 
 # Создание сервиса с конфигурацией
-service = create_notification_service({
-    'telegram': {'bot_token': '...'},
-    'email': {
-        'smtp_host': 'smtp.gmail.com',
-        'smtp_port': 587,
-        'username': '...',
-        'password': '...'
+service = create_notification_service(
+    {
+        "telegram": {"bot_token": "..."},
+        "email": {
+            "smtp_host": "smtp.gmail.com",
+            "smtp_port": 587,
+            "username": "...",
+            "password": "...",
+        },
     }
-})
+)
 
 # Отправка уведомления
 msg = NotificationMessage(
     channel=NotificationChannel.TELEGRAM,
-    recipient='123456789',
-    subject='Заказ готов',
-    body='<b>Ваш заказ #123 готов к выдаче!</b>',
+    recipient="123456789",
+    subject="Заказ готов",
+    body="<b>Ваш заказ #123 готов к выдаче!</b>",
     priority=NotificationPriority.HIGH,
 )
 
 result = await service.send(msg)
-print(f'Success: {result.success}, ID: {result.message_id}')
+print(f"Success: {result.success}, ID: {result.message_id}")
 
 # Отправка во все каналы одновременно (async)
 results = await service.send_to_all(msg)
@@ -3707,14 +3734,14 @@ results = await service.send_to_all(msg)
 from application.pdf_builder import create_act_builder, FieldType, PDFField, PDFSection
 
 # Создание билдера акта
-builder = create_act_builder('ORD-001', 'Иванов И.И.')
+builder = create_act_builder("ORD-001", "Иванов И.И.")
 
 # Заполнение полей
 for section in builder.sections:
     for field in section.fields:
-        if field.name == 'device_model':
-            field.value = 'iPhone 13 Pro'
-        elif field.name == 'total_cost':
+        if field.name == "device_model":
+            field.value = "iPhone 13 Pro"
+        elif field.name == "total_cost":
             field.value = 15000.00
 
 # DnD: Изменение порядка полей (индексы полей)
@@ -3725,10 +3752,11 @@ preview_bytes = builder.generate_preview()
 
 # Async генерация
 import asyncio
+
 pdf_bytes = await builder.build_async()
 
 # Сохранение
-builder.save('/path/to/act.pdf')
+builder.save("/path/to/act.pdf")
 ```
 
 **Структура акта по умолчанию:**
@@ -3831,19 +3859,20 @@ class OrderAggregate:
 ```python
 from application.notifications import NotificationService, NotificationChannel
 
+
 class OrderApplicationService:
     def __init__(self, notification_service: NotificationService):
         self.notification_service = notification_service
-    
+
     async def complete_order(self, order_id: str):
         order = self.order_repository.get(order_id)
         order.transition_to(OrderStatus.READY)
-        
+
         # Отправить уведомление клиенту
         msg = NotificationMessage(
             channel=NotificationChannel.TELEGRAM,
             recipient=order.client.phone,
-            body=f'Заказ #{order_id} готов!',
+            body=f"Заказ #{order_id} готов!",
         )
         await self.notification_service.send(msg)
 ```
@@ -3852,14 +3881,15 @@ class OrderApplicationService:
 ```python
 from application.pdf_builder import create_act_builder
 
+
 def generate_act(order: OrderAggregate) -> bytes:
     builder = create_act_builder(order.id, order.client.name)
-    
+
     # Заполнить поля из order
     for section in builder.sections:
         for field in section.fields:
             field.value = getattr(order, field.name, None)
-    
+
     return builder.generate_preview()
 ```
 

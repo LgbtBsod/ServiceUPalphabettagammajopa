@@ -21,7 +21,7 @@ from core import BaseService, BaseRepository, BaseViewModel, BaseGenerator
 # Или напрямую
 from core.base import (
     BaseService,
-    BaseRepository, 
+    BaseRepository,
     BaseViewModel,
     BaseGenerator,
     LoggableMixin,
@@ -74,10 +74,11 @@ from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
+
 class ClientAppService:
     def __init__(self, uow_factory):
         self._uow_factory = uow_factory
-    
+
     def get_client_by_id(self, client_id: int) -> Optional[Dict[str, Any]]:
         try:
             with self._uow_factory() as uow:
@@ -92,17 +93,15 @@ class ClientAppService:
 from core import BaseService
 from typing import Optional, Dict, Any
 
+
 class ClientAppService(BaseService):
     def __init__(self, uow_factory, name: str = "ClientAppService"):
         super().__init__(name=name)  # Автоматический логгер
         self._uow_factory = uow_factory
-    
+
     def get_client_by_id(self, client_id: int) -> Optional[Dict[str, Any]]:
-        return self.safe_execute(
-            lambda: self._get_client_impl(client_id),
-            default=None
-        )
-    
+        return self.safe_execute(lambda: self._get_client_impl(client_id), default=None)
+
     def _get_client_impl(self, client_id: int) -> Optional[Dict[str, Any]]:
         with self._uow_factory() as uow:
             client = uow.clients.get_by_id(client_id)
@@ -127,17 +126,15 @@ class ClientAppService(BaseService):
 from core import BaseRepository
 from domain.models import Client
 
+
 class SQLClientRepository(BaseRepository):
     def __init__(self, db_connection, name: str = "SQLClientRepository"):
         super().__init__(name=name)
         self._db = db_connection
-    
+
     def get_by_id(self, client_id: int) -> Optional[Client]:
-        return self.safe_execute(
-            lambda: self._query_client(client_id),
-            default=None
-        )
-    
+        return self.safe_execute(lambda: self._query_client(client_id), default=None)
+
     def _query_client(self, client_id: int) -> Optional[Client]:
         self.log.debug(f"Querying client {client_id}")  # Логирование
         cursor = self._db.execute("SELECT * FROM clients WHERE id=?", (client_id,))
@@ -153,23 +150,23 @@ class SQLClientRepository(BaseRepository):
 from core import BaseViewModel
 import customtkinter as ctk
 
+
 class ClientPanel(BaseViewModel, ctk.CTkFrame):
     def __init__(self, parent, name: str = "ClientPanel"):
         super().__init__(name=name)
         ctk.CTkFrame.__init__(self, parent)
-        
+
         # Доступ к сервисам через DI
         self._client_service = self.get_service(ClientAppService)
-        
+
         self.log.info("ClientPanel initialized")  # Логирование
-    
+
     def load_client(self, client_id: int):
         # Безопасное выполнение с обработкой ошибок
         client = self.safe_execute(
-            lambda: self._client_service.get_client_by_id(client_id),
-            default=None
+            lambda: self._client_service.get_client_by_id(client_id), default=None
         )
-        
+
         if client:
             self._update_ui(client)
         else:
@@ -184,18 +181,16 @@ class ClientPanel(BaseViewModel, ctk.CTkFrame):
 from core import BaseGenerator
 from application.pdf_builder import PDFBuilder
 
+
 class ActPDFGenerator(BaseGenerator):
     def __init__(self, template_path: str, name: str = "ActPDFGenerator"):
         super().__init__(name=name)
         self._builder = PDFBuilder(template_path)
         self.log.info(f"Generator initialized with template: {template_path}")
-    
+
     def generate(self, order_data: dict) -> bytes:
-        return self.safe_execute(
-            lambda: self._generate_pdf(order_data),
-            default=b""
-        )
-    
+        return self.safe_execute(lambda: self._generate_pdf(order_data), default=b"")
+
     def _generate_pdf(self, order_data: dict) -> bytes:
         self.log.debug("Generating PDF...")
         pdf_bytes = self._builder.build(order_data)
@@ -241,6 +236,7 @@ def risky_operation(self, value: int) -> Optional[str]:
         lambda: self._internal_logic(value),
         default=None,  # Возвращается при ошибке
     )
+
 
 def _internal_logic(self, value: int) -> str:
     # Любое исключение будет перехвачено и залогировано
@@ -303,6 +299,7 @@ class OrderService(BaseService):
 ```python
 # Было
 import logging
+
 logger = logging.getLogger(__name__)
 
 # Стало
@@ -316,6 +313,7 @@ from core import BaseService
 class MyService:
     def __init__(self, dep):
         self._dep = dep
+
 
 # Стало
 class MyService(BaseService):
@@ -345,10 +343,7 @@ except Exception as e:
     return None
 
 # Стало
-result = self.safe_execute(
-    lambda: self._do_work(),
-    default=None
-)
+result = self.safe_execute(lambda: self._do_work(), default=None)
 ```
 
 ---

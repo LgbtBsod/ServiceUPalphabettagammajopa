@@ -1,5 +1,4 @@
-"""
-Core Contracts (Ports)
+"""Core Contracts (Ports)
 Определение интерфейсов и DTO для Clean Architecture.
 Здесь нет зависимостей от SQLAlchemy, UI или внешних библиотек.
 Только стандартная библиотека и typing.
@@ -9,27 +8,31 @@ Core Contracts (Ports)
 - SRP: Каждый протокол отвечает за одну сущность
 - SSOT: DTO определены один раз здесь
 """
+
 from __future__ import annotations
-from typing import Protocol, Any, Optional
+
 from abc import abstractmethod
-from datetime import datetime
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Protocol, Self
 
 
 # === Базовые DTO (Data Transfer Objects) ===
 @dataclass
 class BaseDTO:
     """Базовый класс для всех объектов передачи данных."""
-    id: Optional[int] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+
+    id: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 @dataclass
 class OrderDTO(BaseDTO):
     """DTO для заказа."""
+
     order_number: str = ""
-    client_id: Optional[int] = None
+    client_id: int | None = None
     status: str = "new"
     priority: str = "normal"
     total_amount: float = 0.0
@@ -39,6 +42,7 @@ class OrderDTO(BaseDTO):
 @dataclass
 class ClientDTO(BaseDTO):
     """DTO для клиента."""
+
     name: str = ""
     contact_info: str = ""
     status: str = "active"
@@ -46,77 +50,67 @@ class ClientDTO(BaseDTO):
 
 # === Контракты Репозиториев (Ports) ===
 class IOrderRepository(Protocol):
-    """
-    Контракт для работы с заказами.
+    """Контракт для работы с заказами.
     Реализуется в infrastructure слое (SQLAlchemy).
     """
-    
-    @abstractmethod
-    def get_by_id(self, order_id: int) -> Optional[OrderDTO]:
-        """Получить заказ по ID."""
-        pass
 
     @abstractmethod
-    def get_all(self, filters: Optional[dict[str, Any]] = None) -> list[OrderDTO]:
+    def get_by_id(self, order_id: int) -> OrderDTO | None:
+        """Получить заказ по ID."""
+
+    @abstractmethod
+    def get_all(self, filters: dict[str, Any] | None = None) -> list[OrderDTO]:
         """Получить все заказы с фильтрацией."""
-        pass
 
     @abstractmethod
     def save(self, dto: OrderDTO) -> OrderDTO:
         """Сохранить заказ (создать или обновить)."""
-        pass
 
     @abstractmethod
     def delete(self, order_id: int) -> bool:
         """Удалить заказ по ID."""
-        pass
 
 
 class IClientRepository(Protocol):
-    """
-    Контракт для работы с клиентами.
+    """Контракт для работы с клиентами.
     Реализуется в infrastructure слое (SQLAlchemy).
     """
-    
-    @abstractmethod
-    def get_by_id(self, client_id: int) -> Optional[ClientDTO]:
-        """Получить клиента по ID."""
-        pass
 
     @abstractmethod
-    def get_all(self, filters: Optional[dict[str, Any]] = None) -> list[ClientDTO]:
+    def get_by_id(self, client_id: int) -> ClientDTO | None:
+        """Получить клиента по ID."""
+
+    @abstractmethod
+    def get_all(self, filters: dict[str, Any] | None = None) -> list[ClientDTO]:
         """Получить всех клиентов с фильтрацией."""
-        pass
 
     @abstractmethod
     def save(self, dto: ClientDTO) -> ClientDTO:
         """Сохранить клиента."""
-        pass
 
     @abstractmethod
     def delete(self, client_id: int) -> bool:
         """Удалить клиента."""
-        pass
 
 
 # === Сервис Локатор (Упрощенный DI Container) ===
 class CoreContainer:
-    """
-    Единая точка входа для получения реализаций репозиториев.
+    """Единая точка входа для получения реализаций репозиториев.
     Реализует Dependency Injection через регистрацию зависимостей.
-    
+
     Пример использования:
         kernel = CoreContainer()
         kernel.register_order_repository(SqlAlchemyOrderRepository(session))
-        
+
         # Получение доступа к данным через ядро
         orders = kernel.orders.get_all(filters={'status': 'new'})
     """
-    _instance: Optional["CoreContainer"] = None
-    _order_repo: Optional[IOrderRepository] = None
-    _client_repo: Optional[IClientRepository] = None
 
-    def __new__(cls) -> "CoreContainer":
+    _instance: CoreContainer | None = None
+    _order_repo: IOrderRepository | None = None
+    _client_repo: IClientRepository | None = None
+
+    def __new__(cls) -> Self:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance

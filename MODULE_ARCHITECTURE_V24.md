@@ -174,30 +174,31 @@ class TelegramBotModule(ModuleBase):
     description = MODULE_DESCRIPTION
     author = MODULE_AUTHOR
     dependencies = MODULE_DEPENDENCIES
-    
+
     def on_init(self):
         self.bot_token = None  # Загрузить из конфига
         self.log.info("🤖 Telegram Bot модуль инициализирован")
-        
+
     def on_start(self):
         config = self.get_service("config_service")
         self.bot_token = config.get("telegram.bot_token")
-        
+
         # Запуск поллинга в фоне
         asyncio.create_task(self._run_polling())
-        
+
     async def _run_polling(self):
         from aiogram import Bot, Dispatcher
+
         bot = Bot(token=self.bot_token)
         dp = Dispatcher()
-        
+
         @dp.message()
         async def handle_message(message):
             # Обработка команд
             pass
-            
+
         await dp.start_polling(bot)
-        
+
     def on_stop(self):
         self.log.info("🤖 Telegram Bot остановлен")
 ```
@@ -215,21 +216,18 @@ MODULE_DESCRIPTION = "Панель аналитики с графиками"
 
 class AnalyticsDashboardModule(ModuleBase):
     name = MODULE_NAME
-    
+
     def register_gui_components(self, gui_factory=None):
         if gui_factory is None:
             return
-            
+
         from .gui.analytics_panel import AnalyticsPanel
-        
+
         # Регистрация панели в главном окне
         gui_factory.register_panel(
-            "analytics", 
-            AnalyticsPanel,
-            title="Аналитика",
-            icon="chart_icon.png"
+            "analytics", AnalyticsPanel, title="Аналитика", icon="chart_icon.png"
         )
-        
+
         self.log.info("📊 Панель аналитики зарегистрирована")
 ```
 
@@ -288,6 +286,7 @@ def on_init(self):
     config_path = self.module_info.path / "config.yaml"
     if config_path.exists():
         import yaml
+
         with open(config_path) as f:
             self.config = yaml.safe_load(f)
 ```
@@ -300,17 +299,20 @@ import pytest
 from modules.my_module import MyModule
 from core import CoreContainer
 
+
 @pytest.fixture
 def app_container():
     container = CoreContainer()
     container.wire(modules=["application", "infrastructure"])
     return container
 
+
 def test_module_initialization(app_container):
     module = MyModule(app_container=app_container)
     module.on_init()
     assert module.name == "my_module"
-    
+
+
 def test_module_service_access(app_container):
     module = MyModule(app_container=app_container)
     service = module.get_service("order_service")
