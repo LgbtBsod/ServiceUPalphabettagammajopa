@@ -133,6 +133,18 @@ class Database:
             s.commit()
             return current
 
+    def peek_next_order_number(self) -> int:
+        """Возвращает следующий номер заказа БЕЗ инкремента счётчика — для
+        превью в UI (например, заголовок формы нового устройства). Раньше
+        для этого GUI лез в self.db.conn.cursor() напрямую, чего у этого
+        facade нет — AttributeError гасился bare except и номер всегда
+        показывался как '???' (см. AUDIT_REPORT_v21.md)."""
+        with self._session() as s:
+            counter = s.execute(
+                select(Counter).where(Counter.name == "order_counter")
+            ).scalar_one_or_none()
+            return counter.value if counter is not None else 1
+
     # ==================== СЛОВАРИ ====================
 
     def get_dict_values(self, dict_type: str) -> list[str]:

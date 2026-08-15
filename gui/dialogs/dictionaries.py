@@ -7,7 +7,7 @@ from tkinter import messagebox, ttk
 import customtkinter as ctk
 
 from gui.widgets.premium import PremiumCard
-from utils.constants import DICTIONARY_TYPES
+from domain.constants import DICTIONARY_TYPES
 
 
 class DictionariesManagerWindow(ctk.CTkToplevel):

@@ -60,7 +60,9 @@ from shared.logging_config import (
     log_warning,
 )
 
-__version__ = "20.0"
+from config import APP_VERSION
+
+__version__ = APP_VERSION
 
 __all__ = [
     "Address",

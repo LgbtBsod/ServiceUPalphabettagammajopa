@@ -6,18 +6,22 @@
 Клик по «Просрочены» фильтрует таблицу (callback on_overdue_click).
 """
 
+import logging
+
 import customtkinter as ctk
 
 from gui.widgets.premium import PremiumCard
-from utils.formatters import get_days_since_receipt
+
+logger = logging.getLogger(__name__)
 
 
 class PremiumDashboard(PremiumCard):
     """Компактный дашборд с аналитикой"""
 
-    def __init__(self, master, db, colors, on_overdue_click=None, **kwargs):
+    def __init__(self, master, db, colors, settings=None, on_overdue_click=None, **kwargs):
         self.db = db
         self.colors = colors
+        self.settings = settings
         self.on_overdue_click = on_overdue_click  # callback клика по «Просрочены»
         super().__init__(master, colors, **kwargs)
         self.stats_cards = {}
@@ -101,14 +105,12 @@ class PremiumDashboard(PremiumCard):
             if key in self.stats_cards:
                 self.stats_cards[key].configure(text=str(stats.get(key, 0)))
 
-        # Просроченные: заказы в ремонте > 14 дней
+        # Просроченные — SQL-агрегация вместо питон-цикла по всем устройствам
+        # (закрывает 3-кратное дублирование этого фильтра, см. AUDIT_REPORT_v21.md)
         try:
-            overdue = 0
-            for d in self.db.get_all_devices(include_completed=False):
-                days = get_days_since_receipt(d.get("receipt_date", ""))
-                if days > 14:
-                    overdue += 1
+            threshold = self.settings.get("overdue_days", 14) if self.settings else 14
+            overdue = self.db.calculate("overdue_count", threshold_days=threshold)
             if "overdue" in self.stats_cards:
                 self.stats_cards["overdue"].configure(text=str(overdue))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Ошибка подсчёта просроченных заказов: {e}", exc_info=True)

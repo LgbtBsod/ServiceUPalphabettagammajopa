@@ -1,34 +1,19 @@
 #!/usr/bin/env python3
 
-"""Константы приложения - DEPRECATED.
+"""Настройки приложения по умолчанию (DEFAULT_SETTINGS).
 
-Этот модуль устарел и будет удален в версии 20.0.
-Используйте:
-    - domain.constants для бизнес-констант (STATUSES, PRIORITIES и т.д.)
-    - config.settings для настроек приложения (DEFAULT_SETTINGS)
-
-Principles applied:
-- SSOT: Constants moved to domain.constants
-- DRY: Re-export from single source
+Раньше этот модуль ещё и реэкспортировал бизнес-константы (STATUSES,
+PRIORITIES и т.д.) из domain.constants "для обратной совместимости", но
+все живые потребители уже импортируют их напрямую из domain.constants —
+см. AUDIT_REPORT_v21.md. Единственное, что здесь остаётся не дублировано
+нигде больше — сборка DEFAULT_SETTINGS (объединяет domain-константы и
+config.settings в словарь, совместимый с managers.settings.SettingsManager).
 """
 
 from __future__ import annotations
 
-import warnings
-
-# Import default settings from config (application settings, not domain constants)
 from config.settings import get_settings
-
-# Import from single source of truth in domain layer
-from domain.constants import (
-    CLIENT_STATUSES,
-    DEFAULT_PRIORITY,
-    DEFAULT_STATUS,
-    DICTIONARY_TYPES,
-    PRIORITIES,
-    STATUSES,
-    WARRANTIES,
-)
+from domain.constants import DEFAULT_PRIORITY, DEFAULT_STATUS
 
 
 def _get_default_settings() -> dict:
@@ -73,25 +58,7 @@ def _get_default_settings() -> dict:
     }
 
 
-# Legacy compatibility - will be removed in v20.0
-warnings.warn(
-    "utils.constants is deprecated. "
-    "Use 'domain.constants' for business constants and 'config.settings' for app settings. "
-    "This module will be removed in version 20.0.",
-    DeprecationWarning,
-    stacklevel=2,
-)
-
 DEFAULT_SETTINGS = _get_default_settings()
 
 
-__all__ = [
-    "CLIENT_STATUSES",
-    "DEFAULT_PRIORITY",
-    "DEFAULT_SETTINGS",
-    "DEFAULT_STATUS",
-    "DICTIONARY_TYPES",
-    "PRIORITIES",
-    "STATUSES",
-    "WARRANTIES",
-]
+__all__ = ["DEFAULT_SETTINGS"]

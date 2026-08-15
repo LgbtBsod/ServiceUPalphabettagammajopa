@@ -431,8 +431,21 @@ class ServiceUpCore(LoggableMixin):
         """Запускает созданный поток."""
         if not self._initialized:
             raise RuntimeError("Core not initialized")
-        
+
         return self._thread_manager.start_thread(thread_id)
+
+    def stop_thread(self, thread_id: str, timeout: float = 5.0) -> bool:
+        """Останавливает поток и сразу освобождает его имя (cleanup_stopped()),
+        чтобы вызывающий мог создать новый поток с тем же именем (например,
+        повторный старт PWA-сервера). Без этого create_thread(name=...) с уже
+        использованным именем падает с ValueError даже после того, как старый
+        поток фактически завершился — см. AUDIT_REPORT_v21.md."""
+        if not self._initialized:
+            raise RuntimeError("Core not initialized")
+
+        result = self._thread_manager.stop_thread(thread_id, timeout=timeout)
+        self._thread_manager.cleanup_stopped()
+        return result
 
     def shutdown(self) -> None:
         """Корректно завершает работу ядра."""

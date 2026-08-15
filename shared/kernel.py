@@ -13,6 +13,8 @@ from enum import StrEnum
 from typing import Protocol, Self, runtime_checkable
 from uuid import UUID, uuid4
 
+from config import APP_VERSION
+
 # =============================================================================
 # ENUMS - Single Source of Truth
 # =============================================================================
@@ -245,8 +247,10 @@ class Address:
 class Constants:
     """Централизованное хранилище констант приложения."""
 
-    # Версия приложения
-    VERSION = "17.0"
+    # Версия приложения — единственный источник истины: config.APP_VERSION
+    # (раньше здесь был захардкожен независимый литерал '17.0', расходившийся
+    # с реальной версией, см. AUDIT_REPORT_v21.md)
+    VERSION = APP_VERSION
     NAME = "ServiceUP"
     DESCRIPTION = "Учет ремонта техники"
 

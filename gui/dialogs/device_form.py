@@ -19,7 +19,7 @@ from gui.widgets.modern import ModernCard
 from gui.widgets.thumbnail import ThumbnailWidget
 from gui.widgets.work_table import WorkItemsTable
 from managers import PhotoManager, ReportGenerator
-from utils.constants import CLIENT_STATUSES, PRIORITIES, STATUSES, WARRANTIES
+from domain.constants import CLIENT_STATUSES, PRIORITIES, STATUSES, WARRANTIES
 from utils.formatters import (
     format_order_number_for_display,
     format_price,
@@ -45,11 +45,17 @@ class DeviceFormDialog(ctk.CTkToplevel):
         is_new: bool = True,
         device_data: dict[str, Any] | None = None,
         settings=None,
+        report_gen: ReportGenerator | None = None,
     ):
         super().__init__(parent)
         self.db = db
         self.client_db = client_db
         self.photo_manager = photo_manager
+        # Единственный экземпляр из Kernel (core.get_module_api("reports")) —
+        # раньше диалог создавал свой ReportGenerator() локально в обход ядра
+        # (см. AUDIT_REPORT_v21.md). Фолбэк оставлен на случай прямого
+        # конструирования диалога вне обычного потока приложения.
+        self.report_gen = report_gen or ReportGenerator()
         self.colors = colors
         self.settings = settings  # для сохранения геометрии окна (опционально)
         self.is_new = is_new
@@ -208,15 +214,13 @@ class DeviceFormDialog(ctk.CTkToplevel):
         if self.is_new:
             from utils.formatters import generate_order_number
 
-            # Показываем следующий номер (без инкремента БД)
+            # Показываем следующий номер (без инкремента БД) — через facade,
+            # а не через self.db.conn (которого нет у sqlalchemy_database.Database,
+            # см. AUDIT_REPORT_v21.md)
             try:
-                cursor = self.db.conn.cursor()
-                cursor.execute(
-                    "SELECT value FROM counters WHERE name = ?", ("order_counter",)
-                )
-                row = cursor.fetchone()
-                next_num = generate_order_number(row["value"] if row else 1)
-            except Exception:
+                next_num = generate_order_number(self.db.peek_next_order_number())
+            except Exception as e:
+                logger.warning(f"Не удалось получить превью номера заказа: {e}")
                 next_num = "???"
             title_text = f"Новый заказ  ·  №{next_num}"
         else:
@@ -400,8 +404,6 @@ class DeviceFormDialog(ctk.CTkToplevel):
                 combo.grid(row=i, column=1, sticky="ew", padx=(8, 0), pady=3)
                 setattr(self, f"{field_key}_combo", combo)
             elif field_key == "warranty":
-                from utils.constants import WARRANTIES
-
                 combo = ctk.CTkComboBox(
                     dev_frame, values=WARRANTIES, width=200, height=30
                 )
@@ -551,8 +553,6 @@ class DeviceFormDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             client_frame, text="Статус заказа:", font=ctk.CTkFont(size=12)
         ).grid(row=5, column=0, sticky="w", pady=3)
-        from utils.constants import STATUSES
-
         self.status_combo = ctk.CTkComboBox(
             client_frame, values=STATUSES, width=200, height=30
         )
@@ -564,8 +564,6 @@ class DeviceFormDialog(ctk.CTkToplevel):
         ctk.CTkLabel(client_frame, text="Приоритет:", font=ctk.CTkFont(size=12)).grid(
             row=6, column=0, sticky="w", pady=3
         )
-        from utils.constants import PRIORITIES
-
         self.priority_combo = ctk.CTkComboBox(
             client_frame, values=PRIORITIES, width=200, height=30
         )
@@ -1560,7 +1558,7 @@ class DeviceFormDialog(ctk.CTkToplevel):
 
     def show_receipt_act_preview(self):
         """Показать предпросмотр акта приема"""
-        report_gen = ReportGenerator()
+        report_gen = self.report_gen
         device = self.db.get_device(self.device_data.get("id"))
         if device:
             filename = report_gen.generate_receipt_act(device)
@@ -1581,7 +1579,7 @@ class DeviceFormDialog(ctk.CTkToplevel):
 
     def show_completion_act_preview(self):
         """Показать предпросмотр акта выполненных работ"""
-        report_gen = ReportGenerator()
+        report_gen = self.report_gen
         device = self.db.get_device(self.device_data.get("id"))
         if device:
             work_items_json = device.get("work_items", "")

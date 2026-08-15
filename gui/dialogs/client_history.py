@@ -20,6 +20,7 @@ from gui.widgets.modern import (
     ModernCombobox,
     ModernEntry,
 )
+from managers import ReportGenerator
 from utils.formatters import (
     format_date,
     format_order_number_for_db,
@@ -44,10 +45,13 @@ class ClientHistoryWindow(ctk.CTkToplevel):
         client_status: str,
         colors: dict,
         settings=None,
+        report_gen: ReportGenerator | None = None,
     ):
         super().__init__(parent)
         self.db = db
         self.client_db = client_db
+        # Единственный экземпляр из Kernel — см. AUDIT_REPORT_v21.md
+        self.report_gen = report_gen or ReportGenerator()
         self.parent_app = parent
         self.client_name = client_name
         self.client_phone = client_phone
@@ -781,9 +785,8 @@ class ClientHistoryWindow(ctk.CTkToplevel):
 
         if device:
             from gui.dialogs.act_preview import ActPreviewWindow
-            from managers import ReportGenerator
 
-            report_gen = ReportGenerator()
+            report_gen = self.report_gen
             filename = report_gen.generate_receipt_act(device)
             if filename and os.path.exists(filename):
                 with open(filename, encoding="utf-8") as f:

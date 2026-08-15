@@ -34,7 +34,7 @@ from database import ClientDatabaseManager, WorkItemsManager
 from database.models import WorkItem
 from database.sqlalchemy_database import Database
 from managers import PhotoManager
-from utils.constants import PRIORITIES, STATUSES
+from domain.constants import PRIORITIES, STATUSES, WARRANTIES
 from utils.formatters import (
     format_date,
     format_order_number_for_display,
@@ -86,6 +86,24 @@ def get_local_ip() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Kernel bootstrap (общий хелпер вместо дублирования в _DBHolder и
+# PWAServerManager — см. AUDIT_REPORT_v21.md)
+# ---------------------------------------------------------------------------
+
+
+def _get_core():
+    """Возвращает инициализированное ядро, инициализируя его при необходимости."""
+    from core.kernel import get_core
+
+    core = get_core()
+    if not core.is_initialized:
+        import bootstrap
+
+        core = bootstrap.initialize_kernel()
+    return core
+
+
+# ---------------------------------------------------------------------------
 # Потокобезопасный доступ к БД (отдельное соединение для Flask-потока)
 # ---------------------------------------------------------------------------
 
@@ -113,13 +131,7 @@ class _DBHolder:
         экземпляр из ядра вместо создания нового на поток.
         """
         if not hasattr(self._local, "db"):
-            from core.kernel import get_core
-
-            core = get_core()
-            if not core.is_initialized:
-                import bootstrap
-
-                core = bootstrap.initialize_kernel()
+            core = _get_core()
             # Доступ к БД — только через core.get_db_access(), никогда напрямую.
             self._local.db = core.get_db_access()
             self._local.client_db = core.get_module_api("client_history")
@@ -550,14 +562,7 @@ def create_flask_app():
                     "device_types": db.get_dict_values("device_types"),
                     "brands": db.get_dict_values("brands"),
                     "work_templates": db.get_dict_values("work"),
-                    "warranties": [
-                        "",
-                        "1 месяц",
-                        "3 месяца",
-                        "6 месяцев",
-                        "1 год",
-                        "2 года",
-                    ],
+                    "warranties": WARRANTIES,
                 }
             )
         except Exception as e:
@@ -724,12 +729,16 @@ def _work_items_to_json(work_items) -> str:
 class PWAServerManager:
     """Управляет жизненным циклом Flask-сервера в daemon-потоке."""
 
+    _THREAD_NAME = "PWA-Server"
+
     def __init__(self):
         self.app = None
         self.thread: threading.Thread | None = None
         self.host = "0.0.0.0"
         self.port = 5000
         self._running = False
+        self._werkzeug_server = None
+        self._server_ready = threading.Event()
 
     def start(self, port: int = 5000, host: str = "0.0.0.0") -> bool:
         """Запускает сервер в фоновом потоке. Возвращает True при успехе."""
@@ -739,6 +748,7 @@ class PWAServerManager:
             self.port = port
             self.host = host
             self.app = create_flask_app()
+            self._server_ready.clear()
 
             def _serve():
                 # werkzeug без reloader/log, чтобы не плодить потоки
@@ -746,17 +756,20 @@ class PWAServerManager:
 
                 server = make_server(host, port, self.app, threaded=True)
                 self._werkzeug_server = server
+                self._server_ready.set()
                 server.serve_forever()
 
-            from core.kernel import get_core
-
-            core = get_core()
-            if not core.is_initialized:
-                import bootstrap
-
-                core = bootstrap.initialize_kernel()
-            core.create_thread(name="PWA-Server", target=_serve, daemon=True)
-            core.start_thread("PWA-Server")
+            core = _get_core()
+            # Освобождаем имя потока от предыдущего запуска (если был) —
+            # иначе create_thread() падает с ValueError на повторном start()
+            # после stop(), т.к. ThreadManager не убирает завершённые записи
+            # сам по себе (см. AUDIT_REPORT_v21.md).
+            core.stop_thread(self._THREAD_NAME, timeout=0.1)
+            core.create_thread(name=self._THREAD_NAME, target=_serve, daemon=True)
+            core.start_thread(self._THREAD_NAME)
+            # Ждём, пока werkzeug реально поднимется, чтобы stop() сразу после
+            # start() не оказался no-op из-за гонки за self._werkzeug_server.
+            self._server_ready.wait(timeout=5.0)
             self._running = True
             return True
         except Exception as e:
@@ -769,12 +782,18 @@ class PWAServerManager:
         if not self._running:
             return
         try:
-            srv = getattr(self, "_werkzeug_server", None)
-            if srv is not None:
-                srv.shutdown()
+            if self._werkzeug_server is not None:
+                self._werkzeug_server.shutdown()
         except Exception as e:
             logger.error(f"Ошибка остановки PWA-сервера: {e}", exc_info=True)
         self._running = False
+        self._werkzeug_server = None
+        # Освобождаем имя потока в ThreadManager, чтобы следующий start() мог
+        # снова создать поток с тем же именем.
+        try:
+            _get_core().stop_thread(self._THREAD_NAME, timeout=5.0)
+        except Exception as e:
+            logger.error(f"Ошибка освобождения потока PWA-сервера: {e}", exc_info=True)
         # Закрываем соединения БД
         _db_holder.close()
 

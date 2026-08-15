@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 
 """Сервисный центр - Учет ремонта техники
-Версия 15.0
-Структурированная версия
+
+Версия приложения — единственный источник истины: config.APP_VERSION
+(config/settings.py). Не хардкодить номер версии здесь — раньше он был
+захардкожен ('15.0') и расходился с реальной версией (см. AUDIT_REPORT_v21.md).
 """
 
 import sys
 import warnings
 
-warnings.filterwarnings("ignore")
+# Точечно (не все категории целиком — раньше это маскировало и полезные
+# предупреждения, например о неверном использовании API сторонних
+# библиотек, см. AUDIT_REPORT_v21.md): DeprecationWarning от зависимостей
+# не actionable для конечного пользователя десктоп-приложения.
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
 def main():
@@ -37,12 +43,17 @@ def main():
     # gui/main_window.py и pwa/server.py.
     initialize_kernel()
 
+    from config import APP_VERSION
+
     try:
-        print("╔" + "═" * 50 + "╗")
-        print("║" + " " * 14 + "ServiceUP v15.0" + " " * 14 + "║")
-        print("╠" + "═" * 50 + "╣")
-        print("║" + " " * 12 + "УЧЁТ РЕМОНТА ТЕХНИКИ" + " " * 12 + "║")
-        print("╚" + "═" * 50 + "╝")
+        title = f"ServiceUP v{APP_VERSION}"
+        subtitle = "УЧЁТ РЕМОНТА ТЕХНИКИ"
+        width = 50
+        print("╔" + "═" * width + "╗")
+        print("║" + title.center(width) + "║")
+        print("╠" + "═" * width + "╣")
+        print("║" + subtitle.center(width) + "║")
+        print("╚" + "═" * width + "╝")
         print()
 
         # --- Проверка лицензии перед запуском ---

@@ -2,6 +2,7 @@
 
 """Менеджер настроек приложения"""
 
+import copy
 import json
 import logging
 import os
@@ -26,11 +27,11 @@ class SettingsManager:
             if os.path.exists(self.config_file):
                 with open(self.config_file, encoding="utf-8") as f:
                     loaded = json.load(f)
-                    return self.merge_settings(DEFAULT_SETTINGS.copy(), loaded)
+                    return self.merge_settings(copy.deepcopy(DEFAULT_SETTINGS), loaded)
         except Exception as e:
             logger.error(f"Ошибка загрузки настроек: {e}", exc_info=True)
 
-        return DEFAULT_SETTINGS.copy()
+        return copy.deepcopy(DEFAULT_SETTINGS)
 
     def merge_settings(self, default: dict, loaded: dict) -> dict:
         """Рекурсивное объединение настроек"""
@@ -74,5 +75,5 @@ class SettingsManager:
 
     def reset_to_defaults(self) -> None:
         """Сброс к настройкам по умолчанию"""
-        self.settings = DEFAULT_SETTINGS.copy()
+        self.settings = copy.deepcopy(DEFAULT_SETTINGS)
         self.save_settings()

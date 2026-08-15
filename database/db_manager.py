@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from config import DB_PATH
-from utils.constants import DICTIONARY_TYPES
+from domain.constants import DICTIONARY_TYPES
 from utils.formatters import normalize_phone_digits, parse_price_to_float
 
 logger = logging.getLogger(__name__)

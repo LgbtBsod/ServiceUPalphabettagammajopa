@@ -29,7 +29,7 @@ from gui.widgets import (
 )
 from gui.widgets.dashboard import PremiumDashboard
 from utils.colors import get_colors
-from utils.constants import PRIORITIES, STATUSES
+from domain.constants import PRIORITIES, STATUSES
 from utils.formatters import (
     format_date,
     format_order_number_for_db,
@@ -293,6 +293,7 @@ class ServiceCenterApp:
             top_panel,
             self.db,
             self.colors,
+            settings=self.settings,
             on_overdue_click=self.show_overdue_orders,
             fg_color="transparent",
         )
@@ -1328,7 +1329,7 @@ class ServiceCenterApp:
             tag = "completed"
         else:
             days = get_days_since_receipt(receipt_date_raw)
-            if days > 14:
+            if days > self.settings.get("overdue_days", 14):
                 tag = "urgent"
             elif days > 7:
                 tag = "warning"
@@ -1447,14 +1448,13 @@ class ServiceCenterApp:
             logger.exception(f"Ошибка обновления: {e}")
 
     def show_overdue_orders(self):
-        """Показ просроченных заказов (>14 дней в ремонте)."""
+        """Показ просроченных заказов (по умолчанию >14 дней в ремонте,
+        настраивается в Настройках)."""
         try:
-            all_devices = self.db.get_all_devices(include_completed=False)
-            overdue = [
-                d
-                for d in all_devices
-                if get_days_since_receipt(d.get("receipt_date", "")) > 14
-            ]
+            threshold = self.settings.get("overdue_days", 14)
+            # SQL-агрегация вместо питон-цикла по всем устройствам — закрывает
+            # находку про 3-кратное дублирование этого фильтра (см. AUDIT_REPORT_v21.md)
+            overdue = self.db.calculate("overdue_orders", threshold_days=threshold)
             self._clear_tree_and_populate(
                 overdue, count_label_text=f"Просроченных: {len(overdue)}"
             )
@@ -1651,6 +1651,7 @@ class ServiceCenterApp:
             self.colors,
             is_new=True,
             settings=self.settings,
+            report_gen=self.report_gen,
         )
         self.root.wait_window(dialog)
 
@@ -1673,6 +1674,7 @@ class ServiceCenterApp:
             is_new=False,
             device_data=device_data,
             settings=self.settings,
+            report_gen=self.report_gen,
         )
         self.root.wait_window(dialog)
 
@@ -1995,6 +1997,7 @@ class ServiceCenterApp:
                 client_status,
                 self.colors,
                 settings=self.settings,
+                report_gen=self.report_gen,
             )
 
     def format_datetime_for_display(self, date_str):

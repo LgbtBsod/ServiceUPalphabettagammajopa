@@ -7,7 +7,7 @@ from tkinter import colorchooser, messagebox
 
 import customtkinter as ctk
 
-from utils.constants import PRIORITIES, STATUSES
+from domain.constants import PRIORITIES, STATUSES
 
 logger = logging.getLogger(__name__)
 

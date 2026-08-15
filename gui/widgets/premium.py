@@ -2,29 +2,31 @@
 
 """Премиум виджеты для интерфейса (стиль macOS).
 
-Теперь `Premium*` — тонкие алиасы поверх Modern* с эффектом подсветки
-границы при наведении (как в macOS Settings).
+`Premium*` — РЕАЛЬНО тонкие подклассы `Modern*` (gui/widgets/modern.py),
+как и было заявлено в докстринге, но раньше не было правдой: каждый класс
+независимо копировал вёрстку Modern*, из-за чего они начали расходиться
+(button_color/button_hover_color у PremiumCombobox, отсутствие variant у
+PremiumButton — см. AUDIT_REPORT_v21.md). Единственное реальное отличие
+Premium* от Modern* — hover-glow эффект у PremiumCard.
 """
 
 import contextlib
 
-import customtkinter as ctk
+from gui.widgets.modern import (
+    ModernButton,
+    ModernCard,
+    ModernCombobox,
+    ModernEntry,
+    ModernLabel,
+)
 
 
-class PremiumCard(ctk.CTkFrame):
-    """Карточка с подсветкой границы при наведении (hover-glow эффект)"""
+class PremiumCard(ModernCard):
+    """Карточка с подсветкой границы при наведении (hover-glow эффект) —
+    единственное реальное отличие от ModernCard."""
 
     def __init__(self, master, colors, **kwargs):
-        self.colors = colors
-        kwargs.pop("fg_color", None)
-        super().__init__(
-            master,
-            fg_color=colors["bg_card"],
-            corner_radius=10,
-            border_width=1,
-            border_color=colors.get("border_light", colors.get("border", "#e5e5ea")),
-            **kwargs,
-        )
+        super().__init__(master, colors, **kwargs)
         self.bind("<Enter>", self.on_enter)
         self.bind("<Leave>", self.on_leave)
 
@@ -41,78 +43,28 @@ class PremiumCard(ctk.CTkFrame):
             )
 
 
-class PremiumButton(ctk.CTkButton):
-    """Кнопка в стиле macOS"""
+class PremiumButton(ModernButton):
+    """Кнопка в стиле macOS — тонкий алиас ModernButton (по умолчанию
+    variant='primary', т.е. акцентная заливка, как было у старой PremiumButton)."""
 
     def __init__(self, master, colors, **kwargs):
-        self.colors = colors
-        kwargs.pop("fg_color", None)
-        kwargs.pop("hover_color", None)
-        kwargs.pop("text_color", None)
-        super().__init__(
-            master,
-            fg_color=colors["accent"],
-            hover_color=colors["accent_hover"],
-            text_color="white",
-            corner_radius=8,
-            height=34,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            **kwargs,
-        )
+        kwargs.setdefault("variant", "primary")
+        super().__init__(master, colors, **kwargs)
 
 
-class PremiumEntry(ctk.CTkEntry):
-    """Поле ввода в стиле macOS"""
+class PremiumEntry(ModernEntry):
+    """Поле ввода в стиле macOS — тонкий алиас ModernEntry."""
+
+
+class PremiumLabel(ModernLabel):
+    """Метка в стиле macOS — тонкий алиас ModernLabel."""
+
+
+class PremiumCombobox(ModernCombobox):
+    """Выпадающий список в стиле macOS — тонкий алиас ModernCombobox с
+    акцентной (не серой) кнопкой раскрытия, как было у старой PremiumCombobox."""
 
     def __init__(self, master, colors, **kwargs):
-        self.colors = colors
-        kwargs.pop("fg_color", None)
-        kwargs.pop("text_color", None)
-        kwargs.pop("border_color", None)
-        super().__init__(
-            master,
-            fg_color=colors["bg_tertiary"],
-            text_color=colors["text_primary"],
-            border_color=colors["border"],
-            border_width=1,
-            corner_radius=8,
-            height=34,
-            font=ctk.CTkFont(size=13),
-            **kwargs,
-        )
-
-
-class PremiumLabel(ctk.CTkLabel):
-    """Метка в стиле macOS"""
-
-    def __init__(self, master, colors, **kwargs):
-        self.colors = colors
-        kwargs.pop("text_color", None)
-        font = kwargs.pop("font", ctk.CTkFont(size=13))
-        super().__init__(master, font=font, text_color=colors["text_primary"], **kwargs)
-
-
-class PremiumCombobox(ctk.CTkComboBox):
-    """Выпадающий список в стиле macOS"""
-
-    def __init__(self, master, colors, **kwargs):
-        self.colors = colors
-        kwargs.pop("fg_color", None)
-        kwargs.pop("text_color", None)
-        kwargs.pop("border_color", None)
-        super().__init__(
-            master,
-            fg_color=colors["bg_tertiary"],
-            text_color=colors["text_primary"],
-            border_color=colors["border"],
-            border_width=1,
-            corner_radius=8,
-            height=34,
-            font=ctk.CTkFont(size=13),
-            dropdown_fg_color=colors["bg_secondary"],
-            dropdown_hover_color=colors["hover"],
-            dropdown_text_color=colors["text_primary"],
-            button_color=colors["accent"],
-            button_hover_color=colors["accent_hover"],
-            **kwargs,
-        )
+        kwargs.setdefault("button_color", colors["accent"])
+        kwargs.setdefault("button_hover_color", colors["accent_hover"])
+        super().__init__(master, colors, **kwargs)

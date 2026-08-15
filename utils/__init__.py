@@ -3,14 +3,7 @@
 """Утилиты приложения"""
 
 from .colors import get_colors
-from .constants import (
-    CLIENT_STATUSES,
-    DEFAULT_SETTINGS,
-    DICTIONARY_TYPES,
-    PRIORITIES,
-    STATUSES,
-    WARRANTIES,
-)
+from .constants import DEFAULT_SETTINGS
 from .formatters import (
     format_date,
     format_order_number_for_db,
@@ -26,12 +19,7 @@ from .formatters import (
 from .validators import validate_phone, validate_price, validate_required
 
 __all__ = [
-    "CLIENT_STATUSES",
     "DEFAULT_SETTINGS",
-    "DICTIONARY_TYPES",
-    "PRIORITIES",
-    "STATUSES",
-    "WARRANTIES",
     "format_date",
     "format_order_number_for_db",
     "format_order_number_for_display",
