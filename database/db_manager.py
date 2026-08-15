@@ -9,7 +9,12 @@ from datetime import datetime
 from typing import Any
 
 from config import DB_PATH
-from domain.constants import DICTIONARY_TYPES
+from domain.constants import (
+    DICTIONARY_TYPES,
+    STATUS_ISSUED,
+    STATUS_READY,
+    STATUS_REFUSED,
+)
 from utils.formatters import normalize_phone_digits, parse_price_to_float
 
 logger = logging.getLogger(__name__)
@@ -554,13 +559,13 @@ class Database:
             stats["total"] = row[0] if row else 0
 
             cursor.execute(
-                "SELECT COUNT(*) FROM devices WHERE status NOT IN ('Выдан клиенту', 'Отказ от ремонта')"
+                f"SELECT COUNT(*) FROM devices WHERE status NOT IN ('{STATUS_ISSUED}', '{STATUS_REFUSED}')"
             )
             row = cursor.fetchone()
             stats["in_repair"] = row[0] if row else 0
 
             cursor.execute(
-                "SELECT COUNT(*) FROM devices WHERE status = 'Готов к выдаче'"
+                f"SELECT COUNT(*) FROM devices WHERE status = '{STATUS_READY}'"
             )
             row = cursor.fetchone()
             stats["ready"] = row[0] if row else 0
@@ -568,7 +573,7 @@ class Database:
             # Быстрая сумма выручки через REAL-колонку (если есть)
             try:
                 cursor.execute(
-                    "SELECT SUM(total_price_num) FROM devices WHERE status = 'Выдан клиенту'"
+                    f"SELECT SUM(total_price_num) FROM devices WHERE status = '{STATUS_ISSUED}'"
                 )
                 row = cursor.fetchone()
                 stats["total_income"] = row[0] if row and row[0] else 0.0
@@ -784,9 +789,9 @@ class Database:
             if include_completed:
                 cursor.execute("SELECT * FROM devices ORDER BY receipt_date DESC")
             else:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT * FROM devices
-                    WHERE status NOT IN ('Выдан клиенту', 'Отказ от ремонта')
+                    WHERE status NOT IN ('{STATUS_ISSUED}', '{STATUS_REFUSED}')
                     ORDER BY receipt_date DESC
                 """)
 
@@ -868,7 +873,7 @@ class Database:
             else:
                 cursor.execute(
                     "SELECT * FROM devices WHERE status NOT IN "
-                    "('Выдан клиенту', 'Отказ от ремонта') ORDER BY receipt_date DESC"
+                    f"('{STATUS_ISSUED}', '{STATUS_REFUSED}') ORDER BY receipt_date DESC"
                 )
             all_rows = [dict(row) for row in cursor.fetchall()]
 
@@ -979,7 +984,7 @@ class Database:
             params = []
 
             if not include_completed:
-                query += " AND status NOT IN ('Выдан клиенту', 'Отказ от ремонта')"
+                query += f" AND status NOT IN ('{STATUS_ISSUED}', '{STATUS_REFUSED}')"
 
             if status_filter and status_filter != "Все":
                 query += " AND status = ?"
@@ -1019,7 +1024,7 @@ class Database:
             completion_date = device_data.get("completion_date", "")
             status = device_data.get("status", "")
 
-            if status == "Выдан клиенту" and not completion_date:
+            if status == STATUS_ISSUED and not completion_date:
                 completion_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             cursor.execute(
@@ -1059,7 +1064,7 @@ class Database:
             )
 
             # Если заказ выдан, добавляем запись в финансы (с реальным order_number)
-            if status == "Выдан клиенту":
+            if status == STATUS_ISSUED:
                 order_number = device_data.get("order_number", "")
                 if not order_number:
                     # Подстраховка: достаём номер заказа из БД, если не передан
@@ -1114,7 +1119,7 @@ class Database:
         try:
             cursor = self.conn.cursor()
 
-            if status == "Выдан клиенту":
+            if status == STATUS_ISSUED:
                 if not completion_date:
                     completion_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 cursor.execute(
@@ -1342,9 +1347,9 @@ class Database:
         try:
             cursor = self.conn.cursor()
             cursor.execute(
-                """
+                f"""
                 SELECT COUNT(*) as total,
-                       SUM(CASE WHEN status='Выдан клиенту' THEN 1 ELSE 0 END) as completed,
+                       SUM(CASE WHEN status='{STATUS_ISSUED}' THEN 1 ELSE 0 END) as completed,
                        MIN(receipt_date) as first_date,
                        MAX(receipt_date) as last_date
                 FROM repair_history_main WHERE client_id = ?

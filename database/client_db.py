@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from config import CLIENTS_DB_DIR
+from domain.constants import STATUS_ISSUED, STATUS_REFUSED
 
 from .db_config import get_db_config
 
@@ -301,11 +302,11 @@ class ClientDatabaseManager:
                     # При обновлении существующего заказа НЕ инкрементируем
                     # счётчики/суммы (иначе они завышались при каждом сохранении).
                     # Пересчитываем агрегаты из реальной истории.
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT
                             COUNT(*) AS total,
-                            SUM(CASE WHEN status='Выдан клиенту' THEN 1 ELSE 0 END) AS completed,
-                            SUM(CASE WHEN status='Отказ от ремонта' THEN 1 ELSE 0 END) AS declined
+                            SUM(CASE WHEN status='{STATUS_ISSUED}' THEN 1 ELSE 0 END) AS completed,
+                            SUM(CASE WHEN status='{STATUS_REFUSED}' THEN 1 ELSE 0 END) AS declined
                         FROM repair_history
                     """)
                     agg = cursor.fetchone()
@@ -362,8 +363,8 @@ class ClientDatabaseManager:
                 """,
                     (
                         1,
-                        1 if status == "Выдан клиенту" else 0,
-                        1 if status == "Отказ от ремонта" else 0,
+                        1 if status == STATUS_ISSUED else 0,
+                        1 if status == STATUS_REFUSED else 0,
                         price_val,
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         photos_count,

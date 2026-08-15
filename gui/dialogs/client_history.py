@@ -14,6 +14,7 @@ from typing import Any
 import customtkinter as ctk
 
 from database import ClientDatabaseManager, Database
+from domain.constants import STATUS_ISSUED, STATUS_REFUSED, STATUSES
 from gui.widgets.modern import (
     ModernButton,
     ModernCard,
@@ -224,15 +225,7 @@ class ClientHistoryWindow(ctk.CTkToplevel):
         self.status_filter = ModernCombobox(
             search_frame,
             self.colors,
-            values=[
-                "Все",
-                "Диагностика",
-                "Ожидание запчастей",
-                "В ремонте",
-                "Готов к выдаче",
-                "Выдан клиенту",
-                "Отказ от ремонта",
-            ],
+            values=["Все", *STATUSES],
             width=140,
             height=32,
         )
@@ -427,14 +420,14 @@ class ClientHistoryWindow(ctk.CTkToplevel):
         """Обновление статистики"""
         total = len(self.all_history)
         completed = sum(
-            1 for r in self.all_history if r.get("status") == "Выдан клиенту"
+            1 for r in self.all_history if r.get("status") == STATUS_ISSUED
         )
         total_sum = 0
         favorite_device = {}
 
         for record in self.all_history:
             # Сумма только завершенных
-            if record.get("status") == "Выдан клиенту":
+            if record.get("status") == STATUS_ISSUED:
                 price_str = record.get("total_price", "0")
                 try:
                     price_val = (
@@ -599,9 +592,9 @@ class ClientHistoryWindow(ctk.CTkToplevel):
 
             # Определяем цвет строки по статусу
             tags = ()
-            if status_val == "Выдан клиенту":
+            if status_val == STATUS_ISSUED:
                 tags = ("completed",)
-            elif status_val == "Отказ от ремонта":
+            elif status_val == STATUS_REFUSED:
                 tags = ("declined",)
 
             values = (
@@ -715,6 +708,7 @@ class ClientHistoryWindow(ctk.CTkToplevel):
                 is_new=False,
                 device_data=device,
                 settings=_parent_settings,
+                report_gen=self.report_gen,
             )
             self.parent_app.wait_window(dialog)
 

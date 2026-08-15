@@ -25,7 +25,7 @@ from core.plugin_system import BasePlugin, PluginMetadata, get_plugin_manager
 # validate_email, но с единственным потребителем (этим файлом). Удалён как
 # SSOT-нарушение, см. AUDIT_REPORT_v21.md.
 from utils.formatters import normalize_phone
-from utils.validators import validate_email
+from utils.validators import validate_email, validate_phone
 
 # =============================================================================
 # DOMAIN ENTITIES (SSOT)
@@ -187,11 +187,15 @@ class ClientService(BaseService):
         try:
             self.logger.info(f"Creating client: {command.full_name}")
 
-            # Validate phone
-            normalized_phone = normalize_phone(command.phone)
-            if not normalized_phone:
+            # Validate phone. normalize_phone() alone is NOT a validator — for
+            # an unrecognized format it falls back to "return cleaned digits
+            # as-is" instead of failing, so garbage like "123" would silently
+            # pass through as a "normalized" phone. Found by tests/test_plugins_clients.py,
+            # see AUDIT_REPORT_v21.md.
+            if not validate_phone(command.phone):
                 self.logger.warning(f"Invalid phone: {command.phone}")
                 return None
+            normalized_phone = normalize_phone(command.phone)
 
             # Check if client already exists by phone
             existing = self._client_repo.get_by_phone(normalized_phone)
@@ -243,12 +247,10 @@ class ClientService(BaseService):
                 client.full_name = command.full_name.strip()
 
             if command.phone is not None:
-                normalized = normalize_phone(command.phone)
-                if normalized:
-                    client.phone = normalized
-                else:
+                if not validate_phone(command.phone):
                     self.logger.warning(f"Invalid phone: {command.phone}")
                     return False
+                client.phone = normalize_phone(command.phone)
 
             if command.email is not None:
                 if command.email == "":

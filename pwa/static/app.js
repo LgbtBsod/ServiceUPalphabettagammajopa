@@ -21,10 +21,30 @@ const modal = $('#order-modal');
 const orderForm = $('#order-form');
 
 // ---------------------------------------------------------------------------
+// API-ключ — сервер требует его на каждом /api/* запросе (require_api_key,
+// см. pwa/server.py). QR-код/статус-бар в десктоп-приложении открывают эту
+// страницу с ?api_key=... в URL (PWAServerManager.get_url()) — сохраняем
+// его в localStorage при первой загрузке, чтобы дальнейшие открытия
+// (в т.ч. установленное на главный экран PWA, где query string теряется)
+// продолжали работать без повторного сканирования QR.
+// ---------------------------------------------------------------------------
+const API_KEY = (() => {
+  const fromUrl = new URLSearchParams(window.location.search).get('api_key');
+  if (fromUrl) {
+    localStorage.setItem('pwa_api_key', fromUrl);
+    return fromUrl;
+  }
+  return localStorage.getItem('pwa_api_key') || '';
+})();
+
+// ---------------------------------------------------------------------------
 // API запросы
 // ---------------------------------------------------------------------------
 async function api(url, options = {}) {
-  const opts = { headers: { 'Content-Type': 'application/json' }, ...options };
+  const opts = {
+    headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+    ...options,
+  };
   if (opts.body && typeof opts.body !== 'string') {
     opts.body = JSON.stringify(opts.body);
   }
@@ -292,6 +312,12 @@ function collectForm() {
 // ---------------------------------------------------------------------------
 // Фото
 // ---------------------------------------------------------------------------
+// <img src="..."> не может нести заголовок X-API-Key — ключ передаётся
+// query-параметром (require_api_key принимает оба варианта, см. pwa/server.py).
+function photoUrl(p) {
+  return `${p.url}?api_key=${encodeURIComponent(API_KEY)}`;
+}
+
 function renderPhotos(photos) {
   const grid = $('#photos-grid');
   if (!photos.length) {
@@ -299,7 +325,7 @@ function renderPhotos(photos) {
     return;
   }
   grid.innerHTML = photos.map((p, i) =>
-    `<img class="photo-thumb" src="${p.url}" loading="lazy" data-idx="${i}" onclick="openPhotoViewer(state._currentPhotos, ${i})">`
+    `<img class="photo-thumb" src="${photoUrl(p)}" loading="lazy" data-idx="${i}" onclick="openPhotoViewer(state._currentPhotos, ${i})">`
   ).join('');
 }
 
@@ -316,7 +342,7 @@ function openPhotoViewer(photos, idx) {
 function showViewerPhoto() {
   if (!_viewerPhotos.length) return;
   const p = _viewerPhotos[_viewerIndex];
-  document.getElementById('photo-viewer-img').src = p.url;
+  document.getElementById('photo-viewer-img').src = photoUrl(p);
   document.getElementById('photo-viewer-counter').textContent =
     `${_viewerIndex + 1} / ${_viewerPhotos.length}`;
 }
@@ -343,7 +369,11 @@ async function uploadPhotos(files) {
     const fd = new FormData();
     fd.append('photo', file);
     try {
-      const res = await fetch(`/api/orders/${state.editingId}/photos`, { method: 'POST', body: fd });
+      const res = await fetch(`/api/orders/${state.editingId}/photos`, {
+        method: 'POST',
+        headers: { 'X-API-Key': API_KEY },
+        body: fd,
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
     } catch (e) {

@@ -257,11 +257,16 @@ class ServiceUpCore(LoggableMixin):
 
         Все вызовы проходят через реестр синглетонов.
         """
+        # ВАЖНО: module_name/method_name передаются позиционно, а не как
+        # keyword вперемешку с *args — `f(module_name=x, *args)` при
+        # непустом args приводит к "got multiple values for argument
+        # 'module_name'", т.к. *args распаковывается в первый позиционный
+        # параметр раньше, чем применяется keyword. Гарантированный краш
+        # call_module_method() с любыми позиционными аргументами — самый
+        # частый способ его вызова. Найдено тестами (tests/test_kernel.py,
+        # tests/test_plugins_clients.py), см. AUDIT_REPORT_v21.md.
         return self._module_registry.call_method(
-            module_name=module_name,
-            method_name=method_name,
-            *args,
-            **kwargs,
+            module_name, method_name, *args, **kwargs
         )
 
     def get_db_access(self) -> Any | None:

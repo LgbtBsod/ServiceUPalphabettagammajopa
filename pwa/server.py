@@ -34,7 +34,7 @@ from database import ClientDatabaseManager, WorkItemsManager
 from database.models import WorkItem
 from database.sqlalchemy_database import Database
 from managers import PhotoManager
-from domain.constants import PRIORITIES, STATUSES, WARRANTIES
+from domain.constants import CLIENT_STATUSES, PRIORITIES, STATUSES, WARRANTIES
 from utils.formatters import (
     format_date,
     format_order_number_for_display,
@@ -42,6 +42,7 @@ from utils.formatters import (
     generate_order_number,
     normalize_phone,
 )
+from utils.validators import validate_phone, validate_price
 
 logger = logging.getLogger(__name__)
 
@@ -327,6 +328,9 @@ def create_flask_app():
                 return jsonify({"error": "Недопустимый статус заказа"}), 400
             if "priority" in data and data.get("priority") not in PRIORITIES:
                 return jsonify({"error": "Недопустимый приоритет заказа"}), 400
+            error = _validate_order_fields(data, require_client=True)
+            if error:
+                return jsonify({"error": error}), 400
 
             # Генерируем номер заказа
             order_counter = db.get_next_order_number()
@@ -428,6 +432,9 @@ def create_flask_app():
                 return jsonify({"error": "Недопустимый статус заказа"}), 400
             if "priority" in data and data.get("priority") not in PRIORITIES:
                 return jsonify({"error": "Недопустимый приоритет заказа"}), 400
+            error = _validate_order_fields(data, require_client=False)
+            if error:
+                return jsonify({"error": error}), 400
 
             phone = normalize_phone(data.get("phone", "")) or existing.get("phone", "")
 
@@ -706,6 +713,41 @@ def create_flask_app():
     return app
 
 
+def _validate_order_fields(data: dict[str, Any], *, require_client: bool) -> str | None:
+    """Валидирует поля заказа теми же правилами, что и GUI
+    (gui/dialogs/device_form.py) — раньше PWA-эндпоинты принимали телефон/цену/
+    гарантию/статус клиента без проверки, позволяя записать в БД произвольную
+    строку (см. AUDIT_REPORT_v21.md). Возвращает текст ошибки или None, если
+    всё валидно. Проверяет только ПРИСУТСТВУЮЩИЕ в data поля — на PUT
+    (частичное обновление) отсутствие поля не ошибка.
+    """
+    if require_client:
+        if not str(data.get("client_name", "")).strip():
+            return "Укажите имя клиента"
+        if not str(data.get("phone", "")).strip():
+            return "Укажите телефон клиента"
+
+    if "phone" in data and str(data.get("phone", "")).strip():
+        if not validate_phone(data["phone"]):
+            return "Некорректный номер телефона"
+
+    for price_field in ("total_price", "prepayment", "expense"):
+        if price_field in data and not validate_price(data[price_field]):
+            return f"Некорректное значение поля '{price_field}'"
+
+    if "warranty" in data and data["warranty"] and data["warranty"] not in WARRANTIES:
+        return "Недопустимое значение гарантии"
+
+    if (
+        "client_status" in data
+        and data["client_status"]
+        and data["client_status"] not in CLIENT_STATUSES
+    ):
+        return "Недопустимый статус клиента"
+
+    return None
+
+
 def _work_items_to_json(work_items) -> str:
     """Преобразует work_items (строка JSON / список / None) в JSON-строку."""
     if not work_items:
@@ -815,6 +857,15 @@ class PWAServerManager:
         return self._running
 
     def get_url(self) -> str:
-        """Возвращает URL для доступа с телефона (через локальный IP)."""
+        """Возвращает URL для доступа с телефона (через локальный IP).
+
+        Включает ?api_key=... в query string — иначе require_api_key()
+        отклоняет вообще все запросы реального PWA-клиента (pwa/static/app.js
+        читает ключ из query string при первой загрузке и дальше сам
+        прикладывает его заголовком к каждому запросу, см. app.js). До этого
+        фикса require_api_key() был добавлен без единого способа сообщить
+        ключ клиенту — мобильное приложение получало 401 на любой запрос,
+        см. AUDIT_REPORT_v21.md.
+        """
         ip = get_local_ip()
-        return f"http://{ip}:{self.port}"
+        return f"http://{ip}:{self.port}/?api_key={PWA_API_KEY}"

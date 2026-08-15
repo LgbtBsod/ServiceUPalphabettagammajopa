@@ -32,6 +32,16 @@ STATUSES: Final[list[str]] = [
 # Default status for new orders
 DEFAULT_STATUS: Final[str] = STATUSES[0]
 
+# Именованные "закрытые" статусы — раньше независимо переопределялись как
+# сырые строковые литералы в 7 живых файлах (gui/main_window.py,
+# gui/dialogs/client_history.py, gui/dialogs/device_form.py, pwa/server.py,
+# database/sqlalchemy_database.py, database/client_db.py, database/db_manager.py),
+# включая приватные дубли-константы в самом facade БД. См. AUDIT_REPORT_v21.md.
+STATUS_READY: Final[str] = STATUSES[3]  # "Готов к выдаче"
+STATUS_ISSUED: Final[str] = STATUSES[4]  # "Выдан клиенту"
+STATUS_REFUSED: Final[str] = STATUSES[5]  # "Отказ от ремонта"
+CLOSED_STATUSES: Final[tuple[str, ...]] = (STATUS_ISSUED, STATUS_REFUSED)
+
 
 # =============================================================================
 # PRIORITIES
@@ -189,6 +199,7 @@ DICTIONARY_TYPES: Final[dict[str, dict]] = {
 # =============================================================================
 
 __all__ = [
+    "CLOSED_STATUSES",
     # Client constants
     "CLIENT_STATUSES",
     "DEFAULT_PRIORITY",
@@ -196,6 +207,9 @@ __all__ = [
     # Reference data
     "DICTIONARY_TYPES",
     "PRIORITIES",
+    "STATUS_ISSUED",
+    "STATUS_READY",
+    "STATUS_REFUSED",
     # Order constants
     "STATUSES",
     # Warranty constants

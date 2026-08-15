@@ -29,6 +29,10 @@ from database.sqlalchemy_models import (
     RepairHistoryMain,
 )
 from database.sqlalchemy_models import Device as DeviceModel
+from domain.constants import CLOSED_STATUSES as _CLOSED_STATUSES
+from domain.constants import STATUS_ISSUED as _ISSUED_STATUS
+from domain.constants import STATUS_READY as _READY_STATUS
+from domain.constants import STATUS_REFUSED as _REFUSED_STATUS
 from utils.formatters import normalize_phone_digits, parse_price_to_float
 
 if TYPE_CHECKING:
@@ -38,10 +42,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_ISSUED_STATUS = "Выдан клиенту"
-_REFUSED_STATUS = "Отказ от ремонта"
-_READY_STATUS = "Готов к выдаче"
-_CLOSED_STATUSES = (_ISSUED_STATUS, _REFUSED_STATUS)
+# Раньше эти 4 константы были независимо продублированы здесь как приватные
+# строковые литералы, без единого импорта domain.constants — тот самый
+# SSOT-разрыв, который сама domain.constants была призвана устранить, см.
+# AUDIT_REPORT_v21.md.
 OVERDUE_THRESHOLD_DAYS = 14
 
 

@@ -19,7 +19,15 @@ from gui.widgets.modern import ModernCard
 from gui.widgets.thumbnail import ThumbnailWidget
 from gui.widgets.work_table import WorkItemsTable
 from managers import PhotoManager, ReportGenerator
-from domain.constants import CLIENT_STATUSES, PRIORITIES, STATUSES, WARRANTIES
+from domain.constants import (
+    CLIENT_STATUSES,
+    CLOSED_STATUSES,
+    PRIORITIES,
+    STATUS_ISSUED,
+    STATUS_READY,
+    STATUSES,
+    WARRANTIES,
+)
 from utils.formatters import (
     format_order_number_for_display,
     format_price,
@@ -1289,6 +1297,8 @@ class DeviceFormDialog(ctk.CTkToplevel):
                 device_data.get("phone", ""),
                 device_data.get("client_status", "Новый"),
                 self.colors,
+                report_gen=self.report_gen,
+                settings=self.settings,
             ),
             height=40,
             corner_radius=8,
@@ -1314,12 +1324,8 @@ class DeviceFormDialog(ctk.CTkToplevel):
             if self.work_manager.items and hasattr(self, "status_combo"):
                 current_status = self.status_combo.get().strip()
                 # Не перезаписываем финальные статусы
-                if current_status not in (
-                    "Готов к выдаче",
-                    "Выдан клиенту",
-                    "Отказ от ремонта",
-                ):
-                    self.status_combo.set("Готов к выдаче")
+                if current_status not in (STATUS_READY, *CLOSED_STATUSES):
+                    self.status_combo.set(STATUS_READY)
         except Exception:
             pass
 
@@ -1613,7 +1619,7 @@ class DeviceFormDialog(ctk.CTkToplevel):
                 # Обновление существующего заказа
                 existing_order_number = self.device_data.get("order_number", "")
                 completion_date = ""
-                if status == "Выдан клиенту":
+                if status == STATUS_ISSUED:
                     completion_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                 device_data = {

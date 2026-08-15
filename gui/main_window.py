@@ -29,7 +29,7 @@ from gui.widgets import (
 )
 from gui.widgets.dashboard import PremiumDashboard
 from utils.colors import get_colors
-from domain.constants import PRIORITIES, STATUSES
+from domain.constants import CLOSED_STATUSES, PRIORITIES, STATUS_ISSUED, STATUSES
 from utils.formatters import (
     format_date,
     format_order_number_for_db,
@@ -1277,7 +1277,7 @@ class ServiceCenterApp:
         # Колонка «Дней» — сколько дней заказ в ремонте
         receipt_date_raw = device.get("receipt_date", "")
         status_val = device.get("status", "")
-        if status_val in ("Выдан клиенту", "Отказ от ремонта"):
+        if status_val in CLOSED_STATUSES:
             days_str = "—"
         else:
             days = get_days_since_receipt(receipt_date_raw)
@@ -1301,7 +1301,7 @@ class ServiceCenterApp:
         }.get(priority_val, priority_val)
 
         # Тег строки для цветовой индикации
-        if status_val in ("Выдан клиенту", "Отказ от ремонта"):
+        if status_val in CLOSED_STATUSES:
             tag = "completed"
         else:
             days = get_days_since_receipt(receipt_date_raw)
@@ -1759,12 +1759,12 @@ class ServiceCenterApp:
 
                 # Печать акта выполненных работ = выдача устройства клиенту.
                 # Меняем статус на «Выдан клиенту» (с подтверждением).
-                if device.get("status") != "Выдан клиенту":
+                if device.get("status") != STATUS_ISSUED:
                     if messagebox.askyesno(
                         "Выдача устройства",
                         f"Изменить статус заказа #{order_number} на «Выдан клиенту»?",
                     ) and self.db.update_device_status(
-                        device.get("id"), "Выдан клиенту"
+                        device.get("id"), STATUS_ISSUED
                     ):
                         self.load_devices()
                         self.dashboard.update_stats()
