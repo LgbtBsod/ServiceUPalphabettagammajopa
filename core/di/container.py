@@ -8,6 +8,8 @@
 - Lazy loading
 """
 
+from __future__ import annotations
+
 import contextlib
 import inspect
 from collections.abc import Callable
@@ -15,6 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from functools import wraps
 from typing import (
+    TYPE_CHECKING,
     Any,
     Self,
     TypeVar,
@@ -22,6 +25,9 @@ from typing import (
 )
 
 from core.base import LoggableMixin
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterator
 
 T = TypeVar("T")
 

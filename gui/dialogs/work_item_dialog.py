@@ -203,7 +203,7 @@ class WorkItemDialog(ctk.CTkToplevel):
         # Безопасное чтение quantity (поле может быть пустым)
         try:
             quantity = self.quantity_var.get()
-        except ctk.TclError, ValueError, TypeError:
+        except (ctk.TclError, ValueError, TypeError):
             quantity = 1
 
         if quantity < 1:

@@ -583,7 +583,7 @@ class ClientHistoryWindow(ctk.CTkToplevel):
                     work_summary = "; ".join(work_descriptions[:2])
                     if len(work_descriptions) > 2:
                         work_summary += "..."
-                except json.JSONDecodeError, KeyError, TypeError:
+                except (json.JSONDecodeError, KeyError, TypeError):
                     work_summary = "—"
 
             status_val = record.get("status", "—")
@@ -745,7 +745,7 @@ class ClientHistoryWindow(ctk.CTkToplevel):
                 else:
                     work_descriptions.append(f"{desc} ({price}₽)")
             return "\n".join(work_descriptions) if work_descriptions else "—"
-        except json.JSONDecodeError, KeyError, TypeError:
+        except (json.JSONDecodeError, KeyError, TypeError):
             return "—"
 
     def show_context_menu_history(self, event):

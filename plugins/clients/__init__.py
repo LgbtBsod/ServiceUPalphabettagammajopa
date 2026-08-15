@@ -323,11 +323,16 @@ class ClientService(BaseService):
 
 
 class ClientsPlugin(IPlugin):
-    """Clients feature plugin."""
+    """Clients feature plugin.
+    
+    Плагин получает доступ к сервисам через ядро (Core), а не напрямую.
+    Это обеспечивает слабую связанность и возможность замены реализаций.
+    """
 
     def __init__(self):
         self._service: ClientService | None = None
         self._repository: IClientRepository | None = None
+        self._core = None  # Ссылка на ядро для получения зависимостей
 
     @property
     def metadata(self) -> PluginMetadata:
@@ -337,20 +342,30 @@ class ClientsPlugin(IPlugin):
             description="Client management system",
             author="ServiceUp Team",
             dependencies=[],  # No dependencies - base plugin
-            min_core_version="24.0",
+            min_core_version="25.0",
             standalone=True,
         )
 
     def initialize(self) -> bool:
-        """Initialize clients plugin."""
+        """Initialize clients plugin through Core."""
         try:
             self.logger.info("Initializing Clients Plugin")
 
-            # TODO: Get repository from DI container
-            # self._repository = self._app.get_repository(IClientRepository)
-            # self._service = ClientService(self._repository)
+            # Получаем ядро и через него зависимости
+            from core.kernel import get_core
+            
+            self._core = get_core()
+            
+            # Получаем репозиторий через DI контейнер ядра
+            self._repository = self._core.get_service(IClientRepository)
+            
+            # Создаем сервис с полученным репозиторием
+            self._service = ClientService(self._repository)
+            
+            # Регистрируем сервис в ядре для доступа другим модулям
+            self._core.register_module("clients", self, self._service)
 
-            self.logger.info("Clients Plugin initialized successfully")
+            self.logger.info("Clients Plugin initialized successfully via Core")
             return True
 
         except Exception as e:
@@ -362,9 +377,14 @@ class ClientsPlugin(IPlugin):
         self.logger.info("Shutting down Clients Plugin")
         self._service = None
         self._repository = None
+        self._core = None
 
     def get_api(self) -> ClientService | None:
-        """Return clients service API."""
+        """Return clients service API.
+        
+        Другие модули получают доступ к функциональности клиентов
+        только через этот API, используя core.call_module_method().
+        """
         return self._service
 
     def configure(self, config: dict) -> None:

@@ -3,10 +3,13 @@
 Управление подключением к базе данных через SQLAlchemy.
 """
 
+from __future__ import annotations
+
 import logging
+from collections.abc import Generator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 logger = logging.getLogger(__name__)
@@ -19,9 +22,9 @@ class DatabaseConnection:
     Использует WAL mode для лучшей производительности.
     """
 
-    _instance: DatabaseConnection | None = None
-    _engine = None
-    _session_factory = None
+    _instance: "DatabaseConnection" | None = None
+    _engine: Engine | None = None
+    _session_factory: sessionmaker[Session] | None = None
 
     def __new__(cls, db_path: str = ":memory:"):
         if cls._instance is None:

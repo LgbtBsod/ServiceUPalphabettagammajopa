@@ -57,9 +57,9 @@ class TestSQLAlchemyConnection:
 
     def test_execute_query(self, connection):
         """Тест выполнения SQL запроса."""
-        from datetime import datetime
+        from datetime import datetime, timezone
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         # Используем полный набор полей для совместимости с SQLAlchemy моделью
         cursor = connection.execute(
             "INSERT INTO clients (name, phone, status, total_orders, completed_orders, total_spent, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -76,11 +76,11 @@ class TestSQLAlchemyConnection:
 
     def test_transaction_commit(self, connection):
         """Тест фиксации транзакции."""
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         from sqlalchemy import text
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         with connection.transaction() as sess:
             sess.execute(
                 text(
@@ -105,7 +105,7 @@ class TestSQLAlchemyConnection:
 
     def test_transaction_rollback(self, connection):
         """Тест отката транзакции."""
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         from sqlalchemy import text
 
@@ -115,7 +115,7 @@ class TestSQLAlchemyConnection:
 
         try:
             with connection.transaction() as sess:
-                now = datetime.utcnow().isoformat()
+                now = datetime.now(timezone.utc).isoformat()
                 sess.execute(
                     text(
                         "INSERT INTO clients (name, phone, status, total_orders, completed_orders, total_spent, created_at, updated_at) VALUES (:param_0, :param_1, :param_2, :param_3, :param_4, :param_5, :param_6, :param_7)"

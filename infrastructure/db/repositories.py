@@ -264,7 +264,7 @@ class DeviceRepository(BaseRepository[Device]):
             try:
                 wi_data = json.loads(row_dict["work_items"])
                 work_items = [WorkItem.from_dict(wi) for wi in wi_data]
-            except json.JSONDecodeError, KeyError:
+            except (json.JSONDecodeError, KeyError):
                 pass
 
         photos = []
@@ -272,7 +272,7 @@ class DeviceRepository(BaseRepository[Device]):
             try:
                 photo_data = json.loads(row_dict["photos"])
                 photos = [Photo.from_dict(p) for p in photo_data]
-            except json.JSONDecodeError, KeyError:
+            except (json.JSONDecodeError, KeyError):
                 pass
 
         # Парсинг дат
