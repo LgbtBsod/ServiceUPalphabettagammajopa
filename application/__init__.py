@@ -11,6 +11,7 @@
 
 from .backup_services import BackupService
 from .client_services import ClientAppService
+from .dtos import DashboardResponse, DashboardWidget, MetricPoint
 from .order_services import OrderAppService
 from .reporting_services import ReportingService
 
@@ -19,6 +20,9 @@ __version__ = "17.0"
 __all__ = [
     "BackupService",
     "ClientAppService",
+    "DashboardResponse",
+    "DashboardWidget",
+    "MetricPoint",
     "OrderAppService",
     "ReportingService",
 ]

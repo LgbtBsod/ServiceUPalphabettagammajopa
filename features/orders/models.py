@@ -3,7 +3,7 @@ Infrastructure слой - зависит от SQLAlchemy.
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
@@ -64,17 +64,15 @@ class RepairOrder(Base):
     work_items: Mapped[str | None] = mapped_column(Text, nullable=True)
     parts_used: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Связи
-    client_rel: Mapped[Client | None] = relationship(
-        "Client", back_populates="orders_rel", foreign_keys=[client_id]
-    )
-
     # Временные метки
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, 
+        default=lambda: datetime.now(timezone.utc), 
+        onupdate=lambda: datetime.now(timezone.utc), 
+        nullable=False
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -85,7 +83,7 @@ class RepairOrder(Base):
             return []
         try:
             return json.loads(self.work_items)
-        except json.JSONDecodeError, TypeError:
+        except (json.JSONDecodeError, TypeError):
             return []
 
     def set_work_items(self, items: list[dict]) -> None:
@@ -98,7 +96,7 @@ class RepairOrder(Base):
             return []
         try:
             return json.loads(self.parts_used)
-        except json.JSONDecodeError, TypeError:
+        except (json.JSONDecodeError, TypeError):
             return []
 
     def set_parts_used(self, parts: list[dict]) -> None:

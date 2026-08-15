@@ -68,7 +68,7 @@ class WorkItem:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> WorkItem:
+    def from_dict(cls, data: dict[str, Any]) -> "WorkItem":
         """Создание из словаря"""
         return cls(
             description=data.get("description", ""),
@@ -138,7 +138,7 @@ class Device:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Device:
+    def from_dict(cls, data: dict[str, Any]) -> "Device":
         """Создание из словаря"""
         return cls(
             id=data.get("id"),
