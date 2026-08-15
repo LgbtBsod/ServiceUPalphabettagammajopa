@@ -111,19 +111,9 @@ class ActPreviewWindow(ctk.CTkToplevel):
 
     def _fit_window(self, default_w: int, default_h: int, min_w: int, min_h: int):
         """Адаптивный размер окна под текущий экран (для 1280x720 и меньше)."""
-        try:
-            sw = self.winfo_screenwidth()
-            sh = self.winfo_screenheight()
-        except Exception:
-            sw, sh = 1920, 1080
-        w = min(default_w, int(sw * 0.55))
-        h = min(default_h, int(sh * 0.92))
-        w = max(min_w, min(w, sw))
-        h = max(min_h, min(h, sh))
-        x = (sw - w) // 2
-        y = max(0, (sh - h) // 2 - 20)
-        self.geometry(f"{w}x{h}+{x}+{y}")
-        self.minsize(min_w, min_h)
+        from utils.window_state import fit_window_to_screen
+
+        fit_window_to_screen(self, default_w, default_h, min_w, min_h, width_ratio=0.55)
 
     def _build_generator(self):
         """Создаёт ActPDFGenerator с учётом template_data (изменения редактора)."""
@@ -504,13 +494,9 @@ class ActPreviewWindow(ctk.CTkToplevel):
 
     def _close_with_geometry(self):
         """Сохраняет геометрию окна в config и закрывает его."""
-        try:
-            from utils.window_state import save_window_geometry
+        from utils.window_state import close_dialog_with_geometry
 
-            save_window_geometry(self.settings, "act_preview", self)
-        except Exception:
-            pass
-        self.destroy()
+        close_dialog_with_geometry(self, self.settings, "act_preview")
 
     def destroy(self):
         """Очистка и закрытие окна"""

@@ -88,7 +88,7 @@ def initialize_kernel():
     settings = SettingsManager()
     backup_mgr = BackupManager(settings)
     integration_mgr = IntegrationManager(settings)
-    photo_mgr = PhotoManager()
+    photo_mgr = PhotoManager(settings)
     report_gen = ReportGenerator()
     client_db = ClientDatabaseManager(main_db=db)
 

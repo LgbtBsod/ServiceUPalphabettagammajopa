@@ -60,7 +60,7 @@ def require_api_key(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         api_key = request.headers.get("X-API-Key") or request.args.get("api_key")
-        if not api_key or api_key != PWA_API_KEY:
+        if not api_key or not secrets.compare_digest(api_key, PWA_API_KEY):
             return jsonify({"error": "Unauthorized: invalid or missing API key"}), 401
         return f(*args, **kwargs)
 
@@ -323,6 +323,11 @@ def create_flask_app():
             db = _db_holder.db
             data = request.get_json(force=True)
 
+            if "status" in data and data.get("status") not in STATUSES:
+                return jsonify({"error": "Недопустимый статус заказа"}), 400
+            if "priority" in data and data.get("priority") not in PRIORITIES:
+                return jsonify({"error": "Недопустимый приоритет заказа"}), 400
+
             # Генерируем номер заказа
             order_counter = db.get_next_order_number()
             order_number = generate_order_number(order_counter)
@@ -418,6 +423,12 @@ def create_flask_app():
                 ), 403
 
             data = request.get_json(force=True)
+
+            if "status" in data and data.get("status") not in STATUSES:
+                return jsonify({"error": "Недопустимый статус заказа"}), 400
+            if "priority" in data and data.get("priority") not in PRIORITIES:
+                return jsonify({"error": "Недопустимый приоритет заказа"}), 400
+
             phone = normalize_phone(data.get("phone", "")) or existing.get("phone", "")
 
             # Подготовка work_items
@@ -510,6 +521,8 @@ def create_flask_app():
             new_status = data.get("status", "").strip()
             if not new_status:
                 return jsonify({"error": "Не указан статус"}), 400
+            if new_status not in STATUSES:
+                return jsonify({"error": "Недопустимый статус заказа"}), 400
 
             completion_date = None
             if new_status == "Выдан клиенту":

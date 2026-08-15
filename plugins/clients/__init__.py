@@ -17,7 +17,15 @@ from datetime import datetime
 
 from core.base import BaseRepository, BaseService
 from core.plugin_system import BasePlugin, PluginMetadata, get_plugin_manager
-from shared.utils import normalize_phone, validate_email
+
+# SSOT для валидации/форматирования — utils/formatters.py + utils/validators.py
+# (используются всем остальным приложением: gui/, database/, pwa/, reports/).
+# Раньше здесь импортировалось из shared/utils.py — независимого дубликата
+# той же логики с идентичным алгоритмом normalize_phone и тем же regex
+# validate_email, но с единственным потребителем (этим файлом). Удалён как
+# SSOT-нарушение, см. AUDIT_REPORT_v21.md.
+from utils.formatters import normalize_phone
+from utils.validators import validate_email
 
 # =============================================================================
 # DOMAIN ENTITIES (SSOT)

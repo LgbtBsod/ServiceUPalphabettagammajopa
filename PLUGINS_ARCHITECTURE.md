@@ -1,5 +1,14 @@
 # 🏗️ PLUGINS ARCHITECTURE REFACTORING COMPLETE
 
+> **⚠️ ERRATA (см. AUDIT_REPORT_v21.md):** `plugins/orders`, `plugins/pwa`,
+> `plugins/reports`, `plugins/auth`, упоминаемые ниже, были удалены — это был
+> scaffolding без реальной логики (только `initialize()`-заглушки с
+> закомментированными TODO), не подключённый к `PluginManager.discover()`.
+> Единственный реально работающий плагин — `plugins/clients`
+> (`SqlAlchemyClientRepository` поверх `database.sqlalchemy_models.Client`,
+> резолвится через Kernel DI). Диаграмма ниже (`shared/utils`) также устарела —
+> см. errata в `REFACTORING_SUMMARY.md`. Актуальное состояние — в `ARCHITECTURE_*.md`.
+
 ## ✅ Выполненные изменения
 
 ### 1. **Plugin System** (`core/plugin_system.py`)

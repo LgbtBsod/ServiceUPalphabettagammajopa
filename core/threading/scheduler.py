@@ -6,7 +6,7 @@ Provides scheduled task execution with support for cron-like scheduling.
 import threading
 import time
 import logging
-from typing import Callable, Any, Optional, Dict, List
+from typing import Callable, Any
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -23,21 +23,21 @@ class ScheduleType(Enum):
     CRON = "cron"  # Simplified cron support
 
 
-@dataclass
+@dataclass(slots=True)
 class ScheduledTask:
     """Represents a scheduled task."""
     id: str
     func: Callable[..., Any]
     args: tuple = field(default_factory=tuple)
-    kwargs: Dict[str, Any] = field(default_factory=dict)
+    kwargs: dict[str, Any] = field(default_factory=dict)
     schedule_type: ScheduleType = ScheduleType.ONCE
     next_run: datetime = field(default_factory=datetime.now)
-    interval_seconds: Optional[int] = None
-    cron_expression: Optional[str] = None  # Simplified: "minute hour day month weekday"
+    interval_seconds: int | None = None
+    cron_expression: str | None = None  # Simplified: "minute hour day month weekday"
     enabled: bool = True
     run_count: int = 0
-    last_run: Optional[datetime] = None
-    last_error: Optional[Exception] = None
+    last_run: datetime | None = None
+    last_error: Exception | None = None
     
     def __lt__(self, other: "ScheduledTask") -> bool:
         """Compare by next_run time for heap operations."""
@@ -58,11 +58,11 @@ class TaskScheduler:
     
     def __init__(self, name: str = "TaskScheduler"):
         self.name = name
-        self._tasks: Dict[str, ScheduledTask] = {}
-        self._heap: List[ScheduledTask] = []
+        self._tasks: dict[str, ScheduledTask] = {}
+        self._heap: list[ScheduledTask] = []
         self._lock = threading.RLock()
         self._shutdown = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._wake_event = threading.Event()
         
         logger.info(f"{name} initialized")
@@ -165,17 +165,17 @@ class TaskScheduler:
         task_id: str,
         func: Callable[..., Any],
         args: tuple,
-        kwargs: Dict[str, Any],
+        kwargs: dict[str, Any],
         schedule_type: ScheduleType,
         next_run: datetime,
-        interval_seconds: Optional[int] = None,
+        interval_seconds: int | None = None,
     ) -> bool:
         """Internal method to schedule a task."""
         with self._lock:
             if task_id in self._tasks:
                 logger.warning(f"Scheduled task '{task_id}' already exists")
                 return False
-            
+
             task = ScheduledTask(
                 id=task_id,
                 func=func,
@@ -275,7 +275,7 @@ class TaskScheduler:
                     task.next_run = datetime.now() + timedelta(seconds=task.interval_seconds)
                     heapq.heappush(self._heap, task)
     
-    def get_task_info(self, task_id: str) -> Optional[Dict[str, Any]]:
+    def get_task_info(self, task_id: str) -> dict[str, Any] | None:
         """Get information about a scheduled task."""
         with self._lock:
             if task_id not in self._tasks:
@@ -292,7 +292,7 @@ class TaskScheduler:
                 "last_error": str(task.last_error) if task.last_error else None,
             }
     
-    def get_all_tasks(self) -> List[Dict[str, Any]]:
+    def get_all_tasks(self) -> list[dict[str, Any]]:
         """Get information about all scheduled tasks."""
         with self._lock:
             return [

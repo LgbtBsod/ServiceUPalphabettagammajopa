@@ -12,13 +12,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
-from typing import Any, TypeVar
+from typing import Any
 
 from shared.logging_config import get_logger
 
 logger = get_logger(__name__)
-
-T = TypeVar("T")
 
 
 class EventType(Enum):

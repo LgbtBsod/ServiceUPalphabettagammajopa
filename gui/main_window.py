@@ -338,6 +338,15 @@ class ServiceCenterApp:
         except Exception:
             pass
 
+    def _attach_tooltip(self, widget, text: str) -> None:
+        """Прикрепляет tooltip к виджету, не прерывая инициализацию UI при ошибке."""
+        try:
+            from gui.widgets.tooltip import create_tooltip
+
+            create_tooltip(widget, text)
+        except Exception:
+            pass
+
     def create_header(self):
         """Создание шапки приложения"""
         header_frame = ModernCard(
@@ -398,12 +407,7 @@ class ServiceCenterApp:
         )
         editor_btn.pack(side="right", padx=(8, 0))
         # Tooltip через hover
-        try:
-            from gui.widgets.tooltip import create_tooltip
-
-            create_tooltip(editor_btn, "Редактор актов")
-        except Exception:
-            pass
+        self._attach_tooltip(editor_btn, "Редактор актов")
 
         # Кнопка словарей
         dict_btn = ModernButton(
@@ -416,12 +420,7 @@ class ServiceCenterApp:
             height=34,
         )
         dict_btn.pack(side="right", padx=(8, 0))
-        try:
-            from gui.widgets.tooltip import create_tooltip
-
-            create_tooltip(dict_btn, "Словари")
-        except Exception:
-            pass
+        self._attach_tooltip(dict_btn, "Словари")
 
         # Кнопка настроек
         settings_btn = ModernButton(
@@ -434,12 +433,7 @@ class ServiceCenterApp:
             height=34,
         )
         settings_btn.pack(side="right", padx=(8, 0))
-        try:
-            from gui.widgets.tooltip import create_tooltip
-
-            create_tooltip(settings_btn, "Настройки")
-        except Exception:
-            pass
+        self._attach_tooltip(settings_btn, "Настройки")
 
         # Кнопка активации лицензии
         license_btn = ModernButton(
@@ -452,12 +446,7 @@ class ServiceCenterApp:
             height=34,
         )
         license_btn.pack(side="right", padx=(8, 0))
-        try:
-            from gui.widgets.tooltip import create_tooltip
-
-            create_tooltip(license_btn, "Активация лицензии")
-        except Exception:
-            pass
+        self._attach_tooltip(license_btn, "Активация лицензии")
 
         self.datetime_label = ctk.CTkLabel(
             right_container,
@@ -1206,11 +1195,6 @@ class ServiceCenterApp:
             self.context_menu.deiconify()
             self.context_menu.lift()
 
-    def _dismiss_context_menu(self, event):
-        """Скрыть контекстное меню по клику"""
-        with contextlib.suppress(Exception):
-            self.context_menu.withdraw()
-
     def update_datetime(self):
         """Обновление времени"""
         try:
@@ -1239,14 +1223,6 @@ class ServiceCenterApp:
             for col in self.tree["columns"]:
                 widths[col] = int(self.tree.column(col, "width"))
             self.settings.set("column_widths", widths)
-        except Exception:
-            pass
-
-    def _auto_size_columns(self):
-        """Автоматически подбирает ширину колонок под содержимое."""
-        try:
-            for col in self.tree["columns"]:
-                self.tree.column(col, width=self.tree.column(col, "width"))
         except Exception:
             pass
 
@@ -1684,47 +1660,36 @@ class ServiceCenterApp:
             self.update_finance_display()
             self.update_status_bar("Заказ обновлен")
 
-    def _load_act_template(self, act_type: str) -> dict:
-        """Загружает шаблон акта из JSON (изменения из редактора актов).
+    def _get_selected_device_or_warn(self):
+        """Возвращает выбранное в таблице устройство или None.
 
-        act_type: 'receipt' или 'completion'. Возвращает dict (пустой при ошибке).
-        Это позволяет применять настройки редактора (заголовок, поля, цвет,
-        условия, логотип) к актам, печатаемым из главного окна.
+        Показывает предупреждение, если заказ не выбран, или сообщение об
+        ошибке, если устройство не найдено в БД. Общий код, ранее
+        продублированный в print_receipt_act/print_completion_act/
+        print_dual_acts (см. AUDIT_REPORT_v21.md).
         """
-        import json
-        from pathlib import Path
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("Предупреждение", "Выберите заказ")
+            return None
 
-        try:
-            reports_dir = Path(__file__).parent.parent / "reports"
-            template_dir = reports_dir / "templates"
-            filename = (
-                "receipt_act.json" if act_type == "receipt" else "completion_act.json"
+        order_number_display = self.tree.item(selected[0])["values"][0]
+        device_id = self.get_device_id_by_order_number(order_number_display)
+        device = self.db.get_device(device_id)
+
+        if not device:
+            messagebox.showerror(
+                "Ошибка",
+                f"Не удалось найти устройство с номером {order_number_display}",
             )
-            path = template_dir / filename
-            if path.exists():
-                with open(path, encoding="utf-8") as f:
-                    return json.load(f)
-        except Exception as e:
-            logger.exception(f"Не удалось загрузить шаблон акта: {e}")
-        return {}
+            return None
+        return device
 
     def print_receipt_act(self):
         """Печать акта приема"""
         try:
-            selected = self.tree.selection()
-            if not selected:
-                messagebox.showwarning("Предупреждение", "Выберите заказ")
-                return
-
-            order_number_display = self.tree.item(selected[0])["values"][0]
-            device_id = self.get_device_id_by_order_number(order_number_display)
-            device = self.db.get_device(device_id)
-
-            if not device:
-                messagebox.showerror(
-                    "Ошибка",
-                    f"Не удалось найти устройство с номером {order_number_display}",
-                )
+            device = self._get_selected_device_or_warn()
+            if device is None:
                 return
 
             filename = self.report_gen.generate_receipt_act(device)
@@ -1735,7 +1700,9 @@ class ServiceCenterApp:
                 order_number = format_order_number_for_display(
                     device.get("order_number", "")
                 )
-                template = self._load_act_template("receipt")
+                from reports.report_editor import load_template_data
+
+                template = load_template_data("receipt")
                 # Окно предпросмотра само генерирует PDF с применением шаблона
                 # редактора (header_text, поля, цвет, логотип). Печать/экспорт —
                 # через кнопки в окне предпросмотра.
@@ -1758,20 +1725,8 @@ class ServiceCenterApp:
     def print_completion_act(self):
         """Печать акта выполненных работ"""
         try:
-            selected = self.tree.selection()
-            if not selected:
-                messagebox.showwarning("Предупреждение", "Выберите заказ")
-                return
-
-            order_number_display = self.tree.item(selected[0])["values"][0]
-            device_id = self.get_device_id_by_order_number(order_number_display)
-            device = self.db.get_device(device_id)
-
-            if not device:
-                messagebox.showerror(
-                    "Ошибка",
-                    f"Не удалось найти устройство с номером {order_number_display}",
-                )
+            device = self._get_selected_device_or_warn()
+            if device is None:
                 return
 
             work_items_json = device.get("work_items", "")
@@ -1788,7 +1743,9 @@ class ServiceCenterApp:
                 order_number = format_order_number_for_display(
                     device.get("order_number", "")
                 )
-                template = self._load_act_template("completion")
+                from reports.report_editor import load_template_data
+
+                template = load_template_data("completion")
                 ActPreviewWindow(
                     self.root,
                     f"Акт выполненных работ {order_number}",
@@ -1806,7 +1763,9 @@ class ServiceCenterApp:
                     if messagebox.askyesno(
                         "Выдача устройства",
                         f"Изменить статус заказа #{order_number} на «Выдан клиенту»?",
-                    ) and self.db.update_device_status(device_id, "Выдан клиенту"):
+                    ) and self.db.update_device_status(
+                        device.get("id"), "Выдан клиенту"
+                    ):
                         self.load_devices()
                         self.dashboard.update_stats()
                         self.update_finance_display()
@@ -1900,20 +1859,8 @@ class ServiceCenterApp:
     def print_dual_acts(self):
         """Печать двух актов на одном листе A4 с выбором режима."""
         try:
-            selected = self.tree.selection()
-            if not selected:
-                messagebox.showwarning("Предупреждение", "Выберите заказ")
-                return
-
-            order_number_display = self.tree.item(selected[0])["values"][0]
-            device_id = self.get_device_id_by_order_number(order_number_display)
-            device = self.db.get_device(device_id)
-
-            if not device:
-                messagebox.showerror(
-                    "Ошибка",
-                    f"Не удалось найти устройство с номером {order_number_display}",
-                )
+            device = self._get_selected_device_or_warn()
+            if device is None:
                 return
 
             # work_items для акта выполненных работ
@@ -1951,7 +1898,9 @@ class ServiceCenterApp:
             if not file_path:
                 return
 
-            tpl = self._load_act_template(tpl_key)
+            from reports.report_editor import load_template_data
+
+            tpl = load_template_data(tpl_key)
             gen = ActPDFGenerator(template_data=tpl)
             ok = gen.generate_dual_pdf(
                 file_path, device, device, act_type1=act_type1, act_type2=act_type2

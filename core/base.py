@@ -12,13 +12,10 @@ Principles applied:
 
 import logging
 from abc import ABC
-from typing import Any, TypeVar
+from typing import Any
 
 from core.logging.exceptions import BaseAppError
 from core.logging.logger import get_logger
-
-T = TypeVar("T")
-R = TypeVar("R", covariant=True)  # Result type
 
 
 class LoggableMixin:
@@ -179,7 +176,7 @@ class BaseRepository[R](
 
     Usage:
         class OrderRepository(BaseRepository[Order]):
-            def get_by_id(self, id: int) -> Optional[Order]:
+            def get_by_id(self, id: int) -> Order | None:
                 return self.safe_execute(self._get_by_id_impl, default=None)
     """
 

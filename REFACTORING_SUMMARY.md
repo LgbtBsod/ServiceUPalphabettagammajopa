@@ -3,6 +3,22 @@
 
 ---
 
+> **⚠️ ERRATA (см. AUDIT_REPORT_v21.md):** Раздел «SSOT для утилит» ниже описывает
+> **не тот результат, который реально произошёл**. `shared/utils.py` не заменил
+> `utils/formatters.py`/`utils/validators.py` — он стал ТРЕТЬЕЙ независимой
+> реализацией той же логики (normalize_phone/validate_email/…) рядом с ними,
+> с единственным потребителем (`plugins/clients/__init__.py`), в то время как
+> `utils/formatters.py`+`utils/validators.py` остались реальным SSOT, на который
+> опирается всё приложение (`database/`, `gui/`, `pwa/`, `reports/` — 10+ файлов).
+> Это тот самый анти-паттерн, который описывает аудит: отчёт о рефакторинге
+> заявляет консолидацию, а по факту плодит ещё один дубликат.
+> `shared/utils.py` удалён, `plugins/clients/__init__.py` переведён на
+> `utils.formatters`/`utils.validators`. Также `plugins/orders` (упоминается
+> ниже) удалён как мёртвый scaffolding (0 реальной логики). Актуальное
+> состояние архитектуры — в `ARCHITECTURE_*.md`, а не в этом файле.
+
+---
+
 ## 📋 ВЫПОЛНЕННЫЕ ИЗМЕНЕНИЯ
 
 ### 1. **SSOT (Single Source of Truth)** — ИСПРАВЛЕНО ✅

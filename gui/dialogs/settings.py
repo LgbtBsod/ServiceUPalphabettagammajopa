@@ -45,13 +45,9 @@ class SettingsWindow(ctk.CTkToplevel):
 
     def _close_with_geometry(self):
         """Сохраняет геометрию окна в config и закрывает его."""
-        try:
-            from utils.window_state import save_window_geometry
+        from utils.window_state import close_dialog_with_geometry
 
-            save_window_geometry(self.settings, "settings", self)
-        except Exception:
-            pass
-        self.destroy()
+        close_dialog_with_geometry(self, self.settings, "settings")
 
     def create_widgets(self):
         """Создание виджетов"""

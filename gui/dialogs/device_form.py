@@ -106,13 +106,9 @@ class DeviceFormDialog(ctk.CTkToplevel):
 
     def _close_with_geometry(self):
         """Сохраняет геометрию окна в config и закрывает его."""
-        try:
-            from utils.window_state import save_window_geometry
+        from utils.window_state import close_dialog_with_geometry
 
-            save_window_geometry(self.settings, "device_form", self)
-        except Exception:
-            pass
-        self.destroy()
+        close_dialog_with_geometry(self, self.settings, "device_form")
 
     def _format_phone_input(self, event=None):
         """Маска телефона: форматирует ввод как +7 (XXX) XXX-XX-XX."""
@@ -1417,145 +1413,6 @@ class DeviceFormDialog(ctk.CTkToplevel):
         else:
             self.photos_label.configure(text="📸 Фото: 0")
 
-    def print_dual_from_form(self):
-        """Печать двух актов на одном листе A4 из формы заказа."""
-        from tkinter import messagebox as _mb
-
-        import customtkinter as _ctk
-
-        device = self.db.get_device(self.device_data.get("id"))
-        if not device:
-            _mb.showerror("Ошибка", "Заказ не найден")
-            return
-
-        # work_items для акта выполненных работ
-        work_items_json = device.get("work_items", "")
-        if work_items_json:
-            wm = WorkItemsManager()
-            wm.from_json(work_items_json)
-            device["completed_work"] = wm.get_description_summary()
-
-        # Кастомный диалог выбора режима
-        dlg = _ctk.CTkToplevel(self)
-        dlg.title("Два акта на листе A4")
-        dlg.geometry("380x300")
-        dlg.transient(self)
-        dlg.grab_set()
-        dlg.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() - 380) // 2
-        y = self.winfo_y() + (self.winfo_height() - 300) // 2
-        dlg.geometry(f"+{x}+{y}")
-
-        result = {"choice": None}
-
-        _ctk.CTkLabel(
-            dlg,
-            text="📋 Выберите режим печати",
-            font=_ctk.CTkFont(size=15, weight="bold"),
-            text_color=self.colors["accent"],
-        ).pack(pady=(16, 10))
-
-        def _choose(val):
-            result["choice"] = val
-            dlg.destroy()
-
-        for text, val, variant in [
-            ("📄📄  2× Акт приёма", "receipt2", "primary"),
-            ("🔧🔧  2× Акт выполненных работ", "completion2", "primary"),
-            ("📄🔧  Акт приёма + Акт работ", "both", "secondary"),
-        ]:
-            _ctk.CTkButton(
-                dlg,
-                text=text,
-                command=lambda v=val: _choose(v),
-                height=40,
-                width=300,
-                corner_radius=8,
-                fg_color=self.colors["accent"]
-                if variant == "primary"
-                else self.colors["bg_tertiary"],
-                text_color="white"
-                if variant == "primary"
-                else self.colors["text_primary"],
-                hover_color=self.colors.get("accent_hover", self.colors["hover"]),
-                font=_ctk.CTkFont(size=12),
-            ).pack(pady=4)
-
-        _ctk.CTkButton(
-            dlg,
-            text="✖ Отмена",
-            command=dlg.destroy,
-            height=34,
-            width=300,
-            corner_radius=8,
-            fg_color=self.colors["bg_tertiary"],
-            text_color=self.colors["text_primary"],
-        ).pack(pady=(8, 4))
-
-        self.wait_window(dlg)
-        choice = result["choice"]
-        if not choice:
-            return
-
-        if choice == "receipt2":
-            act_type1, act_type2, tpl_key = "receipt", "receipt", "receipt"
-        elif choice == "completion2":
-            act_type1, act_type2, tpl_key = "completion", "completion", "completion"
-        else:
-            act_type1, act_type2, tpl_key = "receipt", "completion", "receipt"
-
-        from tkinter import filedialog as _fd
-
-        from reports.report_renderer import ActPDFGenerator
-
-        file_path = _fd.asksaveasfilename(
-            defaultextension=".pdf",
-            filetypes=[("PDF files", "*.pdf")],
-            initialfile=f"acts_{device.get('order_number', 'order')}.pdf",
-        )
-        if not file_path:
-            return
-
-        tpl = self._load_act_template(tpl_key)
-        gen = ActPDFGenerator(template_data=tpl)
-        ok = gen.generate_dual_pdf(
-            file_path, device, device, act_type1=act_type1, act_type2=act_type2
-        )
-        if ok:
-            _mb.showinfo("Успех", f"Два акта на A4 сохранены:\n{file_path}")
-            import os as _os
-            import sys as _sys
-
-            if _sys.platform == "win32":
-                _os.startfile(file_path)
-        else:
-            _mb.showerror("Ошибка", "Не удалось создать PDF")
-
-    def _load_act_template(self, act_type: str) -> dict:
-        """Загружает шаблон акта из JSON (настройки редактора актов).
-
-        act_type: 'receipt' или 'completion'. Возвращает dict (пустой при ошибке).
-        Позволяет применять настройки редактора (заголовок, поля, цвет,
-        условия, логотип) к актам, печатаемым из формы заказа.
-        """
-        import json
-        from pathlib import Path
-
-        try:
-            # device_form.py в gui/dialogs/, корень проекта = 3x dirname
-            project_root = Path(__file__).parent.parent.parent
-            template_dir = project_root / "reports" / "templates"
-            filename = (
-                "receipt_act.json" if act_type == "receipt" else "completion_act.json"
-            )
-            path = template_dir / filename
-            if path.exists():
-                with open(path, encoding="utf-8") as f:
-                    return json.load(f)
-        except Exception as e:
-            logger.error(f"Не удалось загрузить шаблон акта: {e}", exc_info=True)
-        return {}
-
     def show_receipt_act_preview(self):
         """Показать предпросмотр акта приема"""
         report_gen = self.report_gen
@@ -1565,7 +1422,9 @@ class DeviceFormDialog(ctk.CTkToplevel):
             if filename and os.path.exists(filename):
                 with open(filename, encoding="utf-8") as f:
                     content = f.read()
-                template = self._load_act_template("receipt")
+                from reports.report_editor import load_template_data
+
+                template = load_template_data("receipt")
                 ActPreviewWindow(
                     self,
                     "Акт приема",
@@ -1592,7 +1451,9 @@ class DeviceFormDialog(ctk.CTkToplevel):
             if filename and os.path.exists(filename):
                 with open(filename, encoding="utf-8") as f:
                     content = f.read()
-                template = self._load_act_template("completion")
+                from reports.report_editor import load_template_data
+
+                template = load_template_data("completion")
                 ActPreviewWindow(
                     self,
                     "Акт выполненных работ",

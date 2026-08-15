@@ -20,14 +20,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
 from threading import RLock
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any
 
 from core.base import LoggableMixin
 
 if TYPE_CHECKING:
     from datetime import timedelta
-
-T = TypeVar("T")
 
 
 @dataclass

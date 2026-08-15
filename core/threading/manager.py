@@ -6,7 +6,7 @@ Ensures safe creation, monitoring, and shutdown of threads.
 
 import threading
 import logging
-from typing import Dict, Optional, List, Callable, Any
+from typing import Callable, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -21,16 +21,16 @@ class ThreadStatus(Enum):
     ERROR = "error"
 
 
-@dataclass
+@dataclass(slots=True)
 class ThreadInfo:
     """Information about a managed thread."""
     thread_id: str
     thread: threading.Thread
     status: ThreadStatus
-    started_at: Optional[datetime] = None
-    stopped_at: Optional[datetime] = None
-    error: Optional[Exception] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    started_at: datetime | None = None
+    stopped_at: datetime | None = None
+    error: Exception | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class ThreadManager:
     - Thread status monitoring
     """
     
-    _instance: Optional["ThreadManager"] = None
+    _instance: "ThreadManager | None" = None
     _lock = threading.Lock()
     
     def __new__(cls) -> "ThreadManager":
@@ -63,7 +63,7 @@ class ThreadManager:
         if self._initialized:
             return
         
-        self._threads: Dict[str, ThreadInfo] = {}
+        self._threads: dict[str, ThreadInfo] = {}
         self._lock = threading.RLock()
         self._shutdown_event = threading.Event()
         self._initialized = True
@@ -80,9 +80,9 @@ class ThreadManager:
         name: str,
         target: Callable[..., Any],
         args: tuple = (),
-        kwargs: Optional[Dict[str, Any]] = None,
+        kwargs: dict[str, Any] | None = None,
         daemon: bool = False,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Create and register a new managed thread.
@@ -210,7 +210,7 @@ class ThreadManager:
             logger.info(f"Thread '{thread_id}' stopped")
             return True
     
-    def stop_all(self, timeout: float = 10.0) -> Dict[str, bool]:
+    def stop_all(self, timeout: float = 10.0) -> dict[str, bool]:
         """
         Stop all managed threads gracefully.
         
@@ -233,14 +233,14 @@ class ThreadManager:
         logger.info(f"All threads stopped. Success: {sum(results.values())}/{len(results)}")
         return results
     
-    def get_thread_status(self, thread_id: str) -> Optional[ThreadStatus]:
+    def get_thread_status(self, thread_id: str) -> ThreadStatus | None:
         """Get status of a specific thread."""
         with self._lock:
             if thread_id not in self._threads:
                 return None
             return self._threads[thread_id].status
     
-    def get_all_statuses(self) -> Dict[str, ThreadStatus]:
+    def get_all_statuses(self) -> dict[str, ThreadStatus]:
         """Get statuses of all managed threads."""
         with self._lock:
             return {

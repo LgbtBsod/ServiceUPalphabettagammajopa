@@ -123,3 +123,44 @@ def save_window_geometry(settings, window_key: str, window) -> None:
         settings.set(f"{GEOMETRY_KEY}.{window_key}", geo)
     except Exception as e:
         logger.warning(f"Не удалось сохранить геометрию окна {window_key}: {e}")
+
+
+def fit_window_to_screen(
+    window,
+    default_w: int,
+    default_h: int,
+    min_w: int,
+    min_h: int,
+    width_ratio: float = 0.92,
+    height_ratio: float = 0.92,
+) -> None:
+    """Подбирает размер окна под текущий экран и центрирует его.
+
+    Общая реализация для ``_fit_window``, ранее независимо продублированного
+    в act_preview.py (width_ratio=0.55) и report_editor.py (width_ratio=0.96)
+    с идентичной логикой при разных ratio, см. AUDIT_REPORT_v21.md.
+    """
+    sw, sh = _screen_size(window)
+    w = min(default_w, int(sw * width_ratio))
+    h = min(default_h, int(sh * height_ratio))
+    w = max(min_w, min(w, sw))
+    h = max(min_h, min(h, sh))
+    x = (sw - w) // 2
+    y = max(0, (sh - h) // 2 - 20)
+    with contextlib.suppress(Exception):
+        window.geometry(f"{w}x{h}+{x}+{y}")
+        window.minsize(min_w, min_h)
+
+
+def close_dialog_with_geometry(dialog, settings, window_key: str) -> None:
+    """Сохраняет геометрию окна и закрывает диалог — общая реализация для
+    ``_close_with_geometry``, которая раньше была независимо продублирована
+    в 8 диалогах (settings/dictionaries/device_form/client_history/
+    report_editor/work_item_dialog/photo_viewer/act_preview), см.
+    AUDIT_REPORT_v21.md. Каждый диалог по-прежнему определяет свой
+    ``_close_with_geometry`` (это Tk-колбэк, привязанный к кнопке/протоколу
+    закрытия), но тело метода теперь делегирует сюда.
+    """
+    with contextlib.suppress(Exception):
+        save_window_geometry(settings, window_key, dialog)
+    dialog.destroy()

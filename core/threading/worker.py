@@ -6,7 +6,7 @@ Provides a thread pool for executing tasks concurrently.
 import threading
 import queue
 import logging
-from typing import Callable, Any, Optional, Dict, List
+from typing import Callable, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -25,7 +25,7 @@ class TaskStatus(Enum):
     CANCELLED = "cancelled"
 
 
-@dataclass
+@dataclass(slots=True)
 class Task:
     """
     Represents a unit of work to be executed.
@@ -46,14 +46,14 @@ class Task:
     id: str
     func: Callable[..., Any]
     args: tuple = field(default_factory=tuple)
-    kwargs: Dict[str, Any] = field(default_factory=dict)
+    kwargs: dict[str, Any] = field(default_factory=dict)
     priority: int = 0
     status: TaskStatus = TaskStatus.PENDING
     result: Any = None
-    error: Optional[Exception] = None
+    error: Exception | None = None
     created_at: datetime = field(default_factory=datetime.now)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
     
     def __lt__(self, other: "Task") -> bool:
         """Compare tasks by priority for priority queue."""
@@ -89,10 +89,10 @@ class WorkerPool:
         self.name = name
         self.enable_priority = enable_priority
         
-        self._executor: Optional[ThreadPoolExecutor] = None
+        self._executor: ThreadPoolExecutor | None = None
         self._task_queue: queue.PriorityQueue if enable_priority else queue.Queue
-        self._tasks: Dict[str, Task] = {}
-        self._futures: Dict[str, Future] = {}
+        self._tasks: dict[str, Task] = {}
+        self._futures: dict[str, Future] = {}
         self._lock = threading.RLock()
         self._shutdown = False
         
@@ -127,7 +127,7 @@ class WorkerPool:
         priority: int = 0,
         *args: Any,
         **kwargs: Any,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Submit a task to the pool.
         
@@ -216,14 +216,14 @@ class WorkerPool:
                 task.completed_at = datetime.now()
                 self._tasks[task.id] = task
     
-    def get_task_status(self, task_id: str) -> Optional[TaskStatus]:
+    def get_task_status(self, task_id: str) -> TaskStatus | None:
         """Get status of a specific task."""
         with self._lock:
             if task_id not in self._tasks:
                 return None
             return self._tasks[task_id].status
     
-    def get_task_result(self, task_id: str, timeout: Optional[float] = None) -> Any:
+    def get_task_result(self, task_id: str, timeout: float | None = None) -> Any:
         """
         Get result of a completed task.
         
@@ -312,7 +312,7 @@ class WorkerPool:
                 if task.status == TaskStatus.PENDING
             )
     
-    def get_all_tasks(self) -> List[Task]:
+    def get_all_tasks(self) -> list[Task]:
         """Get list of all tasks."""
         with self._lock:
             return list(self._tasks.values())

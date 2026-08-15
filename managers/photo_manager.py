@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 class PhotoManager:
     """Класс для управления фотографиями устройств"""
 
-    def __init__(self):
+    def __init__(self, settings=None):
+        self.settings = settings
         self.photos_dir = PHOTOS_DIR
         self.thumbnails_dir = THUMBNAILS_DIR
         self.create_photos_directory()
@@ -105,13 +106,18 @@ class PhotoManager:
                 new_size = tuple(int(dim * ratio) for dim in img.size)
                 img = img.resize(new_size, self._resample_method())
 
-            img.save(dest_path, optimize=True, quality=85)
+            quality = self.settings.get("photo_quality", 85) if self.settings else 85
+            img.save(dest_path, optimize=True, quality=quality)
 
-            thumb = self.create_thumbnail(dest_path, size=(80, 80))
-            if thumb:
-                thumb_filename = f"thumb_{filename}"
-                thumb_path = os.path.join(thumb_dir, thumb_filename)
-                thumb.save(thumb_path, optimize=True, quality=70)
+            create_thumbnails = (
+                self.settings.get("create_thumbnails", True) if self.settings else True
+            )
+            if create_thumbnails:
+                thumb = self.create_thumbnail(dest_path, size=(80, 80))
+                if thumb:
+                    thumb_filename = f"thumb_{filename}"
+                    thumb_path = os.path.join(thumb_dir, thumb_filename)
+                    thumb.save(thumb_path, optimize=True, quality=70)
 
             return dest_path
         except Exception as e:
