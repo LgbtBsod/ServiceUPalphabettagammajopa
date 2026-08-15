@@ -275,7 +275,7 @@ class ClientDatabaseManager:
                     from utils.formatters import parse_price_to_float
 
                     price_val = parse_price_to_float(price_str)
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 pass
 
             photos_str = device_data.get("photos", "")

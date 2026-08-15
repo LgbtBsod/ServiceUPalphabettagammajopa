@@ -15,11 +15,11 @@
 import logging
 import threading
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime
-from queue import Empty, Queue
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from queue import Queue
+from typing import Any
 
 from core.base import LoggableMixin
 from core.events import Event, get_event_bus
@@ -36,7 +36,7 @@ class ThreadTask:
     args: tuple = field(default_factory=tuple)
     kwargs: dict = field(default_factory=dict)
     priority: int = 0  # 0 - низкий, 10 - высокий
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     thread_type: str = "default"  # ui, core, db, pdf
 
 
@@ -48,7 +48,7 @@ class ThreadResult:
     success: bool
     result: Any = None
     error: str | None = None
-    completed_at: datetime = field(default_factory=datetime.now)
+    completed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class ThreadManager(LoggableMixin):

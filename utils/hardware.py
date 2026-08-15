@@ -36,7 +36,7 @@ def _get_wmi_value(wmi_query: str) -> str:
             for enc in ("utf-8", "cp866", "cp1251", "latin-1"):
                 try:
                     return r.stdout.decode(enc).strip()
-                except UnicodeDecodeError, AttributeError:
+                except (UnicodeDecodeError, AttributeError):
                     continue
             return r.stdout.decode("latin-1", errors="replace").strip()
         except Exception:

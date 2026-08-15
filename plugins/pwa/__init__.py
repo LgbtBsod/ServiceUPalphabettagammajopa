@@ -15,8 +15,7 @@ Principles:
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 from core.base import BaseService
 from core.plugin_system import IPlugin, PluginMetadata, get_plugin_manager

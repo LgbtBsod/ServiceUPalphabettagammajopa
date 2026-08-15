@@ -67,7 +67,7 @@ def format_price(price):
         # Используем NBSP (\u00a0) как разделитель тысяч — единый формат
         # во всём приложении, чтобы сортировка/парсинг были согласованы.
         return f"{price_val:,.2f} ₽".replace(",", " ").replace("\xa0", " ")
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return f"{price} ₽"
 
 
@@ -81,7 +81,7 @@ def format_date(date_str):
         else:
             dt = datetime.strptime(str(date_str)[:10], "%Y-%m-%d")
         return dt.strftime("%d.%m.%Y")
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         try:
             return str(date_str)[:10]
         except Exception:
@@ -104,7 +104,7 @@ def parse_price_to_float(price) -> float:
             parts = cleaned.split(".")
             cleaned = parts[0] + "." + "".join(parts[1:])
         return float(cleaned)
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return 0.0
 
 
@@ -112,7 +112,7 @@ def format_order_number_for_display(order_number):
     """Форматирование номера заказа для отображения"""
     try:
         return str(int(order_number))
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return str(order_number)
 
 
@@ -121,7 +121,7 @@ def format_order_number_for_db(order_number):
     try:
         num = int(order_number)
         return f"{num:05d}"
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return str(order_number)
 
 
@@ -143,5 +143,5 @@ def get_days_since_receipt(receipt_date):
             dt = datetime.strptime(str(receipt_date)[:10], "%Y-%m-%d")
         delta = datetime.now() - dt
         return delta.days
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return 0

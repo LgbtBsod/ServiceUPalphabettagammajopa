@@ -672,7 +672,7 @@ class Database:
                 price = parse_price_to_float(item.get("price", 0))
                 try:
                     qty = int(item.get("quantity", 1))
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     qty = 1
                 qty = max(qty, 1)
                 total = price * qty
@@ -937,7 +937,7 @@ class Database:
             try:
                 if int(order_digits) == int(row_order):
                     return True
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 pass
 
         return False

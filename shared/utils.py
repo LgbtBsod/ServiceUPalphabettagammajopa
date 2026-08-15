@@ -185,7 +185,7 @@ def safe_decimal(value: Number, default: Decimal = Decimal("0.00")) -> Decimal:
 
         return Decimal(cleaned).quantize(Decimal("0.01"))
 
-    except InvalidOperation, ValueError, TypeError:
+    except (InvalidOperation, ValueError, TypeError):
         return default
 
 
@@ -332,7 +332,7 @@ def format_date(date_obj: datetime | None, format_str: str = "%d.%m.%Y") -> str:
 
         return date_obj.strftime(format_str)
 
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return str(date_obj)[:10] if date_obj else ""
 
 

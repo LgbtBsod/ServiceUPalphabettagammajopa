@@ -88,11 +88,11 @@ def validate_price(price: Number | None) -> bool:
 
         float(cleaned)
         return True
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return False
 
 
-def validate_required(value: any | None) -> bool:
+def validate_required(value: object | None) -> bool:
     """Валидация обязательного поля.
 
     Args:
@@ -139,5 +139,5 @@ def validate_positive_number(value: Number | None, allow_zero: bool = False) -> 
         if allow_zero:
             return num >= 0
         return num > 0
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return False

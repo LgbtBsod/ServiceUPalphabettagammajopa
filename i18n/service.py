@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import configparser
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import lru_cache
@@ -349,9 +350,6 @@ def set_language(locale: str) -> bool:
     """
     return get_i18n().set_language(locale)
 
-
-# Import threading at module level
-import threading
 
 __all__ = [
     "I18NService",

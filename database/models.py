@@ -24,7 +24,7 @@ def _safe_price_to_float(price) -> float:
             parts = s.split(".")
             s = parts[0] + "." + "".join(parts[1:])
         return float(s)
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return 0.0
 
 
@@ -38,10 +38,10 @@ def _safe_int(value, default=1) -> int:
         return value
     try:
         return int(str(value).strip())
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         try:
             return int(float(str(value).strip()))
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return default
 
 

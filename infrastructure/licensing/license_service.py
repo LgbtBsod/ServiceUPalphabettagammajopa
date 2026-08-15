@@ -177,7 +177,7 @@ class LicenseService:
         if lic and lic.get("trial_start"):
             try:
                 return datetime.fromisoformat(lic["trial_start"])
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 pass
 
         # Fallback к реестру Windows (если на Windows)
@@ -192,7 +192,7 @@ class LicenseService:
                 ) as key:
                     val, _ = winreg.QueryValueEx(key, "trial_start")
                     return datetime.fromisoformat(str(val))
-            except FileNotFoundError, OSError, PermissionError:
+            except (FileNotFoundError, OSError, PermissionError):
                 pass
 
         return None
@@ -212,7 +212,7 @@ class LicenseService:
                     winreg.HKEY_CURRENT_USER, r"SOFTWARE\ServiceUP", 0, winreg.KEY_WRITE
                 ) as key:
                     winreg.SetValueEx(key, "trial_start", 0, winreg.REG_SZ, dt_str)
-            except PermissionError, OSError:
+            except (PermissionError, OSError):
                 pass
 
         # В файл лицензии
@@ -227,7 +227,7 @@ class LicenseService:
         if lic and lic.get("last_seen"):
             try:
                 return datetime.fromisoformat(lic["last_seen"])
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 pass
 
         import sys
@@ -241,7 +241,7 @@ class LicenseService:
                 ) as key:
                     val, _ = winreg.QueryValueEx(key, "last_seen")
                     return datetime.fromisoformat(str(val))
-            except FileNotFoundError, OSError, PermissionError:
+            except (FileNotFoundError, OSError, PermissionError):
                 pass
 
         return None
@@ -260,7 +260,7 @@ class LicenseService:
                     winreg.HKEY_CURRENT_USER, r"SOFTWARE\ServiceUP", 0, winreg.KEY_WRITE
                 ) as key:
                     winreg.SetValueEx(key, "last_seen", 0, winreg.REG_SZ, dt_str)
-            except PermissionError, OSError:
+            except (PermissionError, OSError):
                 pass
 
         lic = self._repo.read() or {}

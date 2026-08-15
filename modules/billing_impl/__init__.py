@@ -15,6 +15,8 @@
 # ПРОСТОЙ ИМПОРТ ВСЕХ ЗАВИСИМОСТЕЙ ЧЕРЕЗ WRAPPER
 from modules._module_call import CoreException, ModuleBase, ServiceException, log
 
+__all__ = ["BillingModule", "CoreException", "ServiceException", "log"]
+
 
 class BillingModule(ModuleBase):
     """Модуль биллинга и платежей"""

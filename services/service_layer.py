@@ -257,7 +257,7 @@ class OrderService(BaseService[Order]):
             # Пробуем преобразовать через dict()
             try:
                 device_dict = dict(device)
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 device_dict = vars(device) if hasattr(device, "__dict__") else {}
 
         # Парсинг цен

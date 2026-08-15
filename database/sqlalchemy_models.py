@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-
 """SQLAlchemy ORM модели данных.
 
 Использует SQLAlchemy 2.0+ с декларативным стилем.
 Заменяет ручные SQL запросы на типобезопасный ORM API.
 """
+
+from __future__ import annotations
 
 import json
 from datetime import datetime

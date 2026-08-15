@@ -1086,7 +1086,6 @@ class ServiceCenterApp:
     def toggle_mobile_server(self):
         """Запуск/просмотр мобильной версии (PWA-сервер)."""
         try:
-            from gui.dialogs.pwa_qr_dialog import PWAQRDialog
             from pwa.server import PWAServerManager
 
             # Ленивая инициализация менеджера
@@ -1486,7 +1485,7 @@ class ServiceCenterApp:
                         dt = datetime.strptime(rd[:10], "%Y-%m-%d")
                         if dt >= week_ago:
                             week_orders.append(d)
-                    except ValueError, TypeError:
+                    except (ValueError, TypeError):
                         pass
             self._clear_tree_and_populate(
                 week_orders, count_label_text=f"За неделю: {len(week_orders)}"
@@ -2002,7 +2001,7 @@ class ServiceCenterApp:
             else:
                 dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
                 return dt.strftime("%d.%m.%Y")
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return date_str[:10] if date_str else ""
 
     def show_activation(self):

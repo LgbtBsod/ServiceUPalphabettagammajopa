@@ -12,24 +12,19 @@
 
 import json
 import logging
-import threading
-from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import func
 
-from core.base import BaseService, LoggableMixin
-from core.events import Event, get_event_bus, on_event
+from core.base import BaseService
+from core.events import Event, get_event_bus
 from database.sqlalchemy_models import Client, Order
 from infrastructure.db_access import (
     Query,
-    QueryResult,
     db_execute_query,
-    db_session,
-    get_db_access,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,8 +110,6 @@ class OrdersAnalyticsQuery(AnalyticsQuery):
     """Аналитический запрос по заказам."""
 
     def execute(self, session) -> dict[str, Any]:
-        from database.sqlalchemy_models import WorkItem
-
         # Фильтры
         date_from = self.filters.get("date_from")
         date_to = self.filters.get("date_to")

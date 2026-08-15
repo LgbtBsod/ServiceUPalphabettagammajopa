@@ -238,7 +238,7 @@ def _parse_work_items(work_items_json: str) -> list[dict[str, Any]]:
             qty = item.get("quantity", 1)
             try:
                 qty = int(qty)
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 qty = 1
             price = parse_price_to_float(item.get("price", 0))
             qty = max(qty, 1)
@@ -305,7 +305,7 @@ class ActPDFGenerator:
         # Поля страницы из шаблона (мм → pt), по умолчанию 6мм
         try:
             margin_mm = int(self.template.get("page_margin_mm", 6))
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             margin_mm = 6
         self.margin = margin_mm * 2.83465
 
@@ -546,7 +546,7 @@ class ActPDFGenerator:
             size = self.template.get("logo_size", 50)
             try:
                 size = int(size)
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 size = 50
             size = max(20, min(size, 120))
             img = RLImage(png, width=size, height=size, kind="proportional")

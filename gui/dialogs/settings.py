@@ -506,7 +506,7 @@ class SettingsWindow(ctk.CTkToplevel):
         """Безопасное преобразование строки в int с проверкой диапазона."""
         try:
             v = int(value)
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return default
         if lo is not None and v < lo:
             return lo

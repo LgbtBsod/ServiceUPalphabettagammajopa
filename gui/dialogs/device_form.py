@@ -1659,7 +1659,7 @@ class DeviceFormDialog(ctk.CTkToplevel):
                 try:
                     dt = datetime.strptime(receipt_date_str, "%d.%m.%Y %H:%M:%S")
                     receipt_date = dt.strftime("%Y-%m-%d %H:%M:%S")
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     receipt_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             else:
                 receipt_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
