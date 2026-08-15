@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
+from contextlib import contextmanager
 from functools import lru_cache
 
 from config import get_data_dir, get_settings
@@ -149,11 +151,6 @@ def log_critical(message: str, exc: Exception | None = None, **kwargs) -> None:
         logger.critical(f"{message}: {exc}", extra=kwargs if kwargs else None)
     else:
         logger.critical(message, extra=kwargs if kwargs else None)
-
-
-# Context manager for timing operations
-import time
-from contextlib import contextmanager
 
 
 @contextmanager

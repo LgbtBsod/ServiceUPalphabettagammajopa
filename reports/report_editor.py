@@ -861,7 +861,7 @@ class ActPanel:
         if hasattr(self, "margins_combo"):
             try:
                 self.template_data["page_margin_mm"] = int(self.margins_combo.get())
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 self.template_data["page_margin_mm"] = 6
         # Поля документа с учётом порядка из Drag-and-Drop
         if (

@@ -14,8 +14,6 @@ Principles:
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
-from typing import List, Optional
 
 from core.base import BaseRepository, BaseService
 from core.plugin_system import IPlugin, PluginMetadata, get_plugin_manager

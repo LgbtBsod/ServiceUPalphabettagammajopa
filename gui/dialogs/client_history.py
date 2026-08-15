@@ -443,7 +443,7 @@ class ClientHistoryWindow(ctk.CTkToplevel):
                         else 0
                     )
                     total_sum += price_val
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     pass
 
             # Любимое устройство
@@ -474,7 +474,7 @@ class ClientHistoryWindow(ctk.CTkToplevel):
                     year = receipt_date[:4]
                     if year and year.isdigit():
                         years.append(year)
-                except ValueError, TypeError, IndexError:
+                except (ValueError, TypeError, IndexError):
                     pass
 
         years = sorted(set(years), reverse=True)
@@ -550,7 +550,7 @@ class ClientHistoryWindow(ctk.CTkToplevel):
                     else:
                         dt = datetime.strptime(receipt_date[:10], "%Y-%m-%d")
                     receipt_date = dt.strftime("%d.%m.%Y %H:%M")
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     receipt_date = receipt_date[:10] if receipt_date else "—"
             else:
                 receipt_date = "—"
@@ -634,7 +634,7 @@ class ClientHistoryWindow(ctk.CTkToplevel):
                 .replace(",", ".")
             )
             return float(cleaned) if cleaned else 0.0
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return 0.0
 
     def sort_by_column(self, col):
@@ -655,7 +655,7 @@ class ClientHistoryWindow(ctk.CTkToplevel):
             def _order_key(val):
                 try:
                     return int(val)
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     return 0
 
             items.sort(key=lambda x: _order_key(x[0]))

@@ -11,7 +11,7 @@ from contextlib import contextmanager, suppress
 from datetime import datetime
 from typing import Any, TypeVar
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from domain.entities import Client, Device, OrderStatus, Photo, Priority, WorkItem
@@ -489,7 +489,3 @@ class UnitOfWork:
                 "UnitOfWork не инициализирован. Используйте контекстный менеджер."
             )
         return self._client_repo
-
-
-# Import event для SQLAlchemy
-from sqlalchemy import event

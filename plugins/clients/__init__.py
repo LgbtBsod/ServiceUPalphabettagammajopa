@@ -14,7 +14,6 @@ Principles:
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional
 
 from core.base import BaseRepository, BaseService
 from core.plugin_system import IPlugin, PluginMetadata, get_plugin_manager

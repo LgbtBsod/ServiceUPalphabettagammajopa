@@ -19,10 +19,10 @@ class IntegrationManager:
     def _check_requests(self) -> bool:
         """Проверка доступности requests"""
         try:
-            import requests
+            import importlib.util
 
-            return True
-        except ImportError:
+            return importlib.util.find_spec("requests") is not None
+        except (ImportError, AttributeError):
             return False
 
     def send_sms(self, phone: str, message: str) -> bool:

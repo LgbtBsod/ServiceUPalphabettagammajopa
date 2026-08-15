@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-
 """Конфигурация базы данных.
 
 Поддержка различных СУБД через единую конфигурацию.
 Для смены БД достаточно изменить DATABASE_CONFIG в settings.json или env переменные.
 """
+
+from __future__ import annotations
 
 import os
 from dataclasses import dataclass

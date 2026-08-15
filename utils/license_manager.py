@@ -21,7 +21,8 @@ import os
 import sys
 from datetime import datetime
 
-from config import BASE_DIR, LICENSE_SECRET_KEY as SECRET_KEY
+from config import BASE_DIR
+from config import LICENSE_SECRET_KEY as SECRET_KEY
 from utils.hardware import get_hwid
 
 logger = logging.getLogger(__name__)
@@ -73,7 +74,7 @@ class LicenseManager:
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, REG_KEY_PATH) as key:
                 val, _ = winreg.QueryValueEx(key, name)
                 return str(val)
-        except FileNotFoundError, OSError, PermissionError:
+        except (FileNotFoundError, OSError, PermissionError):
             try:
                 # Пробуем HKCU (без прав админа)
                 import winreg
@@ -81,7 +82,7 @@ class LicenseManager:
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_KEY_PATH) as key:
                     val, _ = winreg.QueryValueEx(key, name)
                     return str(val)
-            except FileNotFoundError, OSError:
+            except (FileNotFoundError, OSError):
                 return None
         except Exception:
             return None
@@ -100,7 +101,7 @@ class LicenseManager:
                 with winreg.CreateKeyEx(root, REG_KEY_PATH, 0, winreg.KEY_WRITE) as key:
                     winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
                 return True
-            except PermissionError, OSError:
+            except (PermissionError, OSError):
                 continue
             except Exception:
                 continue
@@ -257,7 +258,7 @@ class LicenseManager:
         if lic and lic.get("trial_start"):
             try:
                 return datetime.fromisoformat(lic["trial_start"])
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 pass
 
         # Из реестра
@@ -265,7 +266,7 @@ class LicenseManager:
         if reg_val:
             try:
                 return datetime.fromisoformat(reg_val)
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 pass
 
         return None
@@ -287,13 +288,13 @@ class LicenseManager:
         if lic and lic.get("last_seen"):
             try:
                 return datetime.fromisoformat(lic["last_seen"])
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 pass
         reg_val = self._reg_read("last_seen")
         if reg_val:
             try:
                 return datetime.fromisoformat(reg_val)
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 pass
         return None
 
@@ -305,5 +306,3 @@ class LicenseManager:
         lic["last_seen"] = dt_str
         lic["hwid"] = self.hwid
         self._write_license_file(lic)
-
-

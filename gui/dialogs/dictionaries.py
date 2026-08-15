@@ -322,7 +322,7 @@ class DictionariesManagerWindow(ctk.CTkToplevel):
 
         try:
             item_id = int(selected[0])
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return
         item = tree.item(selected[0])
         values = item["values"]

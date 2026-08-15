@@ -183,7 +183,7 @@ def create_flask_app():
         if wi_json:
             try:
                 work_items = json.loads(wi_json)
-            except json.JSONDecodeError, TypeError:
+            except (json.JSONDecodeError, TypeError):
                 work_items = []
 
         # photos: CSV абсолютных путей -> список с безопасными URL по индексу
@@ -686,7 +686,7 @@ def _work_items_to_json(work_items) -> str:
                 qty = it.get("quantity", 1)
                 try:
                     qty = int(qty)
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     qty = 1
                 result.append(
                     {

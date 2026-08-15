@@ -46,7 +46,7 @@ def _parse_geometry(geo: str):
         return None
     try:
         return int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return None
 
 

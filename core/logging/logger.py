@@ -61,7 +61,7 @@ class JSONFormatter(logging.Formatter):
                     try:
                         json.dumps(value)  # Проверка на сериализуемость
                         log_data[key] = value
-                    except TypeError, ValueError:
+                    except (TypeError, ValueError):
                         log_data[key] = str(value)
 
         return json.dumps(log_data, ensure_ascii=False)
