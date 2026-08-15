@@ -10,12 +10,22 @@ Principles:
 - COLID: Command-Query separation in plugin API
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from core.base import LoggableMixin
+
+if TYPE_CHECKING:
+    from core.kernel import ServiceUpCore
+
+# Контекст, передаваемый плагинам в initialize(). Пока это сам ServiceUpCore
+# (узкий фасад не нужен — у ServiceUpCore уже минимальный публичный API:
+# get_service/register_module/cache_*/submit_task/...).
+PluginContext = "ServiceUpCore"
 
 
 class PluginState(Enum):
@@ -54,8 +64,13 @@ class IPlugin(ABC, LoggableMixin):
         """Return plugin metadata."""
 
     @abstractmethod
-    def initialize(self) -> bool:
+    def initialize(self, context: PluginContext) -> bool:
         """Initialize plugin resources.
+
+        Args:
+            context: Ядро (core.kernel.ServiceUpCore) — единственный способ
+                плагина получить доступ к DI-контейнеру/сервисам/шине событий.
+                Плагины НЕ должны обращаться к ресурсам в обход context.
 
         Returns:
             True if initialization successful, False otherwise
@@ -92,6 +107,34 @@ class IPlugin(ABC, LoggableMixin):
         """
         # Active state means healthy by default
         return hasattr(self, "_state") and self._state == PluginState.ACTIVE
+
+
+class BasePlugin(IPlugin):
+    """Базовая реализация IPlugin с удобствами по умолчанию.
+
+    Плагины наследуют BasePlugin вместо прямой реализации IPlugin, чтобы не
+    дублировать boilerplate конструктора/хранения контекста в каждом плагине.
+    """
+
+    def __init__(self) -> None:
+        self._context: PluginContext | None = None
+
+    def initialize(self, context: PluginContext) -> bool:
+        """Сохраняет контекст ядра и вызывает on_initialize() для реальной
+        логики плагина. Переопределяйте on_initialize(), а не initialize()."""
+        self._context = context
+        try:
+            return self.on_initialize(context)
+        except Exception as e:
+            self.logger.exception(f"Plugin '{self.metadata.name}' initialize error: {e}")
+            return False
+
+    def on_initialize(self, context: PluginContext) -> bool:
+        """Переопределяется в наследниках — реальная инициализация плагина."""
+        return True
+
+    def shutdown(self) -> None:
+        self._context = None
 
 
 class PluginError(Exception):
@@ -151,8 +194,8 @@ class PluginManager(LoggableMixin):
 
         self.logger.info(f"Plugin '{plugin_name}' unregistered")
 
-    def load(self, plugin_name: str) -> bool:
-        """Load a plugin (call initialize)."""
+    def load(self, plugin_name: str, context: PluginContext = None) -> bool:
+        """Load a plugin (call initialize(context))."""
         if plugin_name not in self._plugins:
             raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
 
@@ -170,7 +213,7 @@ class PluginManager(LoggableMixin):
         self._states[plugin_name] = PluginState.LOADING
 
         try:
-            success = plugin.initialize()
+            success = plugin.initialize(context)
             if success:
                 self._states[plugin_name] = PluginState.ACTIVE
                 plugin._state = PluginState.ACTIVE  # Update plugin's internal state
@@ -207,7 +250,7 @@ class PluginManager(LoggableMixin):
             self.logger.exception(f"Plugin '{plugin_name}' shutdown error: {e}")
             raise
 
-    def enable(self, plugin_name: str) -> bool:
+    def enable(self, plugin_name: str, context: PluginContext = None) -> bool:
         """Enable a loaded plugin (mark as active)."""
         if plugin_name not in self._plugins:
             raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
@@ -221,7 +264,7 @@ class PluginManager(LoggableMixin):
             )
             return False
 
-        return self.load(plugin_name)
+        return self.load(plugin_name, context)
 
     def disable(self, plugin_name: str) -> None:
         """Disable a plugin (unload and mark as disabled)."""
@@ -234,6 +277,54 @@ class PluginManager(LoggableMixin):
         self.unload(plugin_name)
         self._states[plugin_name] = PluginState.DISABLED
         self.logger.info(f"Plugin '{plugin_name}' disabled")
+
+    def discover(
+        self, package_name: str, context: PluginContext = None
+    ) -> list[str]:
+        """Находит и регистрирует+загружает все плагины пакета package_name.
+
+        Обходит подмодули package_name (pkgutil.iter_modules), у каждого,
+        содержащего функцию register_plugin(), вызывает её (регистрация),
+        затем load() с переданным context. Раньше register_plugin() нигде
+        не вызывался автоматически — плагины существовали только на бумаге
+        (см. AUDIT_REPORT_v20.md).
+
+        Returns:
+            Имена плагинов, успешно загруженных (state == ACTIVE).
+        """
+        import importlib
+        import pkgutil
+
+        try:
+            package = importlib.import_module(package_name)
+        except ImportError as e:
+            self.logger.warning(f"Plugin package '{package_name}' not found: {e}")
+            return []
+
+        loaded: list[str] = []
+        for _finder, module_name, _is_pkg in pkgutil.iter_modules(
+            package.__path__, prefix=f"{package_name}."
+        ):
+            try:
+                module = importlib.import_module(module_name)
+            except Exception as e:
+                self.logger.error(f"Failed to import plugin module '{module_name}': {e}")
+                continue
+
+            register_fn = getattr(module, "register_plugin", None)
+            if register_fn is None:
+                continue
+
+            try:
+                plugin = register_fn()
+            except Exception as e:
+                self.logger.error(f"register_plugin() failed for '{module_name}': {e}")
+                continue
+
+            if self.load(plugin.metadata.name, context):
+                loaded.append(plugin.metadata.name)
+
+        return loaded
 
     def get_plugin(self, plugin_name: str) -> IPlugin:
         """Get plugin instance by name."""

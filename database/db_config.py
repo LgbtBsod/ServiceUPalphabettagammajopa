@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 
@@ -18,6 +18,17 @@ class DatabaseType(StrEnum):
     SQLITE = "sqlite"
     POSTGRESQL = "postgresql"
     MYSQL = "mysql"
+
+
+def _default_sqlite_path() -> str:
+    """Путь к SQLite-файлу по умолчанию — берём из единственного реального
+    источника истины (config/settings.py::get_db_path()), а не дублируем
+    литерал. Раньше это поле хардкодило 'service_center.db' (относительный
+    путь, не совпадающий с настоящим data/serviceup.db) — см. AUDIT_REPORT_v20.md.
+    """
+    from config import get_db_path
+
+    return str(get_db_path())
 
 
 @dataclass
@@ -48,7 +59,7 @@ class DatabaseConfig:
     """
 
     db_type: DatabaseType = DatabaseType.SQLITE
-    database: str = "service_center.db"
+    database: str = field(default_factory=_default_sqlite_path)
     host: str | None = None
     port: int | None = None
     user: str | None = None
@@ -61,7 +72,7 @@ class DatabaseConfig:
         """Создание конфигурации из переменных окружения."""
         return cls(
             db_type=DatabaseType(os.getenv("DB_TYPE", "sqlite")),
-            database=os.getenv("DB_NAME", "service_center.db"),
+            database=os.getenv("DB_NAME") or _default_sqlite_path(),
             host=os.getenv("DB_HOST"),
             port=int(os.getenv("DB_PORT", "0")) or None,
             user=os.getenv("DB_USER"),

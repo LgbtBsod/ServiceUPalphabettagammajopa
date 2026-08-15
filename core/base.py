@@ -14,7 +14,6 @@ import logging
 from abc import ABC
 from typing import Any, TypeVar
 
-from core.application import CoreApplication
 from core.logging.exceptions import BaseAppError
 from core.logging.logger import get_logger
 
@@ -112,7 +111,13 @@ class ExceptionHandlingMixin:
 
 
 class DependencyInjectableMixin[T]:
-    """Mixin providing access to Core Application services via DI.
+    """Mixin providing access to services via the application's DI container.
+
+    Историческая реализация делегировала в core.application.CoreApplication —
+    отдельное, неиспользуемое "ядро" (0 потребителей вне этого файла, требовало
+    незаявленную зависимость `dependency_injector`, из-за чего падал импорт всего
+    пакета core). Удалено при консолидации на единственное ядро
+    core.kernel.ServiceUpCore (см. AUDIT_REPORT_v20.md).
 
     Usage:
         class OrderService(DependencyInjectableMixin):
@@ -121,31 +126,22 @@ class DependencyInjectableMixin[T]:
                 return repo.get_by_id(order_id)
     """
 
-    _app: CoreApplication | None = None
+    def _get_core(self):
+        from core.kernel import get_core
 
-    @classmethod
-    def set_application(cls, app: CoreApplication) -> None:
-        """Set application instance (called during bootstrap)."""
-        cls._app = app
-
-    @property
-    def app(self) -> CoreApplication:
-        """Get application instance (lazy initialization)."""
-        if self._app is None:
-            self._app = CoreApplication.get_instance()
-        return self._app
+        return get_core()
 
     def get_service(self, service_type: type[T]) -> T:
-        """Get service instance from DI container."""
-        return self.app.get_service(service_type)
+        """Get service instance from the kernel's DI container."""
+        return self._get_core().get_service(service_type)
 
     def get_repository(self, repo_type: type[T]) -> T:
-        """Get repository instance from DI container."""
-        return self.app.get_repository(repo_type)
+        """Get repository instance from the kernel's DI container."""
+        return self._get_core().get_service(repo_type)
 
     def get_config(self, config_type: type[T]) -> T:
-        """Get configuration instance from DI container."""
-        return self.app.get_config(config_type)
+        """Get configuration instance from the kernel's DI container."""
+        return self._get_core().get_service(config_type)
 
 
 # =============================================================================

@@ -74,7 +74,9 @@ def test_db_path(tmp_path):
             total_orders INTEGER DEFAULT 0,
             completed_orders INTEGER DEFAULT 0,
             total_spent REAL DEFAULT 0,
+            first_order_date TEXT,
             last_order_date TEXT,
+            favorite_device TEXT,
             created_at TEXT,
             updated_at TEXT
         )

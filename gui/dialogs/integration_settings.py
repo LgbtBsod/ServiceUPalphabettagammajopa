@@ -402,11 +402,16 @@ class IntegrationSettingsDialog(ctk.CTkToplevel):
 
             self.scan_btn.configure(state="normal", text="🔍 Поиск устройств")
 
-        # Run async in background
-        import threading
+        # Run async in background через Kernel ThreadManager (не создаём
+        # threading.Thread напрямую в бизнес-логике — см. AUDIT_REPORT_v20.md)
+        import uuid
 
-        thread = threading.Thread(target=lambda: asyncio.run(scan()))
-        thread.start()
+        from core.kernel import get_core
+
+        core = get_core()
+        name = f"bt-scan-{uuid.uuid4().hex[:8]}"
+        core.create_thread(name=name, target=lambda: asyncio.run(scan()), daemon=True)
+        core.start_thread(name)
 
     def _connect_bluetooth_device(self):
         """Connect to selected Bluetooth device."""
@@ -436,10 +441,14 @@ class IntegrationSettingsDialog(ctk.CTkToplevel):
             except Exception as e:
                 messagebox.showerror("Ошибка подключения", str(e))
 
-        import threading
+        import uuid
 
-        thread = threading.Thread(target=lambda: asyncio.run(connect()))
-        thread.start()
+        from core.kernel import get_core
+
+        core = get_core()
+        name = f"bt-connect-{uuid.uuid4().hex[:8]}"
+        core.create_thread(name=name, target=lambda: asyncio.run(connect()), daemon=True)
+        core.start_thread(name)
 
     def _save_settings(self):
         """Collect and save all settings."""

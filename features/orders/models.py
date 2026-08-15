@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from shared.kernel import OrderStatus, Priority
 
@@ -130,13 +130,12 @@ class RepairOrder(Base):
         return data
 
 
-# Импортируем Client для связи, если он существует
-# Если нет - связь будет настроена позже
-try:
-    from database.sqlalchemy_models import Client
-
-    Client.orders_rel = relationship(
-        "RepairOrder", back_populates="client_rel", foreign_keys=[RepairOrder.client_id]
-    )
-except ImportError:
-    pass
+# ПРИМЕЧАНИЕ: RepairOrder намеренно НЕ связывается relationship() с
+# database.sqlalchemy_models.Client — они принадлежат разным declarative
+# registry (разные Base), и SQLAlchemy не может разрешить такую связь по
+# имени класса между registry (падало с InvalidRequestError при первом же
+# configure_mappers()). Этот модуль не используется живым приложением
+# (main.py -> bootstrap.py -> gui/main_window.py, pwa/server.py работают
+# через database.sqlalchemy_models.Device — см. AUDIT_REPORT_v20.md).
+# Если понадобится связь с клиентом — используйте client_id (обычный FK)
+# и явный запрос, либо перенесите RepairOrder в тот же Base/registry.

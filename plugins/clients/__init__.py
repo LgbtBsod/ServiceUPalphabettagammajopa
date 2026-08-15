@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from core.base import BaseRepository, BaseService
-from core.plugin_system import IPlugin, PluginMetadata, get_plugin_manager
+from core.plugin_system import BasePlugin, PluginMetadata, get_plugin_manager
 from shared.utils import normalize_phone, validate_email
 
 # =============================================================================
@@ -322,17 +322,17 @@ class ClientService(BaseService):
 # =============================================================================
 
 
-class ClientsPlugin(IPlugin):
+class ClientsPlugin(BasePlugin):
     """Clients feature plugin.
-    
+
     Плагин получает доступ к сервисам через ядро (Core), а не напрямую.
     Это обеспечивает слабую связанность и возможность замены реализаций.
     """
 
     def __init__(self):
+        super().__init__()
         self._service: ClientService | None = None
         self._repository: IClientRepository | None = None
-        self._core = None  # Ссылка на ядро для получения зависимостей
 
     @property
     def metadata(self) -> PluginMetadata:
@@ -346,38 +346,28 @@ class ClientsPlugin(IPlugin):
             standalone=True,
         )
 
-    def initialize(self) -> bool:
-        """Initialize clients plugin through Core."""
-        try:
-            self.logger.info("Initializing Clients Plugin")
+    def on_initialize(self, context) -> bool:
+        """Initialize clients plugin through Core (context)."""
+        self.logger.info("Initializing Clients Plugin")
 
-            # Получаем ядро и через него зависимости
-            from core.kernel import get_core
-            
-            self._core = get_core()
-            
-            # Получаем репозиторий через DI контейнер ядра
-            self._repository = self._core.get_service(IClientRepository)
-            
-            # Создаем сервис с полученным репозиторием
-            self._service = ClientService(self._repository)
-            
-            # Регистрируем сервис в ядре для доступа другим модулям
-            self._core.register_module("clients", self, self._service)
+        # Получаем репозиторий через DI контейнер ядра (context == core)
+        self._repository = context.get_service(IClientRepository)
 
-            self.logger.info("Clients Plugin initialized successfully via Core")
-            return True
+        # Создаем сервис с полученным репозиторием
+        self._service = ClientService(self._repository)
 
-        except Exception as e:
-            self.logger.exception(f"Failed to initialize Clients Plugin: {e}")
-            return False
+        # Регистрируем сервис в ядре для доступа другим модулям
+        context.register_module("clients", self, ClientsPlugin, api=self._service)
+
+        self.logger.info("Clients Plugin initialized successfully via Core")
+        return True
 
     def shutdown(self) -> None:
         """Cleanup clients plugin resources."""
         self.logger.info("Shutting down Clients Plugin")
         self._service = None
         self._repository = None
-        self._core = None
+        super().shutdown()
 
     def get_api(self) -> ClientService | None:
         """Return clients service API.

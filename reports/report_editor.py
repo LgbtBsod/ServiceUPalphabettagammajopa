@@ -677,51 +677,83 @@ class ActPanel:
         """Начало перетаскивания."""
         frame.drag_data["item"] = field_key
         frame.drag_data["y"] = event.y_root
+        frame.drag_data["pending_order"] = self._get_field_order()
         frame.configure(fg_color=self.colors["accent"])
 
     def _on_drag_motion(self, event, frame):
-        """Перемещение во время перетаскивания."""
-        delta = event.y_root - frame.drag_data["y"]
-        frame.drag_data["y"] = event.y_root
+        """Перемещение во время перетаскивания.
 
-        # Находим текущий индекс элемента
-        current_items = self._get_field_order()
+        ВАЖНО: здесь НЕЛЬЗЯ вызывать pack()/pack_forget() ни для одного
+        виджета, даже "чужого". После <ButtonPress-1> Tk удерживает
+        доставку <B1-Motion>/<ButtonRelease-1> тому виджету, где было
+        нажатие (implicit grab), пока тот не будет unmap'нут — а
+        pack_forget() именно unmap и делает, поэтому любая перепаковка
+        внутри контейнера прямо во время движения обрывает grab: подсветка
+        гаснет и дальнейшие события мыши до этого виджета не доходят
+        (см. AUDIT_REPORT_v20.md). Поэтому здесь только накапливаем
+        целевой порядок в drag_data — реальную перепаковку делает
+        _on_drag_drop() уже после отпускания кнопки, когда grab всё равно
+        завершается естественным образом.
+        """
+        order = frame.drag_data.get("pending_order") or self._get_field_order()
+        dragged_key = frame.drag_data["item"]
         try:
-            idx = current_items.index(frame.drag_data["item"])
+            idx = order.index(dragged_key)
         except ValueError:
             return
 
-        # Определяем направление перемещения
-        if delta > 20:  # Движение вниз
-            if idx < len(current_items) - 1:
-                self._swap_fields(idx, idx + 1)
-                frame.drag_data["y"] = event.y_root
-        elif delta < -20:  # Движение вверх
-            if idx > 0:
-                self._swap_fields(idx, idx - 1)
-                frame.drag_data["y"] = event.y_root
+        delta = event.y_root - frame.drag_data["y"]
+
+        if delta > 20 and idx < len(order) - 1:  # Движение вниз
+            order[idx], order[idx + 1] = order[idx + 1], order[idx]
+            frame.drag_data["pending_order"] = order
+            frame.drag_data["y"] = event.y_root
+        elif delta < -20 and idx > 0:  # Движение вверх
+            order[idx], order[idx - 1] = order[idx - 1], order[idx]
+            frame.drag_data["pending_order"] = order
+            frame.drag_data["y"] = event.y_root
 
     def _on_drag_drop(self, event, frame):
-        """Завершение перетаскивания."""
+        """Завершение перетаскивания — применяем накопленный порядок разом.
+
+        Кнопка мыши уже отпущена, grab естественным образом завершается —
+        здесь безопасно вызывать pack()/pack_forget().
+        """
         frame.configure(fg_color=self.colors["bg_secondary"])
+        pending = frame.drag_data.pop("pending_order", None)
+        if pending and pending != self._get_field_order():
+            self._reorder_field_widgets(pending)
         self.update_preview()
 
     def _get_field_order(self):
-        """Возвращает текущий порядок полей из UI."""
+        """Возвращает текущий порядок полей из UI.
+
+        ВАЖНО: используем pack_slaves(), а не winfo_children() —
+        winfo_children() возвращает виджеты в порядке их СОЗДАНИЯ и не
+        меняется при pack_forget()+pack() (переупаковке), тогда как
+        pack_slaves() как раз отражает текущий порядок в менеджере pack.
+        С winfo_children() drag-and-drop молча ничего не менял в
+        сохраняемом порядке полей (см. AUDIT_REPORT_v20.md).
+        """
         order = []
-        for widget in self.fields_container.winfo_children():
+        for widget in self.fields_container.pack_slaves():
             for key, widgets in self.field_widgets.items():
                 if widgets["frame"] == widget:
                     order.append(key)
                     break
         return order
 
-    def _swap_fields(self, idx1, idx2):
-        """Меняет местами два поля в списке."""
-        order = self._get_field_order()
-        if idx1 < len(order) and idx2 < len(order):
-            order[idx1], order[idx2] = order[idx2], order[idx1]
-            self._rebuild_field_list(order)
+    def _reorder_field_widgets(self, new_order):
+        """Меняет визуальный порядок УЖЕ СУЩЕСТВУЮЩИХ виджетов полей без
+        их уничтожения/пересоздания. Вызывать только когда кнопка мыши уже
+        отпущена (_on_drag_drop) — pack_forget() unmap'ает виджет, что рвёт
+        активный grab Tk, если сделать это посреди _on_drag_motion
+        (см. AUDIT_REPORT_v20.md)."""
+        for field_key in new_order:
+            frame = self.field_widgets[field_key]["frame"]
+            frame.pack_forget()
+            frame.pack(fill="x", pady=1, padx=2)
+        self.template_data["fields"] = new_order
 
     def _rebuild_field_list(self, new_order):
         """Перестраивает список полей в новом порядке."""

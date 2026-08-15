@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     create_engine,
     event,
 )
@@ -68,7 +69,9 @@ class Client(Base):
     total_orders: Mapped[int] = mapped_column(Integer, default=0)
     completed_orders: Mapped[int] = mapped_column(Integer, default=0)
     total_spent: Mapped[float] = mapped_column(Float, default=0.0)
+    first_order_date: Mapped[str | None] = mapped_column(String(50), nullable=True)
     last_order_date: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    favorite_device: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Связи
     devices: Mapped[list[Device]] = relationship(
@@ -77,10 +80,10 @@ class Client(Base):
 
     # Временные метки
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         default=lambda: datetime.now(timezone.utc), 
         onupdate=lambda: datetime.now(timezone.utc), 
         nullable=False
@@ -174,10 +177,10 @@ class Device(Base):
 
     # Временные метки
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         default=lambda: datetime.now(timezone.utc), 
         onupdate=lambda: datetime.now(timezone.utc), 
         nullable=False
@@ -185,6 +188,12 @@ class Device(Base):
 
     # Связи
     client_rel: Mapped[Client] = relationship("Client", back_populates="devices")
+    work_item_records: Mapped[list[WorkItemRecord]] = relationship(
+        "WorkItemRecord", back_populates="device", cascade="all, delete-orphan"
+    )
+    photo_records: Mapped[list[PhotoRecord]] = relationship(
+        "PhotoRecord", back_populates="device", cascade="all, delete-orphan"
+    )
 
     @validates("order_number")
     def validate_order_number(self, key: str, value: str) -> str:
@@ -228,7 +237,7 @@ class WorkTemplate(Base):
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
 
@@ -243,10 +252,156 @@ class Settings(Base):
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=lambda: datetime.now(timezone.utc), 
-        onupdate=lambda: datetime.now(timezone.utc), 
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False
+    )
+
+
+class Counter(Base):
+    """Именованные счётчики (например, order_counter для номеров заказов).
+
+    Схема 1:1 с legacy-таблицей `counters` (database/db_manager.py:69-74).
+    """
+
+    __tablename__ = "counters"
+
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=True)
+    value: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class DictionaryItem(Base):
+    """Значения справочников (статусы/бренды/типы устройств и т.д.).
+
+    Схема 1:1 с legacy-таблицей `dictionaries` (database/db_manager.py:147-156).
+    """
+
+    __tablename__ = "dictionaries"
+    __table_args__ = (UniqueConstraint("dict_type", "value", name="uq_dict_type_value"),)
+
+    dict_type: Mapped[str] = mapped_column(String(100), nullable=True, index=True)
+    value: Mapped[str] = mapped_column(String(255), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    additional_info: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class FinanceRecord(Base):
+    """Финансовая запись по заказу (доход/расход/прибыль).
+
+    Схема 1:1 с legacy-таблицей `finances` (database/db_manager.py:134-143).
+    """
+
+    __tablename__ = "finances"
+
+    order_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=True)
+    completion_date: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    income: Mapped[float] = mapped_column(Float, default=0.0)
+    expense: Mapped[float] = mapped_column(Float, default=0.0)
+    profit: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class WorkItemRecord(Base):
+    """Отдельная работа устройства (дочерняя таблица, dual-write с Device.work_items).
+
+    Схема 1:1 с legacy-таблицей `work_items_db` (database/db_manager.py:161-171).
+    Существует для быстрых запросов/отчётов — devices.work_items (JSON) остаётся
+    основным источником для чтения формой устройства (см. AUDIT_REPORT_v20.md).
+    """
+
+    __tablename__ = "work_items_db"
+
+    device_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    price: Mapped[float] = mapped_column(Float, default=0.0)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    total: Mapped[float] = mapped_column(Float, default=0.0)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    device: Mapped[Device] = relationship("Device", back_populates="work_item_records")
+
+
+class PhotoRecord(Base):
+    """Отдельное фото устройства (дочерняя таблица, dual-write с Device.photos).
+
+    Схема 1:1 с legacy-таблицей `photos_db` (database/db_manager.py:176-186).
+    """
+
+    __tablename__ = "photos_db"
+
+    device_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    photo_type: Mapped[str] = mapped_column(String(50), default="device")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    device: Mapped[Device] = relationship("Device", back_populates="photo_records")
+
+
+class CompletedRepair(Base):
+    """Запись о завершённом ремонте (архив выполненных работ по устройству).
+
+    Схема 1:1 с legacy-таблицей `completed_repairs` (database/db_manager.py:117-130).
+    """
+
+    __tablename__ = "completed_repairs"
+
+    device_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    order_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    completion_date: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    work_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    work_price: Mapped[str | None] = mapped_column(Text, nullable=True)
+    engineer: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    warranty: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class RepairHistoryMain(Base):
+    """История ремонтов клиента в основной БД (замена DBClients/*.db).
+
+    Схема 1:1 с legacy-таблицей `repair_history_main` (database/db_manager.py:209-232).
+    """
+
+    __tablename__ = "repair_history_main"
+
+    client_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    order_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    receipt_date: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    completion_date: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    device_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    brand: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    serial_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    defect: Mapped[str | None] = mapped_column(Text, nullable=True)
+    work_items: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    total_price: Mapped[str | None] = mapped_column(Text, nullable=True)
+    engineer: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    warranty: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    photos: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
 

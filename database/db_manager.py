@@ -819,6 +819,23 @@ class Database:
             logger.exception(f"Ошибка получения устройства: {e}")
             return None
 
+    def get_device_id_by_order_number(self, order_number: str) -> int | None:
+        """Получение id устройства по номеру заказа (без остальных полей).
+
+        Публичный метод вместо прямого обращения к self.conn.cursor() извне
+        (было в database/client_db.py — нарушение инкапсуляции, см. AUDIT_REPORT_v20.md).
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "SELECT id FROM devices WHERE order_number = ?", (order_number,)
+            )
+            row = cursor.fetchone()
+            return row["id"] if row else None
+        except sqlite3.Error as e:
+            logger.exception(f"Ошибка получения id устройства: {e}")
+            return None
+
     def search_devices(
         self, search_text: str, include_completed: bool = True
     ) -> list[dict[str, Any]]:

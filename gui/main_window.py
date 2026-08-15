@@ -13,7 +13,7 @@ from typing import Any
 import customtkinter as ctk
 
 from config import APP_VERSION, DB_PATH
-from database import ClientDatabaseManager, Database, WorkItemsManager
+from database import WorkItemsManager
 from gui.dialogs.act_preview import ActPreviewWindow
 from gui.dialogs.client_history import ClientHistoryWindow
 from gui.dialogs.device_form import DeviceFormDialog
@@ -28,13 +28,6 @@ from gui.widgets import (
     ModernSwitch,
 )
 from gui.widgets.dashboard import PremiumDashboard
-from managers import (
-    BackupManager,
-    IntegrationManager,
-    PhotoManager,
-    ReportGenerator,
-    SettingsManager,
-)
 from utils.colors import get_colors
 from utils.constants import PRIORITIES, STATUSES
 from utils.formatters import (
@@ -54,7 +47,20 @@ class ServiceCenterApp:
     """Главное окно приложения"""
 
     def __init__(self):
-        self.settings = SettingsManager()
+        # Все зависимости приходят из Kernel DI (см. bootstrap.initialize_kernel) —
+        # единая точка сборки вместо самостоятельного создания каждого объекта.
+        # Kernel уже инициализирован bootstrap-ом до создания этого окна; если
+        # почему-то нет (например, прямой запуск без main.py) — инициализируем сами.
+        from core.kernel import get_core
+
+        core = get_core()
+        if not core.is_initialized:
+            import bootstrap
+
+            core = bootstrap.initialize_kernel()
+        self._core = core
+
+        self.settings = core.get_module_api("settings")
         self.theme = self.settings.get("theme", "light")
         self.colors = get_colors(
             self.theme, self.settings.get("accent_color", "#0078d4")
@@ -63,17 +69,18 @@ class ServiceCenterApp:
         ctk.set_appearance_mode("dark" if self.theme == "dark" else "light")
         ctk.set_default_color_theme("blue")
 
-        self.db = Database(DB_PATH)
-        self.client_db = ClientDatabaseManager(main_db=self.db)
+        # Доступ к БД — только через core.get_db_access(), никогда напрямую.
+        self.db = core.get_db_access()
+        self.client_db = core.get_module_api("client_history")
         # Авто-миграция клиентских БД при первом запуске
         try:
             self.db.migrate_client_dbs()
         except Exception as e:
             logger.error(f"Авто-миграция клиентских БД не удалась: {e}", exc_info=True)
-        self.report_gen = ReportGenerator()
-        self.backup_manager = BackupManager(self.settings)
-        self.integration_manager = IntegrationManager(self.settings)
-        self.photo_manager = PhotoManager()
+        self.report_gen = core.get_module_api("reports")
+        self.backup_manager = core.get_module_api("backup")
+        self.integration_manager = core.get_module_api("integrations")
+        self.photo_manager = core.get_module_api("photos")
 
         self.device_entries = {}
         self.current_edit_id = None

@@ -89,6 +89,11 @@ class ServiceUpCore(LoggableMixin):
         self._services: dict[str, Any] = {}
 
     @property
+    def is_initialized(self) -> bool:
+        """True, если initialize() уже был вызван для этого ядра."""
+        return self._initialized
+
+    @property
     def services(self) -> CoreServices:
         """Возвращает сервисы ядра."""
         if not self._initialized:
@@ -292,8 +297,18 @@ class ServiceUpCore(LoggableMixin):
         """Получает сервис из DI контейнера."""
         if not self._initialized:
             raise RuntimeError("Core not initialized")
-        
+
         return self._container.resolve(service_type)
+
+    def register_service[T](self, service_type: type[T], instance: T) -> None:
+        """Регистрирует внешний сервис (Database, менеджеры и т.п.) как singleton
+        в DI-контейнере ядра. Публичная точка входа для bootstrap-кода —
+        _register_core_services() регистрирует только внутренние объекты ядра.
+        """
+        if not self._initialized:
+            raise RuntimeError("Core not initialized")
+
+        self._container.register_instance(service_type, instance)
 
     def subscribe(self, event_type: type, handler: Callable) -> None:
         """Подписывается на событие."""

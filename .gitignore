@@ -112,3 +112,5 @@ yarn-error.log*
 .pnp/
 .pnp.js
 ```
+*.pyc
+/core/__pycache__

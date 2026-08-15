@@ -7,6 +7,13 @@
 - DIP: Зависимости от абстракций (Protocol), а не реализаций
 - SRP: Каждый протокол отвечает за одну сущность
 - SSOT: DTO определены один раз здесь
+
+ВАЖНО (см. AUDIT_REPORT_v20.md): единственное ядро живого приложения —
+core.kernel.ServiceUpCore (инициализируется в bootstrap.initialize_kernel(),
+используется gui/main_window.py и pwa/server.py). CoreContainer здесь —
+НЕ второе ядро, а узкоспециализированный DI-контейнер для пока не
+подключённого к приложению стека features/orders/ (IOrderRepository/
+IClientRepository). Не путать и не расширять как замену ServiceUpCore.
 """
 
 from __future__ import annotations

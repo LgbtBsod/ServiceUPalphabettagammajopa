@@ -11,11 +11,25 @@ import logging
 import os
 import subprocess
 import sys
-import threading
 import time
+import uuid
+from collections.abc import Callable
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+def _start_cleanup_thread(cleanup: Callable[[], None]) -> None:
+    """Запускает отложенное удаление временного файла через Kernel ThreadManager
+    вместо прямого threading.Thread (см. AUDIT_REPORT_v20.md) — общий хелпер
+    для print_act_pdf()/open_act_pdf(), раньше дублировавших этот код.
+    """
+    from core.kernel import get_core
+
+    core = get_core()
+    name = f"act-cleanup-{uuid.uuid4().hex[:8]}"
+    core.create_thread(name=name, target=cleanup, daemon=True)
+    core.start_thread(name)
 
 
 def get_exports_dir() -> str:
@@ -76,8 +90,7 @@ def print_act_pdf(
             except OSError:
                 pass
 
-        t = threading.Thread(target=_cleanup, daemon=True)
-        t.start()
+        _start_cleanup_thread(_cleanup)
 
 
 def open_act_pdf(
@@ -107,8 +120,7 @@ def open_act_pdf(
             except OSError:
                 pass
 
-        t = threading.Thread(target=_cleanup, daemon=True)
-        t.start()
+        _start_cleanup_thread(_cleanup)
 
 
 def save_act_to_exports(pdf_path: str, act_type: str, order_number: str) -> str:

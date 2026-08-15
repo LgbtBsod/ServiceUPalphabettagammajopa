@@ -29,9 +29,10 @@ from typing import Any
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
 # Импорты приложения (пути уже настроены в config.py)
-from config import DB_PATH, PHOTOS_DIR
-from database import ClientDatabaseManager, Database, WorkItemsManager
+from config import PHOTOS_DIR
+from database import ClientDatabaseManager, WorkItemsManager
 from database.models import WorkItem
+from database.sqlalchemy_database import Database
 from managers import PhotoManager
 from utils.constants import PRIORITIES, STATUSES
 from utils.formatters import (
@@ -102,11 +103,27 @@ class _DBHolder:
         self._local = threading.local()
 
     def _ensure(self):
-        """Создаёт соединения для текущего потока, если ещё не созданы."""
+        """Привязывает потоку сервисы, зарегистрированные в Kernel DI.
+
+        Раньше здесь создавалось отдельное sqlite3-соединение НА ПОТОК (сырой
+        sqlite3.Connection нельзя шарить между потоками). Новый
+        database.sqlalchemy_database.Database открывает сессию на каждый вызов
+        через пул SQLAlchemy (check_same_thread=False) — потокобезопасен сам
+        по себе, поэтому все потоки могут безопасно использовать один и тот же
+        экземпляр из ядра вместо создания нового на поток.
+        """
         if not hasattr(self._local, "db"):
-            self._local.db = Database(DB_PATH)
-            self._local.client_db = ClientDatabaseManager()
-            self._local.photo = PhotoManager()
+            from core.kernel import get_core
+
+            core = get_core()
+            if not core.is_initialized:
+                import bootstrap
+
+                core = bootstrap.initialize_kernel()
+            # Доступ к БД — только через core.get_db_access(), никогда напрямую.
+            self._local.db = core.get_db_access()
+            self._local.client_db = core.get_module_api("client_history")
+            self._local.photo = core.get_module_api("photos")
 
     @property
     def db(self) -> Database:
@@ -731,10 +748,15 @@ class PWAServerManager:
                 self._werkzeug_server = server
                 server.serve_forever()
 
-            self.thread = threading.Thread(
-                target=_serve, daemon=True, name="PWA-Server"
-            )
-            self.thread.start()
+            from core.kernel import get_core
+
+            core = get_core()
+            if not core.is_initialized:
+                import bootstrap
+
+                core = bootstrap.initialize_kernel()
+            core.create_thread(name="PWA-Server", target=_serve, daemon=True)
+            core.start_thread("PWA-Server")
             self._running = True
             return True
         except Exception as e:

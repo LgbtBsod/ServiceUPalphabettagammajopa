@@ -157,13 +157,9 @@ class ClientDatabaseManager:
                     client_id = self._main_db.get_or_create_client(client_name, phone)
                     if client_id:
                         order_number = device_data.get("order_number", "")
-                        cursor = self._main_db.conn.cursor()
-                        cursor.execute(
-                            "SELECT id FROM devices WHERE order_number = ?",
-                            (order_number,),
+                        device_id = self._main_db.get_device_id_by_order_number(
+                            order_number
                         )
-                        dev_row = cursor.fetchone()
-                        device_id = dev_row["id"] if dev_row else None
                         self._main_db.add_to_repair_history_main(
                             client_id, device_id, device_data
                         )

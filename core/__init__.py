@@ -4,7 +4,6 @@
 SSOT: Единая точка входа во все контракты и сервисы ядра.
 """
 
-from core.application import AppState, CoreApplication, LoadingProgress, get_app
 from core.base import (
     BaseGenerator,
     BaseRepository,
@@ -50,6 +49,7 @@ from core.logging import (
     get_logger,
     setup_logging,
 )
+from core.kernel import ServiceUpCore, get_core
 from core.module_loader import initialize_modules, shutdown_modules
 from core.module_registry import (
     ModuleBase,
@@ -62,8 +62,6 @@ __version__ = "24.0"
 __author__ = "ServiceUP Team"
 
 __all__ = [
-    # Application
-    "AppState",
     # Exceptions
     "BaseAppError",
     # Base Classes (New Architecture)
@@ -79,7 +77,6 @@ __all__ = [
     # Contracts & Ports (Clean Architecture)
     "ClientDTO",
     "ConfigurationError",
-    "CoreApplication",
     "CoreContainer",
     "CoreError",
     "DatabaseError",
@@ -95,7 +92,6 @@ __all__ = [
     "IClientRepository",
     "IOrderRepository",
     "InfrastructureError",
-    "LoadingProgress",
     "LoggableMixin",
     # Module System (v24.0)
     "ModuleBase",
@@ -108,8 +104,10 @@ __all__ = [
     "PermissionError",
     "ServiceError",
     "ValidationError",
+    # Kernel (единственная точка входа — см. AUDIT_REPORT_v20.md)
+    "ServiceUpCore",
+    "get_core",
     # Functions
-    "get_app",
     "get_event_bus",
     "get_logger",
     "get_module_registry",

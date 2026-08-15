@@ -14,7 +14,7 @@ warnings.filterwarnings("ignore")
 def main():
     """Точка входа в приложение"""
     # ==================== ПРОВЕРКА ЗАВИСИМОСТЕЙ ====================
-    from bootstrap import check_dependencies, ensure_directories
+    from bootstrap import check_dependencies, ensure_directories, initialize_kernel
 
     if not check_dependencies():
         sys.exit(1)
@@ -25,8 +25,17 @@ def main():
     import customtkinter as ctk
 
     # Импортируем основное приложение
+    # ВАЖНО: gui импортируется раньше initialize_kernel() — managers/reports
+    # содержат predexisting circular import (managers -> reports ->
+    # gui.widgets.modern -> gui -> gui.dialogs -> gui.dialogs.device_form ->
+    # managers), который триггерится, если managers импортируется до того,
+    # как пакет gui полностью инициализирован. См. AUDIT_REPORT_v20.md.
     from gui import ServiceCenterApp
     from utils.license_manager import LicenseManager
+
+    # Kernel — единая точка сборки зависимостей (Database, менеджеры) для
+    # gui/main_window.py и pwa/server.py.
+    initialize_kernel()
 
     try:
         print("╔" + "═" * 50 + "╗")
