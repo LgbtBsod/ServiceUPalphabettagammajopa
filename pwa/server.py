@@ -32,9 +32,15 @@ from flask import Flask, jsonify, request, send_file, send_from_directory
 from config import PHOTOS_DIR
 from database import ClientDatabaseManager, WorkItemsManager
 from database.models import WorkItem
-from database.sqlalchemy_database import Database
+from database.sqlalchemy_database import Database, OptimisticLockError
 from managers import PhotoManager
-from domain.constants import CLIENT_STATUSES, PRIORITIES, STATUSES, WARRANTIES
+from domain.constants import (
+    CLIENT_STATUSES,
+    PRIORITIES,
+    STATUS_ISSUED,
+    STATUSES,
+    WARRANTIES,
+)
 from utils.formatters import (
     format_date,
     format_order_number_for_display,
@@ -42,6 +48,7 @@ from utils.formatters import (
     generate_order_number,
     normalize_phone,
 )
+from utils.messages import Msg
 from utils.validators import validate_phone, validate_price
 
 logger = logging.getLogger(__name__)
@@ -180,6 +187,10 @@ def create_flask_app():
 
     static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
     app = Flask(__name__, static_folder=static_dir, static_url_path="")
+    # Ограничение размера запроса — сервер слушает на 0.0.0.0 (см. get_local_ip),
+    # без этого /api/orders/<id>/photos буферизует файл любого размера до
+    # сохранения. 20 МБ — с запасом на фото с телефона. См. AUDIT_REPORT_v21.md.
+    app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
     # ------------------------------------------------------------------
     # Статика / PWA
@@ -259,6 +270,11 @@ def create_flask_app():
             "notes": device.get("notes", ""),
             "photos": photos_list,
             "created_at": device.get("created_at", ""),
+            # Оптимистичная блокировка (Device.version_id) — клиент обязан
+            # прочитать это здесь и отправить назад в PUT как "version",
+            # иначе update_device() не сможет заметить конкурентную правку
+            # на этом пути (см. AUDIT_REPORT_v25.md).
+            "version": device.get("version"),
         }
 
     # ------------------------------------------------------------------
@@ -301,7 +317,11 @@ def create_flask_app():
                 }
             )
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            # Полный текст исключения — только в серверный лог. Клиенту (любое
+            # устройство в локальной сети, см. bind на 0.0.0.0) — общий текст,
+            # без внутренних путей/деталей запроса. См. AUDIT_REPORT_v21.md.
+            logger.error(f"PWA API error: {e}", exc_info=True)
+            return jsonify({"error": "Внутренняя ошибка сервера"}), 500
 
     @app.route("/api/orders/<int:device_id>", methods=["GET"])
     @require_api_key
@@ -314,7 +334,11 @@ def create_flask_app():
                 return jsonify({"error": "Заказ не найден"}), 404
             return jsonify(_serialize_device(device))
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            # Полный текст исключения — только в серверный лог. Клиенту (любое
+            # устройство в локальной сети, см. bind на 0.0.0.0) — общий текст,
+            # без внутренних путей/деталей запроса. См. AUDIT_REPORT_v21.md.
+            logger.error(f"PWA API error: {e}", exc_info=True)
+            return jsonify({"error": "Внутренняя ошибка сервера"}), 500
 
     @app.route("/api/orders", methods=["POST"])
     @require_api_key
@@ -408,7 +432,11 @@ def create_flask_app():
                 ), 201
             return jsonify({"error": "Не удалось создать заказ"}), 500
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            # Полный текст исключения — только в серверный лог. Клиенту (любое
+            # устройство в локальной сети, см. bind на 0.0.0.0) — общий текст,
+            # без внутренних путей/деталей запроса. См. AUDIT_REPORT_v21.md.
+            logger.error(f"PWA API error: {e}", exc_info=True)
+            return jsonify({"error": "Внутренняя ошибка сервера"}), 500
 
     @app.route("/api/orders/<int:device_id>", methods=["PUT"])
     @require_api_key
@@ -494,9 +522,26 @@ def create_flask_app():
                 "photos": existing.get("photos", ""),
                 "completion_date": existing.get("completion_date", ""),
                 "expense": data.get("expense", existing.get("expense", "0")),
+                # Оптимистичная блокировка: клиент должен прислать "version",
+                # прочитанную из предыдущего GET/PUT-ответа (см.
+                # _serialize_device). Если не прислал — сравниваем с тем, что
+                # только что сами прочитали (existing) как разумный дефолт:
+                # не ломает старых клиентов, но всё ещё ловит конфликт, если
+                # кто-то third-party успел сохранить между нашим GET и этим PUT.
+                "_expected_version": data.get("version", existing.get("version")),
             }
 
-            if db.update_device(device_id, device_data):
+            try:
+                update_ok = db.update_device(device_id, device_data)
+            except OptimisticLockError:
+                return jsonify(
+                    {
+                        "error": Msg.PWA_ORDER_VERSION_CONFLICT,
+                        "code": "version_conflict",
+                    }
+                ), 409
+
+            if update_ok:
                 # Обновляем историю клиента
                 try:
                     _db_holder.client_db.update_repair_in_history(
@@ -516,7 +561,11 @@ def create_flask_app():
                 )
             return jsonify({"error": "Не удалось обновить"}), 500
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            # Полный текст исключения — только в серверный лог. Клиенту (любое
+            # устройство в локальной сети, см. bind на 0.0.0.0) — общий текст,
+            # без внутренних путей/деталей запроса. См. AUDIT_REPORT_v21.md.
+            logger.error(f"PWA API error: {e}", exc_info=True)
+            return jsonify({"error": "Внутренняя ошибка сервера"}), 500
 
     @app.route("/api/orders/<int:device_id>/status", methods=["PUT"])
     @require_api_key
@@ -532,14 +581,18 @@ def create_flask_app():
                 return jsonify({"error": "Недопустимый статус заказа"}), 400
 
             completion_date = None
-            if new_status == "Выдан клиенту":
+            if new_status == STATUS_ISSUED:
                 completion_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             if db.update_device_status(device_id, new_status, completion_date):
                 return jsonify({"ok": True, "status": new_status})
             return jsonify({"error": "Не удалось обновить статус"}), 500
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            # Полный текст исключения — только в серверный лог. Клиенту (любое
+            # устройство в локальной сети, см. bind на 0.0.0.0) — общий текст,
+            # без внутренних путей/деталей запроса. См. AUDIT_REPORT_v21.md.
+            logger.error(f"PWA API error: {e}", exc_info=True)
+            return jsonify({"error": "Внутренняя ошибка сервера"}), 500
 
     # ------------------------------------------------------------------
     # API: Поиск
@@ -563,7 +616,11 @@ def create_flask_app():
                 }
             )
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            # Полный текст исключения — только в серверный лог. Клиенту (любое
+            # устройство в локальной сети, см. bind на 0.0.0.0) — общий текст,
+            # без внутренних путей/деталей запроса. См. AUDIT_REPORT_v21.md.
+            logger.error(f"PWA API error: {e}", exc_info=True)
+            return jsonify({"error": "Внутренняя ошибка сервера"}), 500
 
     # ------------------------------------------------------------------
     # API: Справочники
@@ -586,7 +643,11 @@ def create_flask_app():
                 }
             )
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            # Полный текст исключения — только в серверный лог. Клиенту (любое
+            # устройство в локальной сети, см. bind на 0.0.0.0) — общий текст,
+            # без внутренних путей/деталей запроса. См. AUDIT_REPORT_v21.md.
+            logger.error(f"PWA API error: {e}", exc_info=True)
+            return jsonify({"error": "Внутренняя ошибка сервера"}), 500
 
     # ------------------------------------------------------------------
     # API: Статистика
@@ -601,7 +662,45 @@ def create_flask_app():
             stats = db.get_statistics()
             return jsonify(stats)
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            # Полный текст исключения — только в серверный лог. Клиенту (любое
+            # устройство в локальной сети, см. bind на 0.0.0.0) — общий текст,
+            # без внутренних путей/деталей запроса. См. AUDIT_REPORT_v21.md.
+            logger.error(f"PWA API error: {e}", exc_info=True)
+            return jsonify({"error": "Внутренняя ошибка сервера"}), 500
+
+    @app.route("/api/analytics/<report>", methods=["GET"])
+    @require_api_key
+    def api_analytics(report: str):
+        """Аналитические отчёты — тот же managers.analytics.AnalyticsService,
+        что использует GUI (через core.call_module_method), просто второй
+        потребитель того же модуля. Параметры отчёта — query string
+        (?threshold_days=14 и т.п.), whitelist имён отчётов — на стороне
+        AnalyticsService (ValueError на неизвестное имя -> 400)."""
+        try:
+            from managers.analytics import AnalyticsRequest
+
+            core = _get_core()
+            params = {}
+            for key, value in request.args.items():
+                # Query string — всегда строки; приводим то, что похоже на
+                # число, к int (calculate()-хендлеры ждут threshold_days: int).
+                # lstrip("-").isdigit() пропускал "--5"/"-" как "похоже на
+                # число", а int() на них падал ValueError'ом наружу — пробуем
+                # преобразование напрямую и откатываемся к строке.
+                try:
+                    params[key] = int(value)
+                except ValueError:
+                    params[key] = value
+
+            result = core.call_module_method(
+                "analytics", "run_report", AnalyticsRequest(report=report, params=params)
+            )
+            return jsonify({"report": result.report, "data": result.data})
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            logger.error(f"PWA analytics error: {e}", exc_info=True)
+            return jsonify({"error": "Внутренняя ошибка сервера"}), 500
 
     # ------------------------------------------------------------------
     # API: Фото
@@ -646,7 +745,13 @@ def create_flask_app():
             if not saved_path:
                 return jsonify({"error": "Не удалось сохранить фото"}), 500
 
-            # Обновляем список фото в БД через фасад Database
+            # Обновляем список фото в БД через фасад Database. update_device()
+            # — full-replace метод (диффит и переписывает КАЖДОЕ поле,
+            # см. AUDIT_REPORT_v25.md — критичный баг, который был здесь до
+            # этого фикса: словарь только с "photos" стирал остальные поля
+            # заказа и все позиции работ дефолтами). Поэтому берём ПОЛНУЮ
+            # текущую запись (device, уже прочитана выше) и меняем в ней
+            # только photos, как это делает api_update_order.
             photos_str = device.get("photos", "")
             photos_list = (
                 [p.strip() for p in photos_str.split(",") if p.strip()]
@@ -656,7 +761,43 @@ def create_flask_app():
             photos_list.append(saved_path)
             new_photos_str = ",".join(photos_list)
 
-            db.update_device(device_id, {"photos": new_photos_str})
+            device_data = {
+                "order_number": device.get("order_number", ""),
+                "device_type": device.get("device_type", ""),
+                "brand": device.get("brand", ""),
+                "model": device.get("model", ""),
+                "serial_number": device.get("serial_number", ""),
+                "defect": device.get("defect", ""),
+                "appearance": device.get("appearance", ""),
+                "completeness": device.get("completeness", ""),
+                "work_items_json": device.get("work_items", "") or "[]",
+                "client_name": device.get("client_name", ""),
+                "client_status": device.get("client_status", "Новый"),
+                "phone": device.get("phone", ""),
+                "total_price": device.get("total_price", "0"),
+                "prepayment": device.get("prepayment", "0"),
+                "priority": device.get("priority", "Обычный"),
+                "engineer": device.get("engineer", ""),
+                "warranty": device.get("warranty", ""),
+                "notes": device.get("notes", ""),
+                "status": device.get("status", ""),
+                "photos": new_photos_str,
+                "completion_date": device.get("completion_date", ""),
+                "expense": device.get("expense", "0"),
+                "_expected_version": device.get("version"),
+            }
+            try:
+                db.update_device(device_id, device_data)
+            except OptimisticLockError:
+                # Кто-то успел сохранить заказ между нашим GET и этим PUT —
+                # фото уже сохранено на диск (saved_path), но привязать его
+                # к записи сейчас нельзя без риска затереть ту чужую правку.
+                return jsonify(
+                    {
+                        "error": Msg.PWA_PHOTO_VERSION_CONFLICT,
+                        "code": "version_conflict",
+                    }
+                ), 409
 
             # Dual-write: добавляем фото и в отдельную таблицу photos_db
             with contextlib.suppress(Exception):
@@ -674,7 +815,11 @@ def create_flask_app():
                 }
             ), 201
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            # Полный текст исключения — только в серверный лог. Клиенту (любое
+            # устройство в локальной сети, см. bind на 0.0.0.0) — общий текст,
+            # без внутренних путей/деталей запроса. См. AUDIT_REPORT_v21.md.
+            logger.error(f"PWA API error: {e}", exc_info=True)
+            return jsonify({"error": "Внутренняя ошибка сервера"}), 500
 
     @app.route("/api/orders/<int:device_id>/photos/<int:photo_idx>", methods=["GET"])
     @require_api_key
@@ -708,7 +853,11 @@ def create_flask_app():
                 return jsonify({"error": "Доступ запрещён"}), 403
             return send_file(norm)
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            # Полный текст исключения — только в серверный лог. Клиенту (любое
+            # устройство в локальной сети, см. bind на 0.0.0.0) — общий текст,
+            # без внутренних путей/деталей запроса. См. AUDIT_REPORT_v21.md.
+            logger.error(f"PWA API error: {e}", exc_info=True)
+            return jsonify({"error": "Внутренняя ошибка сервера"}), 500
 
     return app
 

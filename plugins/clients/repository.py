@@ -81,7 +81,12 @@ class SqlAlchemyClientRepository(IClientRepository):
                 s.commit()
                 client.id = row.id
                 return True
-        except Exception:
+        except Exception as e:
+            # Раньше глотал исключение без единой строчки лога — не
+            # соответствовало принятому в проекте logger.error/exception
+            # паттерну, см. AUDIT_REPORT_v25.md (тот же пробел был
+            # независимо продублирован в plugins/employees/repository.py).
+            self.logger.exception(f"Ошибка сохранения клиента: {e}")
             return False
 
     def delete(self, client_id: int, hard: bool = False) -> bool:
@@ -95,7 +100,8 @@ class SqlAlchemyClientRepository(IClientRepository):
                 s.delete(row)
                 s.commit()
                 return True
-        except Exception:
+        except Exception as e:
+            self.logger.exception(f"Ошибка удаления клиента: {e}")
             return False
 
     def search(

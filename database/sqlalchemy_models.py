@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -49,6 +50,95 @@ class Base(DeclarativeBase):
         for key, value in data.items():
             if hasattr(self, key) and key != "id":
                 setattr(self, key, value)
+
+
+class Employee(Base):
+    """Сотрудник — для учёта, кто создал/изменил запись.
+
+    Без пароля (нет реальной авторизации) — простой логин-идентификатор для
+    выбора "текущего сотрудника" в приложении (дропдаун "ФИО — логин"),
+    см. plugins/employees.
+    """
+
+    __tablename__ = "employees"
+
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    login: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, index=True
+    )
+    position: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Базовая роль — пока не enforced нигде, задел на будущее (если появится
+    # реальная авторизация/разграничение прав). Единственное текущее
+    # значение — "all".
+    role: Mapped[str] = mapped_column(String(50), default="all", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Кто создал/изменил ЗАПИСЬ О СОТРУДНИКЕ (не сам сотрудник — тот, кто
+    # был выбран "текущим" в момент создания/правки этой записи). Для самой
+    # первой записи — NULL ("создано системой при инициализации"); отдельная
+    # спец-сущность "суперпользователь" не нужна — авторизации всё равно нет,
+    # NULL несёт ту же информацию без лишней сложности.
+    created_by_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    @validates("full_name")
+    def validate_full_name(self, key: str, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("Имя сотрудника не может быть пустым")
+        return value.strip()
+
+    @validates("login")
+    def validate_login(self, key: str, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("Логин сотрудника не может быть пустым")
+        return value.strip()
+
+
+class RecordLock(Base):
+    """Пессимистичная блокировка редактируемой записи (по аналогии с SAP
+    enqueue-объектами — SM12) — необязательная, включается настройкой
+    "pessimistic_locking_enabled" (см. managers/locking.py). Живёт, пока
+    открыт GUI-диалог редактирования, и считается протухшей (можно
+    перехватить) после lock_ttl_seconds без heartbeat — сравнение делается
+    В МОМЕНТ ПОПЫТКИ ЗАХВАТА (Database.acquire_lock), фонового потока для
+    зачистки нет: следующий, кто попробует захватить, сам решит вопрос.
+
+    Не путать с version_id (Device) — оптимистичная блокировка защищает
+    ВСЕ пути записи (GUI+PWA) и работает всегда; эта таблица — только
+    GUI-уровня "занято X" предупреждение, опциональное.
+    """
+
+    __tablename__ = "record_locks"
+
+    object_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    object_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    holder_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    holder_label: Mapped[str] = mapped_column(String(255), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    last_heartbeat_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("object_type", "object_id", name="uq_record_locks_object"),
+    )
 
 
 class Client(Base):
@@ -175,19 +265,45 @@ class Device(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     photos: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Кто создал/изменил запись (без авторизации — просто выбранный в
+    # приложении "текущий сотрудник", см. plugins/employees). NULL, если
+    # сотрудник не выбран — не блокирует сохранение.
+    created_by_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Оптимистичная блокировка: счётчик версий, вручную сравниваемый
+    # Database.update_device() с версией, прочитанной в момент открытия
+    # формы (а не в момент сохранения) — только так ловится конфликт
+    # "кто-то другой сохранил, пока форма была открыта". Сознательно НЕ
+    # SQLAlchemy version_id_col (mapper_args) — тот механизм сравнивает
+    # версию, загруженную В ТОЙ ЖЕ сессии, а у нас на каждый вызов facade
+    # своя короткая сессия (см. Database._session()), поэтому проверка
+    # делается вручную в update_device().
+    version_id: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
     # Временные метки
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), 
-        default=lambda: datetime.now(timezone.utc), 
-        onupdate=lambda: datetime.now(timezone.utc), 
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False
     )
 
     # Связи
     client_rel: Mapped[Client] = relationship("Client", back_populates="devices")
+    created_by: Mapped[Employee | None] = relationship(
+        "Employee", foreign_keys=[created_by_id]
+    )
+    updated_by: Mapped[Employee | None] = relationship(
+        "Employee", foreign_keys=[updated_by_id]
+    )
     work_item_records: Mapped[list[WorkItemRecord]] = relationship(
         "WorkItemRecord", back_populates="device", cascade="all, delete-orphan"
     )
@@ -432,6 +548,22 @@ def create_database_engine(db_url: str, echo: bool = False) -> Any:
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
+            # Встроенные LOWER()/UPPER() в SQLite регистронезависимы только
+            # для ASCII ("Иванов" не сворачивается к "иванов" средствами
+            # самой БД) — из-за этого .ilike() (SQLAlchemy на SQLite
+            # компилирует его именно через lower(col) LIKE lower(val),
+            # т.к. нативного ILIKE нет) молча не находит кириллические
+            # совпадения в разных регистрах. Переопределяем оба имени
+            # штатным API sqlite3.Connection.create_function() Python'овской
+            # str.lower/upper — они Unicode-aware "из коробки", так что
+            # чинится не только Database.query()'s "like", но и любой
+            # будущий LOWER()/UPPER()/ilike() в приложении.
+            dbapi_connection.create_function(
+                "lower", 1, lambda s: s.lower() if s is not None else None
+            )
+            dbapi_connection.create_function(
+                "upper", 1, lambda s: s.upper() if s is not None else None
+            )
 
     return engine
 

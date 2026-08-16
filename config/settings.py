@@ -248,7 +248,21 @@ def get_config_path() -> Path:
 
 
 def get_license_key_file() -> Path:
-    """Get license key file path"""
+    """Get license key file path.
+
+    ВНЕ BASE_DIR намеренно (раньше было Path(data_dir).parent / ".license" —
+    внутри корня проекта, который в реальной эксплуатации нередко лежит
+    внутри OneDrive/Dropbox: облачная синхронизация периодически держит
+    файл залоченным, из-за чего запись падала PermissionError — найдено
+    живым прогоном main.py, см. AUDIT_REPORT_v25.md). %LOCALAPPDATA%
+    специально не роумится/не синхронизируется никаким клиентом облака —
+    стандартное место для такого рода файлов состояния приложения на
+    Windows. utils/license_manager.py переносит существующий файл из
+    старого расположения при первом запуске после обновления."""
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    if local_appdata:
+        return Path(local_appdata) / "ServiceUP" / ".license"
+    # Не Windows / LOCALAPPDATA не выставлен — прежнее поведение как fallback.
     return Path(get_settings().app.data_dir).parent / ".license"
 
 

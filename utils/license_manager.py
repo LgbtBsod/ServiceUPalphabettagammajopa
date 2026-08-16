@@ -23,6 +23,7 @@ from datetime import datetime
 
 from config import BASE_DIR
 from config import LICENSE_SECRET_KEY as SECRET_KEY
+from config import get_license_key_file
 from utils.hardware import get_hwid
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,35 @@ logger = logging.getLogger(__name__)
 
 TRIAL_DAYS = 14
 REG_KEY_PATH = r"SOFTWARE\ServiceUP"
-LICENSE_FILE = os.path.join(BASE_DIR, ".license")
+# %LOCALAPPDATA%\ServiceUP\.license — см. config.get_license_key_file() про
+# то, почему не в корне проекта. _LEGACY_LICENSE_FILE — прежнее
+# расположение, из которого _migrate_legacy_license_file() один раз
+# переносит уже существующий файл (иначе ранее активированная лицензия
+# "потеряется": статус activated живёт только в файле, не в реестре).
+LICENSE_FILE = str(get_license_key_file())
+_LEGACY_LICENSE_FILE = os.path.join(BASE_DIR, ".license")
+
+
+def _migrate_legacy_license_file() -> None:
+    """Одноразовый перенос .license из корня проекта в новое расположение.
+
+    Не трогает файл в новом месте, если он уже существует (не перезаписывает
+    более свежие данные более старой копией), и не удаляет старый файл
+    (лучше безобидный дубль, чем потеря данных, если перенос сам не удался).
+    Безопасно вызывать многократно — второй и все следующие вызовы не
+    находят LEGACY-файл в первый раз перенесённым и сразу выходят, либо
+    находят уже существующий новый файл и тоже выходят."""
+    try:
+        if os.path.exists(LICENSE_FILE) or not os.path.exists(_LEGACY_LICENSE_FILE):
+            return
+        os.makedirs(os.path.dirname(LICENSE_FILE), exist_ok=True)
+        with open(_LEGACY_LICENSE_FILE, encoding="utf-8") as src:
+            content = src.read()
+        with open(LICENSE_FILE, "w", encoding="utf-8") as dst:
+            dst.write(content)
+        logger.info(f"Файл лицензии перенесён: {_LEGACY_LICENSE_FILE} -> {LICENSE_FILE}")
+    except Exception as e:
+        logger.error(f"Не удалось перенести файл лицензии на новое место: {e}", exc_info=True)
 
 
 def _generate_license_key(hwid: str) -> str:
@@ -57,6 +86,7 @@ class LicenseManager:
 
     def __init__(self):
         self.hwid = get_hwid()
+        _migrate_legacy_license_file()
 
     # ------------------------------------------------------------------
     # Реестр Windows (двойное хранение даты старта триала)
@@ -133,6 +163,7 @@ class LicenseManager:
     def _write_license_file(self, data: dict) -> bool:
         """Записывает файл .license с HMAC-подписью."""
         try:
+            os.makedirs(os.path.dirname(LICENSE_FILE), exist_ok=True)
             payload = json.dumps(data, sort_keys=True)
             data_with_sig = dict(data)
             data_with_sig["signature"] = _compute_checksum(payload)

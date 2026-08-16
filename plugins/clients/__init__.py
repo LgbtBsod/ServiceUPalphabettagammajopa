@@ -12,10 +12,11 @@ Principles:
 - SSOT: Single source for client entities
 """
 
+from abc import abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from core.base import BaseRepository, BaseService
+from core.base import BaseRepository, BaseService, PermissionObject
 from core.plugin_system import BasePlugin, PluginMetadata, get_plugin_manager
 
 # SSOT для валидации/форматирования — utils/formatters.py + utils/validators.py
@@ -134,26 +135,39 @@ class GetClientsWithOrdersQuery:
 
 
 class IClientRepository(BaseRepository[ClientEntity]):
-    """Interface for client repository."""
+    """Interface for client repository.
 
+    @abstractmethod on every method — without it ABCMeta doesn't block
+    instantiating an incomplete implementation (a forgotten override would
+    silently return None instead of failing at construction time), see
+    AUDIT_REPORT_v25.md.
+    """
+
+    @abstractmethod
     def get_by_id(self, client_id: int) -> ClientEntity | None:
         """Get client by ID."""
 
+    @abstractmethod
     def get_by_phone(self, phone: str) -> ClientEntity | None:
         """Get client by phone number."""
 
+    @abstractmethod
     def get_by_email(self, email: str) -> ClientEntity | None:
         """Get client by email."""
 
+    @abstractmethod
     def get_all(self, limit: int = 100, active_only: bool = True) -> list[ClientEntity]:
         """Get all clients."""
 
+    @abstractmethod
     def save(self, client: ClientEntity) -> bool:
         """Save client (insert or update)."""
 
+    @abstractmethod
     def delete(self, client_id: int, hard: bool = False) -> bool:
         """Delete client (soft or hard)."""
 
+    @abstractmethod
     def search(
         self, query: str, limit: int = 50, active_only: bool = True
     ) -> list[ClientEntity]:
@@ -178,6 +192,14 @@ class ClientService(BaseService):
     - Client search
     - Validation and normalization
     """
+
+    # Декларация для будущего enforcement полномочий (см. TODO_RBAC_ROADMAP.md
+    # и core.base.PermissionObject) — пока ничего не проверяет.
+    permission_object = PermissionObject(
+        name="CLIENTS",
+        operations=("create", "read", "update", "delete"),
+        table="clients",
+    )
 
     def __init__(self, client_repository: IClientRepository):
         self._client_repo = client_repository

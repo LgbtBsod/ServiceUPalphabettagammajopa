@@ -74,8 +74,10 @@ def initialize_kernel():
     from database import ClientDatabaseManager
     from database.sqlalchemy_database import Database
     from managers import (
+        AnalyticsService,
         BackupManager,
         IntegrationManager,
+        LockManager,
         PhotoManager,
         ReportGenerator,
         SettingsManager,
@@ -91,6 +93,14 @@ def initialize_kernel():
     photo_mgr = PhotoManager(settings)
     report_gen = ReportGenerator()
     client_db = ClientDatabaseManager(main_db=db)
+    # Analytics не владеет своей таблицей (агрегирует devices/finances чужих
+    # модулей) — получает ядро, а не движок БД напрямую: любой запрос к БД
+    # идёт через core.call_module_method('db_access', ...), см. managers/analytics.py.
+    analytics_svc = AnalyticsService(core)
+    # Как Analytics — не владеет своей таблицей записей-заказов, только
+    # record_locks, но бизнес-логика (TTL, идентичность держателя) зависит
+    # от employees/settings, поэтому получает ядро, а не движок БД напрямую.
+    lock_mgr = LockManager(core)
 
     # 'db_access' — зарезервированное имя (core.module_manager.ModuleRegistry):
     # единственный способ добраться до БД — через core.get_db_access(), без
@@ -106,23 +116,52 @@ def initialize_kernel():
     core.register_module(
         "client_history", client_db, ClientDatabaseManager, api=client_db
     )
+    core.register_module("analytics", analytics_svc, AnalyticsService, api=analytics_svc)
+    core.register_module("locking", lock_mgr, LockManager, api=lock_mgr)
 
-    # Те же экземпляры — в DI-контейнере, для типобезопасного get_service(Type)
-    # там, где резолвинг по имени модуля неудобен (например, в самих менеджерах).
-    core.register_service(Database, db)
-    core.register_service(SettingsManager, settings)
-    core.register_service(BackupManager, backup_mgr)
-    core.register_service(IntegrationManager, integration_mgr)
-    core.register_service(PhotoManager, photo_mgr)
-    core.register_service(ReportGenerator, report_gen)
-    core.register_service(ClientDatabaseManager, client_db)
+    # Раньше AnalyticsService._REPORTS сверялся с
+    # Database.list_calculations() ТОЛЬКО в test suite
+    # (tests/test_analytics.py::TestReportsWhitelistConsistency) — реально
+    # работающее приложение никогда не проверяло, что whitelist не разошёлся
+    # с CalculateMixin.calculate() (см. AUDIT_REPORT_v25.md, Task P
+    # verify-пасс). Не бросаем — расхождение одного отчёта не должно ронять
+    # весь запуск приложения, но обязано быть видно в логе сразу, а не
+    # только когда пользователь случайно откроет именно этот отчёт.
+    _broken_reports = analytics_svc.verify_calculations_available(db.list_calculations())
+    if _broken_reports:
+        core.logger.error(
+            f"AnalyticsService._REPORTS расходится с Database.list_calculations(): "
+            f"отчёты {_broken_reports} упадут ValueError при первом обращении"
+        )
+
+    # Первый реальный потребитель core/events/event_bus.py в приложении —
+    # раньше EventBus был полностью построен и зарегистрирован в DI, но ни
+    # один код нигде не publish()/subscribe(), см. AUDIT_REPORT_v25.md.
+    # database/sqlalchemy_database.py публикует DeviceStatusChangedEvent
+    # при смене статуса (оба пути — полная форма и быстрая кнопка/PWA),
+    # IntegrationManager реагирует на переход в "Готов к выдаче".
+    from domain.events import DeviceStatusChangedEvent
+
+    core.subscribe(DeviceStatusChangedEvent, integration_mgr.on_device_status_changed)
+
+    # Раньше эти же 7 экземпляров ДОПОЛНИТЕЛЬНО регистрировались в DI-контейнере
+    # через core.register_service(Type, instance) — но ни один живой вызов
+    # core.get_service(Database/SettingsManager/BackupManager/...) не читает
+    # их обратно; весь реальный межмодульный доступ идёт через именной путь
+    # (core.get_module_api/get_db_access выше). DI-контейнер оставлен только
+    # для его единственного реального применения — резолвинга интерфейсов
+    # для конструирования плагинов (IClientRepository ниже), см.
+    # AUDIT_REPORT_v21.md.
 
     # Плагины: регистрируем зависимости, которые им нужны, затем находим
     # и загружаем все модули plugins/*, реализующие register_plugin().
     from plugins.clients import IClientRepository
     from plugins.clients.repository import SqlAlchemyClientRepository
+    from plugins.employees import IEmployeeRepository
+    from plugins.employees.repository import SqlAlchemyEmployeeRepository
 
     core.register_service(IClientRepository, SqlAlchemyClientRepository(db.engine))
+    core.register_service(IEmployeeRepository, SqlAlchemyEmployeeRepository(db.engine))
     loaded = core.services.plugin_manager.discover("plugins", context=core)
     if loaded:
         core.logger.info(f"Плагины загружены: {', '.join(loaded)}")

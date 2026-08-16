@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import inspect
 import typing
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -135,7 +136,7 @@ class EventBus(LoggableMixin):
             event_type=event_type_str,
             handler=handler,
             priority=priority,
-            is_async=asyncio.iscoroutinefunction(handler),
+            is_async=inspect.iscoroutinefunction(handler),
             filter=event_filter,
         )
 

@@ -12,9 +12,11 @@ Principles applied:
 
 import logging
 from abc import ABC
+from collections.abc import Callable
 from typing import Any
 
 from core.logging.exceptions import BaseAppError
+from core.logging.exceptions import PermissionError as PermissionDeniedError
 from core.logging.logger import get_logger
 
 
@@ -68,6 +70,23 @@ class LoggableMixin:
             self.logger.critical(message, exc_info=exc, extra=kwargs if kwargs else {})
         else:
             self.logger.critical(message, extra=kwargs if kwargs else {})
+
+    def msg(self, template: str, level: str = "info", **kwargs) -> str:
+        """Форматирует code-based сообщение (utils.messages.Msg.*) И сразу
+        логирует его на нужном уровне — одним вызовом вместо двух:
+
+            self.msg(Msg.LOGIN_TAKEN, level="warning", login=command.login)
+            # вместо self.logger.warning(Msg.LOGIN_TAKEN.format(login=...))
+
+        Возвращает отформатированный текст — пригодится там, где помимо
+        лога нужно ещё и показать сообщение пользователю (messagebox/jsonify),
+        не форматируя его дважды. core/base.py намеренно НЕ импортирует
+        utils.messages.Msg (не создаёт лишнюю связь между слоями) — сюда
+        передаётся уже готовый код-код/шаблон, каким бы он ни был."""
+        text = template.format(**kwargs) if kwargs else template
+        log_fn = getattr(self.logger, level, None) or self.logger.info
+        log_fn(text)
+        return text
 
 
 class ExceptionHandlingMixin:
@@ -142,12 +161,115 @@ class DependencyInjectableMixin[T]:
 
 
 # =============================================================================
+# PERMISSIONS SCAFFOLDING (декларация, БЕЗ enforcement) — см. TODO_RBAC_ROADMAP.md
+# =============================================================================
+
+
+class PermissionObject:
+    """Декларация "объекта полномочий" модуля — по аналогии с объектом
+    авторизации SAP (SU21/PFCG): у модуля есть ИМЯ объекта, на который
+    проверяются права, набор допустимых операций и опционально — таблица
+    БД, которой этот объект соответствует напрямую.
+
+    Это ЧИСТО декларативный каркас — ничего не проверяет само по себе.
+    Реальная проверка (plugins.employees.EmployeeService.has_permission())
+    сейчас всегда возвращает True. Когда появится ролевая модель (см.
+    TODO_RBAC_ROADMAP.md), enforcement будет читать именно эти объявления,
+    а не потребует переписывать сервисы заново.
+
+    Пример объявления в сервисе::
+
+        class DeviceService(BaseService):
+            permission_object = PermissionObject(
+                name="DEVICES",
+                operations=("create", "read", "update", "delete"),
+                table="devices",
+            )
+    """
+
+    __slots__ = ("name", "operations", "table")
+
+    def __init__(
+        self, name: str, operations: tuple[str, ...], table: str | None = None
+    ):
+        self.name = name
+        self.operations = operations
+        self.table = table
+
+    def __repr__(self) -> str:
+        return (
+            f"PermissionObject(name={self.name!r}, "
+            f"operations={self.operations!r}, table={self.table!r})"
+        )
+
+
+class PermissionAwareMixin:
+    """Даёт модулю (сервису/репозиторию) декларативную точку для объявления
+    объекта полномочий, которым он управляет, + готовую (но по умолчанию
+    неактивную) точку проверки — check_permission()/require_permission().
+
+    По умолчанию — permission_object=None (модуль не участвует в
+    разграничении прав, как и сейчас все модули приложения). Переопределите
+    атрибут класса ``permission_object`` в наследнике, чтобы объявить его.
+
+    check_permission()/require_permission() НИЧЕГО не проверяют сами по
+    себе, пока вызывающий код не передаст свой ``checker`` — реальную
+    ролевую модель ещё предстоит построить (см. TODO_RBAC_ROADMAP.md).
+    Это точка ИНТЕГРАЦИИ, готовая для plugins.employees.EmployeeService.
+    has_permission() (сейчас тоже всегда True) как естественной реализации
+    checker'а: ``self.require_permission("delete", checker=lambda op:
+    employees_api.has_permission(current_employee_id, op))``.
+    """
+
+    permission_object: PermissionObject | None = None
+
+    def check_permission(
+        self, operation: str, *, checker: Callable[[str], bool] | None = None
+    ) -> bool:
+        """True, если operation разрешена. Без permission_object или без
+        checker — всегда True (тот же смысл, что и текущая заглушка
+        EmployeeService.has_permission() — ничего не меняется в поведении,
+        пока никто явно не подключил проверяющего).
+
+        Raises:
+            ValueError: operation не входит в permission_object.operations —
+                программная ошибка вызывающего кода (модуль в принципе не
+                заявлял, что управляет такой операцией), а не отказ в доступе.
+        """
+        if self.permission_object is None:
+            return True
+        if operation not in self.permission_object.operations:
+            raise ValueError(
+                f"{self.permission_object.name} не объявляет операцию "
+                f"{operation!r} (доступны: {self.permission_object.operations})"
+            )
+        if checker is None:
+            return True
+        return checker(operation)
+
+    def require_permission(
+        self, operation: str, *, checker: Callable[[str], bool] | None = None
+    ) -> None:
+        """Как check_permission(), но бросает PermissionDeniedError вместо
+        возврата False — удобно как первая строка метода сервиса."""
+        if not self.check_permission(operation, checker=checker):
+            raise PermissionDeniedError(
+                action=operation,
+                resource=self.permission_object.name if self.permission_object else "?",
+            )
+
+
+# =============================================================================
 # BASE CLASSES - Inherit these for automatic logging + exception handling + DI
 # =============================================================================
 
 
 class BaseService(
-    LoggableMixin, ExceptionHandlingMixin, DependencyInjectableMixin, ABC
+    LoggableMixin,
+    ExceptionHandlingMixin,
+    DependencyInjectableMixin,
+    PermissionAwareMixin,
+    ABC,
 ):
     """Base class for all Application Services.
 
@@ -155,6 +277,7 @@ class BaseService(
     - Automatic logger (self.logger)
     - Exception handling (self.safe_execute())
     - DI access (self.get_service(), self.get_repository())
+    - Декларация объекта полномочий (self.permission_object, опционально)
 
     Usage:
         class OrderService(BaseService):
@@ -164,7 +287,10 @@ class BaseService(
 
 
 class BaseRepository[R](
-    LoggableMixin, ExceptionHandlingMixin, DependencyInjectableMixin, ABC
+    LoggableMixin,
+    ExceptionHandlingMixin,
+    DependencyInjectableMixin,
+    ABC,
 ):
     """Base class for all Infrastructure Repositories.
 
@@ -173,6 +299,10 @@ class BaseRepository[R](
     - Exception handling (self.safe_execute())
     - DI access (self.get_service(), self.get_repository())
     - Generic type parameter for entity type
+
+    Без PermissionAwareMixin — полномочия объявляются на уровне Service
+    (граница use-case'ов, см. TODO_RBAC_ROADMAP.md), репозиторий отвечает
+    только за персистентность и ничего не решает о доступе.
 
     Usage:
         class OrderRepository(BaseRepository[Order]):

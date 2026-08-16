@@ -1,5 +1,12 @@
 # ✅ ENVIRONMENT & ARCHITECTURE SETUP COMPLETE
 
+> **⚠️ ERRATA (см. AUDIT_REPORT_v21.md):** Валидирует `application.dtos`,
+> `core.contracts.OrderDTO`/`IOrderRepository`, `features.orders.*` и
+> `infrastructure/` как рабочую "Clean Architecture" — весь этот стек мёртвый
+> (недостижим из main.py/bootstrap.py), `infrastructure/` удалён этой сессией
+> целиком. Живая архитектура: `core.kernel.ServiceUpCore`,
+> `database.sqlalchemy_database.Database`, `plugins.clients`/`plugins.employees`.
+
 ## 📋 Summary of Completed Works
 
 ### 1. Virtual Environment Setup

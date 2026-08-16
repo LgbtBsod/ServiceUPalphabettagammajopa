@@ -95,7 +95,9 @@ class ModuleCache(LoggableMixin):
             if len(self._cache) >= self._max_size:
                 self._evict_oldest()
 
-            ttl = ttl_seconds or self._default_ttl
+            # ttl_seconds=0 — валидное значение ("истекает немедленно"), а не
+            # "не передано": `or` затирало бы его дефолтным TTL.
+            ttl = ttl_seconds if ttl_seconds is not None else self._default_ttl
             expires_at = None
             if ttl is not None:
                 expires_at = time.time() + ttl

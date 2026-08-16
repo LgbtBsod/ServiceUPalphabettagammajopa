@@ -97,20 +97,28 @@ class PremiumDashboard(PremiumCard):
             self.on_overdue_click()
 
     def update_stats(self):
-        """Обновление статистики, включая просроченные заказы."""
-        stats = self.db.get_statistics()
+        """Обновление статистики, включая просроченные заказы.
 
-        # Стандартные метрики
+        НЕ кэшируется — сознательное решение, не недосмотр. Измерено на 3000
+        устройств: полный пересчёт (get_statistics()+calculate('overdue_count'))
+        занимает ~2.8ms, а проверка "не изменились ли данные" (был реализован
+        вариант через COUNT+MAX(updated_at), см. database.sqlalchemy_database.
+        Database.get_table_generation()) — ~1ms. Экономия при валидном кэше
+        человеком не ощущается (<2ms), а update_stats() зовётся сразу ПОСЛЕ
+        CRUD-операции (main_window.py, 7+ мест) — то есть кэш почти всегда
+        невалиден в момент вызова, и тогда проверка добавляет накладные
+        расходы вместо экономии. Преждевременная оптимизация несуществующей
+        на этом масштабе проблемы — убрано после измерения, см. историю сессии."""
+        threshold = self.settings.get("overdue_days", 14) if self.settings else 14
+        stats = self.db.get_statistics()
+        try:
+            overdue = self.db.calculate("overdue_count", threshold_days=threshold)
+        except Exception as e:
+            logger.error(f"Ошибка подсчёта просроченных заказов: {e}", exc_info=True)
+            overdue = 0
+
         for key in ("total", "in_repair", "ready"):
             if key in self.stats_cards:
                 self.stats_cards[key].configure(text=str(stats.get(key, 0)))
-
-        # Просроченные — SQL-агрегация вместо питон-цикла по всем устройствам
-        # (закрывает 3-кратное дублирование этого фильтра, см. AUDIT_REPORT_v21.md)
-        try:
-            threshold = self.settings.get("overdue_days", 14) if self.settings else 14
-            overdue = self.db.calculate("overdue_count", threshold_days=threshold)
-            if "overdue" in self.stats_cards:
-                self.stats_cards["overdue"].configure(text=str(overdue))
-        except Exception as e:
-            logger.error(f"Ошибка подсчёта просроченных заказов: {e}", exc_info=True)
+        if "overdue" in self.stats_cards:
+            self.stats_cards["overdue"].configure(text=str(overdue))

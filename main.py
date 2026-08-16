@@ -16,6 +16,23 @@ import warnings
 # не actionable для конечного пользователя десктоп-приложения.
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
+# Баннер и сообщения ниже используют emoji/рамки (║╔═╗, ❌, 🔐, 📅...) —
+# только UTF-8 их кодирует. start.bat делает chcp 65001 перед запуском, но
+# python main.py напрямую (IDE, редиректнутый/пайпнутый stdout, cp1251/cp866
+# консоль по умолчанию) наследует locale-кодировку Windows и падает
+# UnicodeEncodeError на первом же print() — а except-обработчик ниже сам
+# пытался напечатать "❌ ..." и падал ТЕМ ЖЕ образом, эскалируя в необработанное
+# исключение вместо задуманного дружелюбного сообщения (см. AUDIT_REPORT_v25.md,
+# найдено живым прогоном `python main.py`). reconfigure(..., errors="replace")
+# — единственная точка фикса: дальше по модулю можно печатать что угодно,
+# несовместимые символы станут "?", а не уронят процесс.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 
 def main():
     """Точка входа в приложение"""

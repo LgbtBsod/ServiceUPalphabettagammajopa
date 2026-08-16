@@ -1,5 +1,9 @@
 # 🧩 Модульная Архитектура v24.0
 
+> **⚠️ УСТАРЕЛО (см. AUDIT_REPORT_v21.md):** `core/module_registry.py`+
+> `core/module_loader.py`+`modules/` удалены этой сессией как мёртвый код.
+> Живая plugin-система — `core/plugin_system.py` + `plugins/`.
+
 ## Plugin System для Расширения Без Изменения Ядра
 
 ### 📖 Описание

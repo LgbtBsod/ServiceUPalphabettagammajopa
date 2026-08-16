@@ -4,12 +4,19 @@ setlocal enabledelayedexpansion
 
 echo ============================================
 echo   ServiceUP Project - EXE Builder
-echo   Версия: v22.0
 echo ============================================
 echo.
 
 REM Переход в директорию скрипта
 cd /d "%~dp0"
+
+REM Версия — только из config.APP_VERSION (SSOT), не хардкодить здесь.
+REM Раньше было захардкожено "v22.0" и разошлось с реальной версией (23.0),
+REM см. AUDIT_REPORT_v25.md.
+for /f "delims=" %%v in ('python -c "from config import APP_VERSION; print(APP_VERSION)" 2^>nul') do set APP_VERSION=%%v
+if not defined APP_VERSION set APP_VERSION=unknown
+echo   Версия: v%APP_VERSION%
+echo.
 
 echo [1/5] Обновление pip...
 python -m pip install --upgrade pip --quiet
@@ -41,6 +48,12 @@ REM --add-data - включение данных
 set ICON_FILE=gui\assets\icon.ico
 if not exist "%ICON_FILE%" set ICON_FILE=
 
+REM Точка входа — main.py в корне проекта (тот же файл, что запускает
+REM start.bat). gui/main.py не существует — раньше это было тут указано и
+REM ронял сборку на первом же шаге PyInstaller, см. AUDIT_REPORT_v25.md.
+REM data;data — ВНИМАНИЕ: упаковывает текущий data/serviceup.db В EXE как
+REM есть; если там реальные боевые данные, а не пустой шаблон — перед
+REM раздачей EXE стороннему пользователю стоит убедиться, что это не так.
 pyinstaller ^
     --onefile ^
     --windowed ^
@@ -54,9 +67,9 @@ pyinstaller ^
     --hidden-import=PIL ^
     --hidden-import=pypdfium2 ^
     --hidden-import=qrcode ^
-    --hidden-import=dependency_injector ^
     --hidden-import=pydantic ^
-    gui/main.py
+    --hidden-import=sqlalchemy ^
+    main.py
 
 if %errorlevel% neq 0 (
     echo ❌ Ошибка сборки EXE

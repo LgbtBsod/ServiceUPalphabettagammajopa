@@ -1,5 +1,11 @@
 # Итоговый отчёт о рефакторинге архитектуры проекта
 
+> **⚠️ УСТАРЕЛО (см. AUDIT_REPORT_v21.md):** Валидирует `database.repositories`,
+> `services.service_layer`, `domain.entities`, `application.dtos` как
+> правильную архитектуру — весь этот стек мёртвый (недостижим из живого
+> приложения) и удалён этой сессией. Живая архитектура —
+> `database.sqlalchemy_database.Database`, `plugins.clients`/`plugins.employees`.
+
 ## Статус: ✅ ЗАВЕРШЕНО УСПЕШНО
 
 ### Выполненные работы по рефакторингу

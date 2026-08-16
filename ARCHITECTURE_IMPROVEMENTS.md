@@ -1,5 +1,10 @@
 # Архитектурные Улучшения v23.0
 
+> **⚠️ УСТАРЕЛО (см. AUDIT_REPORT_v21.md):** `services/notifications/`,
+> `core/exceptions.py` и `gui/dialogs/integration_settings.py` удалены этой
+> сессией — были недостижимы из живого приложения (или, для
+> integration_settings.py, вообще без единого вызова).
+
 ## 📦 Выделение Сервисных Модулей
 
 ### 1. Модуль Уведомлений (`services/notifications/`)

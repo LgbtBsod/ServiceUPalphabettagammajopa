@@ -4,6 +4,7 @@
 
 import re
 from datetime import datetime
+from typing import Any
 
 _PHONE_DIGITS_RE = re.compile(r"\D")
 
@@ -145,3 +146,80 @@ def get_days_since_receipt(receipt_date):
         return delta.days
     except (ValueError, TypeError):
         return 0
+
+
+def row_matches_search(
+    row: dict[str, Any], needle: str, phone_digits: str, order_digits: str
+) -> bool:
+    """Проверяет, соответствует ли запись (строка устройства) поисковому запросу.
+
+    needle — запрос в нижнем регистре (для общего текстового поиска).
+    phone_digits — только цифры из запроса (для поиска по телефону любого формата).
+    order_digits — только цифры из запроса (для поиска по номеру заказа).
+
+    Раньше эта логика была приватным static-методом
+    database.db_manager.Database._row_matches, и живой facade
+    (database/sqlalchemy_database.py) залезал в этот приватный метод другого
+    класса через `_LegacyDatabase._row_matches(...)` — нарушение
+    инкапсуляции поверх дублирования, см. AUDIT_REPORT_v21.md. Вынесено сюда
+    как общая утилита — единственный источник логики поиска для обоих.
+    """
+    # Поля для общего регистронезависимого поиска по подстроке
+    text_fields = (
+        "order_number",
+        "client_name",
+        "phone",
+        "model",
+        "brand",
+        "serial_number",
+        "device_type",
+        "defect",
+        "engineer",
+        "status",
+    )
+    for field in text_fields:
+        val = row.get(field)
+        if val and needle in str(val).lower():
+            return True
+
+    # Поиск по нормализованным цифрам телефона (устойчив к форматам).
+    # Дополнительно нормализуем ведущую 8 в 7 (8XXX... -> 7XXX...),
+    # т.к. телефон мог быть введён через «8», а хранится через «+7».
+    if phone_digits:
+        row_phone_digits = normalize_phone_digits(row.get("phone") or "")
+        if row_phone_digits:
+            # Варианты запроса: как есть и с заменой 8->7 в начале
+            q_variants = {phone_digits}
+            if phone_digits.startswith("8") and len(phone_digits) == 11:
+                q_variants.add("7" + phone_digits[1:])
+            if phone_digits.startswith("7") and len(phone_digits) == 11:
+                q_variants.add("8" + phone_digits[1:])
+            # Варианты записи: как есть, с заменой 8->7 / 7->8, и без кода страны
+            row_variants = {row_phone_digits}
+            if row_phone_digits.startswith("8") and len(row_phone_digits) == 11:
+                row_variants.add("7" + row_phone_digits[1:])
+            if row_phone_digits.startswith("7") and len(row_phone_digits) == 11:
+                row_variants.add("8" + row_phone_digits[1:])
+                # И 10-значный вид без кода страны
+                row_variants.add(row_phone_digits[1:])
+            # Ищем вхождение любого варианта запроса в любой вариант записи
+            for q in q_variants:
+                for rv in row_variants:
+                    if q and rv and q in rv:
+                        return True
+
+    # Поиск по номеру заказа без учёта лидирующих нулей:
+    # '1' должно находить '00001'
+    if order_digits:
+        row_order = str(row.get("order_number") or "")
+        # Полное совпадение по цифрам или вхождение
+        if order_digits in row_order:
+            return True
+        # Сравнение как чисел: '1' == int('00001')
+        try:
+            if int(order_digits) == int(row_order):
+                return True
+        except (ValueError, TypeError):
+            pass
+
+    return False

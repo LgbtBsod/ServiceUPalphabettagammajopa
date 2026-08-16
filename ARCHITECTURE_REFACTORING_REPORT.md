@@ -1,5 +1,13 @@
 # 📊 ОТЧЁТ О РЕФАКТОРИНГЕ АРХИТЕКТУРЫ
 
+> **⚠️ УСТАРЕЛО (см. AUDIT_REPORT_v21.md):** `infrastructure/` (db/cache/
+> messaging/storage) удалён этой сессией целиком; `plugins/auth`, `orders`,
+> `reports`, `pwa` удалены как нерабочие заглушки (единственный реальный
+> плагин на момент написания этого errata — `plugins.clients` и
+> `plugins.employees`); `gui/threading/ThreadManager` удалён как дубликат
+> `core/threading`. Актуальное состояние — `ARCHITECTURE_*.md` (без версии
+> в имени) и `AUDIT_REPORT_v21.md`.
+
 ## ✅ ВЫПОЛНЕННЫЕ РАБОТЫ
 
 ### 1. Модульная система тестирования

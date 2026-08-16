@@ -52,17 +52,17 @@ self._repository = self._core.get_service(IClientRepository)
 
 ### pyproject.toml
 Обновлен до версии **25.0.0** с поддержкой entry points:
+
+> **⚠️ УСТАРЕЛО (см. AUDIT_REPORT_v21.md):** `plugins.orders/reports/auth/pwa`
+> и весь `modules/` удалены этой сессией — были нерабочими заглушками без
+> реальной логики. Единственные реальные плагины сегодня — `plugins.clients`
+> и `plugins.employees`. Остальное содержимое этого файла (API `core/kernel.py`)
+> по-прежнему точно описывает живую архитектуру.
+
 ```toml
 [project.entry-points."serviceup.plugins"]
 clients = "plugins.clients:ClientsPlugin"
-orders = "plugins.orders:OrdersPlugin"
-reports = "plugins.reports:ReportsPlugin"
-auth = "plugins.auth:AuthPlugin"
-pwa = "plugins.pwa:PWAPlugin"
-
-[project.entry-points."serviceup.modules"]
-billing = "modules.billing:BillingModule"
-dashboard = "modules.dashboard_main:DashboardModule"
+employees = "plugins.employees:EmployeesPlugin"
 ```
 
 ## 🆕 Новые компоненты

@@ -47,10 +47,14 @@ class ClientHistoryWindow(ctk.CTkToplevel):
         colors: dict,
         settings=None,
         report_gen: ReportGenerator | None = None,
+        employees_api=None,
+        lock_api=None,
     ):
         super().__init__(parent)
         self.db = db
         self.client_db = client_db
+        self.employees_api = employees_api
+        self.lock_api = lock_api
         # Единственный экземпляр из Kernel — см. AUDIT_REPORT_v21.md
         self.report_gen = report_gen or ReportGenerator()
         self.parent_app = parent
@@ -709,6 +713,8 @@ class ClientHistoryWindow(ctk.CTkToplevel):
                 device_data=device,
                 settings=_parent_settings,
                 report_gen=self.report_gen,
+                employees_api=self.employees_api,
+                lock_api=self.lock_api,
             )
             self.parent_app.wait_window(dialog)
 

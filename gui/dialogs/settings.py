@@ -155,15 +155,12 @@ class SettingsWindow(ctk.CTkToplevel):
             fg_color=self.app.colors["accent"],
         ).pack(anchor="w", pady=3)
 
-        self.auto_save_var = ctk.BooleanVar(
-            value=self.settings.get("auto_save_on_close", True)
-        )
-        ctk.CTkCheckBox(
-            behavior_frame,
-            text="Авто-сохранение при закрытии",
-            variable=self.auto_save_var,
-            fg_color=self.app.colors["accent"],
-        ).pack(anchor="w", pady=3)
+        # "Авто-сохранение при закрытии" сознательно убрано (не просто не
+        # реализовано) — в приложении нет понятия "черновик"/несохранённые
+        # изменения формы: каждый Save в device_form.py и т.п. сразу и
+        # безусловно пишет в БД, отменить нечего. Настройка обещала бы
+        # поведение, для которого в архитектуре приложения нет объекта
+        # применения, см. AUDIT_REPORT_v25.md.
 
         # Значения по умолчанию
         defaults_frame = self.create_section(scroll, "Значения по умолчанию")
@@ -225,6 +222,79 @@ class SettingsWindow(ctk.CTkToplevel):
             variable=self.notify_ready_var,
             fg_color=self.app.colors["accent"],
         ).pack(anchor="w", pady=3)
+
+        # Каналы уведомления о готовности — раньше send_sms/send_email были
+        # заглушками БЕЗ единого поля для учётных данных в UI (пользователь,
+        # включивший галочку выше, не мог их даже ввести), см.
+        # AUDIT_REPORT_v25.md. Telegram уже был реально реализован — просто
+        # не настраивался. Здесь — настройка всех трёх каналов.
+        channels_frame = self.create_section(scroll, "Каналы уведомлений")
+
+        self.sms_notify_var = ctk.BooleanVar(value=self.settings.get("sms_notifications", False))
+        ctk.CTkCheckBox(
+            channels_frame,
+            text="SMS (через SMS.ru)",
+            variable=self.sms_notify_var,
+            fg_color=self.app.colors["accent"],
+        ).pack(anchor="w", pady=(3, 0))
+        self.sms_api_key_entry = self._labeled_entry(
+            channels_frame, "API-ключ SMS.ru:", "sms_api_key", show="*"
+        )
+
+        self.email_notify_var = ctk.BooleanVar(
+            value=self.settings.get("email_notifications", False)
+        )
+        ctk.CTkCheckBox(
+            channels_frame,
+            text="Email (через SMTP)",
+            variable=self.email_notify_var,
+            fg_color=self.app.colors["accent"],
+        ).pack(anchor="w", pady=(10, 0))
+        self.smtp_host_entry = self._labeled_entry(channels_frame, "SMTP-сервер:", "smtp_host")
+        self.smtp_port_entry = self._labeled_entry(
+            channels_frame, "SMTP-порт:", "smtp_port", default="587"
+        )
+        self.email_login_entry = self._labeled_entry(
+            channels_frame, "Email-логин:", "email_login"
+        )
+        self.email_password_entry = self._labeled_entry(
+            channels_frame, "Email-пароль:", "email_password", show="*"
+        )
+        self.smtp_tls_var = ctk.BooleanVar(value=self.settings.get("smtp_use_tls", True))
+        ctk.CTkCheckBox(
+            channels_frame,
+            text="Использовать STARTTLS",
+            variable=self.smtp_tls_var,
+            fg_color=self.app.colors["accent"],
+        ).pack(anchor="w", pady=3)
+
+        self.telegram_bot_var = ctk.BooleanVar(value=self.settings.get("telegram_bot", False))
+        ctk.CTkCheckBox(
+            channels_frame,
+            text="Telegram-бот",
+            variable=self.telegram_bot_var,
+            fg_color=self.app.colors["accent"],
+        ).pack(anchor="w", pady=(10, 0))
+        self.telegram_token_entry = self._labeled_entry(
+            channels_frame, "Токен бота:", "telegram_token", show="*"
+        )
+        self.telegram_chat_id_entry = self._labeled_entry(
+            channels_frame, "Chat ID:", "telegram_chat_id"
+        )
+
+    def _labeled_entry(
+        self, parent, label: str, settings_key: str, default: str = "", show: str | None = None
+    ) -> ctk.CTkEntry:
+        """Строка "подпись + однострочное поле" — общая для 7 полей канала
+        уведомлений выше (SMS/Email/Telegram), чтобы не повторять
+        Frame+Label+Entry+pack вручную для каждого."""
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=3)
+        ctk.CTkLabel(row, text=label, width=140, anchor="w").pack(side="left")
+        entry = ctk.CTkEntry(row, show=show or "")
+        entry.insert(0, str(self.settings.get(settings_key, default)))
+        entry.pack(side="left", fill="x", expand=True)
+        return entry
 
     def create_appearance_tab(self):
         """Создание вкладки внешнего вида"""
@@ -397,6 +467,13 @@ class SettingsWindow(ctk.CTkToplevel):
             fg_color=self.app.colors["accent"],
         ).pack(anchor="w", pady=3)
 
+        # Подключение к БД / полномочия / блокировки — переехали в отдельную
+        # вкладку "🔧 Базис" главного окна (см. gui/main_window_parts/
+        # basis_cockpit_mixin.py, AUDIT_REPORT_v25.md Task U) — технические/
+        # административные настройки, не предназначенные для обычного
+        # сотрудника, отделены от повседневных пользовательских настроек
+        # этого диалога.
+
     def create_pwa_tab(self):
         """Вкладка настроек мобильной версии (PWA) и синхронизации."""
         scroll = ctk.CTkScrollableFrame(self.pwa_tab, fg_color="transparent")
@@ -516,7 +593,6 @@ class SettingsWindow(ctk.CTkToplevel):
             # Общие настройки
             self.settings.set("confirm_delete", self.confirm_delete_var.get())
             self.settings.set("confirm_exit", self.confirm_exit_var.get())
-            self.settings.set("auto_save_on_close", self.auto_save_var.get())
             self.settings.set("default_status", self.default_status_combo.get())
             self.settings.set("default_priority", self.default_priority_combo.get())
             self.settings.set("remind_overdue", self.remind_overdue_var.get())
@@ -525,6 +601,22 @@ class SettingsWindow(ctk.CTkToplevel):
                 self._safe_int(self.overdue_days_entry.get(), 14, lo=1, hi=365),
             )
             self.settings.set("notify_on_ready", self.notify_ready_var.get())
+            self.settings.set("sms_notifications", self.sms_notify_var.get())
+            self.settings.set("sms_api_key", self.sms_api_key_entry.get().strip())
+            self.settings.set("email_notifications", self.email_notify_var.get())
+            self.settings.set("smtp_host", self.smtp_host_entry.get().strip())
+            self.settings.set(
+                "smtp_port", self._safe_int(self.smtp_port_entry.get(), 587, lo=1, hi=65535)
+            )
+            self.settings.set("email_login", self.email_login_entry.get().strip())
+            self.settings.set("email_password", self.email_password_entry.get())
+            self.settings.set("smtp_use_tls", self.smtp_tls_var.get())
+            self.settings.set("telegram_bot", self.telegram_bot_var.get())
+            self.settings.set("telegram_token", self.telegram_token_entry.get().strip())
+            self.settings.set("telegram_chat_id", self.telegram_chat_id_entry.get().strip())
+            # pessimistic_locking_enabled/lock_ttl_seconds сохраняются из
+            # вкладки "🔧 Базис" главного окна, не отсюда — см.
+            # gui/main_window_parts/basis_cockpit_mixin.py.
 
             # Внешний вид
             new_theme = self.theme_var.get()

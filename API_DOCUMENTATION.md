@@ -1,5 +1,12 @@
 # API Документация проекта
 
+> **⚠️ УСТАРЕЛО (см. AUDIT_REPORT_v21.md):** Документ описывает
+> `core.application.CoreApplication`/`application.*`/`infrastructure.*` —
+> удалённую этой сессией мёртвую архитектуру. Живой API —
+> `core.kernel.get_core()` (`register_module`/`get_module_api`/
+> `call_module_method`/`get_db_access`) и `database.sqlalchemy_database.Database`.
+> Пример из "Quick Start" (`from core.application import get_app`) больше не работает.
+
 ## Версия: 20.0.0
 
 ---

@@ -1,5 +1,11 @@
 # 🎉 Отчет о Развитии Архитектуры v24.0
 
+> **⚠️ УСТАРЕЛО (см. AUDIT_REPORT_v21.md):** `core/module_registry.py`,
+> `core/module_loader.py` и `modules/`, описанные здесь как готовая
+> File-Wrapper plugin-система, удалены этой сессией как мёртвый/сломанный
+> код. Живая plugin-система — `core/plugin_system.py` + `plugins/`
+> (`plugins.clients`, `plugins.employees`).
+
 ## Модульная Plugin-Система для Коммерческого Приложения
 
 ### 📊 Статус Завершения

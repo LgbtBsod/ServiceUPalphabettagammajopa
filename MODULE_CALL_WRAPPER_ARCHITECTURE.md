@@ -1,5 +1,11 @@
 # 🎯 Модульная Архитектура v24.1 - Module Call Wrapper
 
+> **⚠️ УСТАРЕЛО (см. AUDIT_REPORT_v21.md):** Описанная здесь система удалена
+> этой сессией как мёртвый код (`core/module_registry.py`+
+> `core/module_loader.py`+`modules/`). Единая точка входа модулей сегодня —
+> `core.kernel.ServiceUpCore` (`register_module`/`get_module_api`/
+> `call_module_method`), а не Module Call Wrapper.
+
 ## Обзор
 
 Реализована архитектура **"Module Call Wrapper"** - единая точка входа для всех модулей, которая автоматически предоставляет все необходимые зависимости из ядра без необходимости редактирования базовых классов.

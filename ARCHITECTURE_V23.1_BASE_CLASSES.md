@@ -1,5 +1,13 @@
 # Архитектурные Улучшения v23.1 - Базовые Классы Ядра
 
+> **ℹ️ ЧАСТИЧНО АКТУАЛЬНО (см. AUDIT_REPORT_v21.md):** Иерархия базовых
+> классов (`core/base.py`: `BaseService`/`BaseRepository`/`LoggableMixin`/
+> `ExceptionHandlingMixin`/`DependencyInjectableMixin`) — реальная и
+> используется живым кодом. Но примеры/TODO в этом файле ориентированы на
+> `application/client_services.py` и `infrastructure/` — оба удалены этой
+> сессией как мёртвый код. Реальный живой потребитель `core/base.py` сегодня
+> — `plugins/clients` и `plugins/employees`.
+
 ## 📋 Обзор
 
 Версия **v23.1** вводит единую систему базовых классов для всех компонентов приложения, обеспечивая:

@@ -187,12 +187,23 @@ class ThreadManager:
         """
         with self._lock:
             if thread_id not in self._threads:
-                logger.warning(f"Thread '{thread_id}' not found")
+                # debug, не warning: оба реальных вызывающих (pwa/server.py
+                # перед повторным start(), gui/main_window_parts/
+                # async_load_mixin.py после каждой фоновой загрузки) зовут
+                # stop_thread() best-effort ДО того, как знают, существует
+                # ли поток вообще — "не найден" тут норма, а не сигнал
+                # проблемы. Раньше это засоряло лог warning'ом на КАЖДУЮ
+                # фоновую загрузку таблицы заказов, см. AUDIT_REPORT_v25.md.
+                logger.debug(f"Thread '{thread_id}' not found")
                 return False
-            
+
             thread_info = self._threads[thread_id]
             if thread_info.status not in (ThreadStatus.RUNNING, ThreadStatus.CREATED):
-                logger.warning(f"Thread '{thread_id}' is not running")
+                # Тот же случай: к моменту вызова async_load_mixin.py фоновый
+                # поток почти всегда уже сам завершился (успел отработать до
+                # того, как его результат применился на главном потоке) —
+                # это ожидаемый путь очистки записи ThreadManager, а не сбой.
+                logger.debug(f"Thread '{thread_id}' is not running")
                 return False
             
             thread_info.status = ThreadStatus.STOPPING
