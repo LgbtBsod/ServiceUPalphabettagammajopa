@@ -114,3 +114,5 @@ yarn-error.log*
 ```
 *.pyc
 /core/__pycache__
+*.config
+reports/templates/receipt_act.json
