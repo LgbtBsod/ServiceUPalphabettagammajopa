@@ -1,4 +1,4 @@
-```
+
 # Python
 __pycache__/
 *.py[cod]
@@ -116,3 +116,5 @@ yarn-error.log*
 /core/__pycache__
 *.config
 reports/templates/receipt_act.json
+service_center.config
+service_center.config
