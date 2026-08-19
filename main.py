@@ -47,6 +47,16 @@ def main():
     # Импортируем customtkinter после проверки зависимостей
     import customtkinter as ctk
 
+    # ==================== ПРОВЕРКА ОБНОВЛЕНИЙ ====================
+    # Проверяем обновления перед инициализацией ядра и запуском GUI
+    update_result = None
+    try:
+        from utils.update_manager import check_updates_at_startup
+        update_result = check_updates_at_startup(show_dialog=False)
+    except Exception as e:
+        print(f"⚠️ Не удалось проверить обновления: {e}")
+    # ============================================================
+
     # Импортируем основное приложение
     # ВАЖНО: gui импортируется раньше initialize_kernel() — managers/reports
     # содержат predexisting circular import (managers -> reports ->
@@ -97,6 +107,19 @@ def main():
         elif status == "trial_active":
             days_left = lic.get_trial_days_left()
             print(f"📅 Пробный период: осталось {days_left} дн.")
+
+        # --- Показываем диалог обновления если есть новая версия ---
+        if update_result and update_result.get("has_update"):
+            try:
+                from gui.dialogs.update_dialog import show_update_dialog
+                
+                # Создаем временное окно для диалога обновлений
+                temp_root = ctk.CTk()
+                temp_root.withdraw()
+                show_update_dialog(temp_root, update_result)
+                temp_root.destroy()
+            except Exception as e:
+                print(f"⚠️ Не удалось показать диалог обновления: {e}")
 
         # --- Запуск приложения (только если лицензия пройдена) ---
         app = ServiceCenterApp()
