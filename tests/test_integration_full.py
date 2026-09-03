@@ -1,22 +1,5 @@
 #!/usr/bin/env python3
-"""Integration test — проверка работоспособности приложения через ядро и БД.
-
-Тестирует полный цикл работы с заказом:
-1. Создание клиента
-2. Создание заказа (устройства)
-3. Обновление данных заказа
-4. Поиск и фильтрация
-5. Изменение статуса
-6. Проверка истории
-7. Удаление/архивация
-
-Все операции выполняются ТОЛЬКО через предусмотренную архитектуру:
-- Ядро (ServiceUpCore)
-- Фасад БД (Database)
-- Модули через call_module_method()
-
-НЕ используется прямой доступ к БД или SQL запросы.
-"""
+"""Integration test — проверка работоспособности приложения через ядро и БД."""
 
 from __future__ import annotations
 
@@ -25,12 +8,61 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# Добавляем workspace в path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.kernel import ServiceUpCore
-from database.sqlalchemy_database import Database
-from database.db_core import DuplicateDatabaseConnectionError
+import pytest
+
+from core.kernel import ServiceUpCore, get_core, reset_core
+
+
+@pytest.fixture(scope="function")
+def core_instance():
+    """Создает и инициализирует ядро для каждого теста."""
+    from bootstrap import initialize_kernel
+    
+    # Сбрасываем глобальное ядро перед каждым тестом
+    reset_core()
+    
+    # Инициализируем новое ядро через bootstrap
+    core = initialize_kernel()
+    yield core
+    core.shutdown()
+    
+    # Сбрасываем после теста
+    reset_core()
+
+
+@pytest.fixture(scope="function")
+def db(core_instance: ServiceUpCore):
+    """Получает экземпляр БД из ядра для каждого теста."""
+    db_instance = core_instance.get_db_access()
+    if db_instance is None:
+        raise RuntimeError("DB Access module not registered in core")
+    yield db_instance
+
+
+@pytest.fixture(scope="function")
+def isolated_db():
+    """Создает изолированный экземпляр БД для тестов, требующих отдельное соединение."""
+    from database.sqlalchemy_database import Database
+    from database.db_config import DatabaseConfig, DatabaseType
+    from database.engines.sqlite_engine import SQLiteEngine
+    import tempfile
+    import os
+    
+    # Создаем временную БД для изоляции теста
+    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+        tmp_path = tmp.name
+    
+    try:
+        config = DatabaseConfig(db_type=DatabaseType.SQLITE, database=tmp_path)
+        engine = SQLiteEngine(config)
+        db = Database(engine)
+        yield db
+    finally:
+        db.close()
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 def log_test(name: str, passed: bool, details: str = "") -> None:
@@ -41,13 +73,25 @@ def log_test(name: str, passed: bool, details: str = "") -> None:
         print(f"   └─ {details}")
 
 
-def test_database_initialization(core: ServiceUpCore) -> bool:
+@pytest.fixture(scope="function")
+def client_id(db) -> int:
+    """Создает тестового клиента и возвращает его ID."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    client_name = f"Тестовый Клиент {timestamp}"
+    client_phone = f"+7999{timestamp[-6:]}0001"
+    
+    cid = db.get_or_create_client(
+        name=client_name,
+        phone=client_phone,
+        status="Новый"
+    )
+    return cid
+
+
+def test_database_initialization(core_instance: ServiceUpCore) -> bool:
     """Тест 1: Инициализация БД через ядро."""
     try:
-        db = Database()
-        core.register_service(Database, db)
-        
-        # Проверяем что БД работает
+        db = core_instance.get_db_access()
         order_number = db.peek_next_order_number()
         passed = order_number is not None and isinstance(order_number, int)
         log_test("Инициализация БД", passed, f"Следующий номер заказа: {order_number}")
@@ -57,14 +101,14 @@ def test_database_initialization(core: ServiceUpCore) -> bool:
         return False
 
 
-def test_create_client(db: Database) -> tuple[bool, int | None]:
+def test_create_client(isolated_db) -> tuple[bool, int | None]:
     """Тест 2: Создание клиента."""
     try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         client_name = f"Тестовый Клиент {timestamp}"
-        client_phone = f"+7999{timestamp[-4:]}0001"
+        client_phone = f"+7999{timestamp[-6:]}0001"
         
-        client_id = db.get_or_create_client(
+        client_id = isolated_db.get_or_create_client(
             name=client_name,
             phone=client_phone,
             status="Новый"
@@ -79,11 +123,10 @@ def test_create_client(db: Database) -> tuple[bool, int | None]:
         return False, None
 
 
-def test_create_order(db: Database, client_id: int) -> tuple[bool, int | None]:
+def test_create_order(isolated_db, client_id: int) -> tuple[bool, int | None]:
     """Тест 3: Создание заказа (устройства)."""
     try:
-        # Получаем следующий номер заказа
-        order_number = db.get_next_order_number()
+        order_number = isolated_db.get_next_order_number()
         
         device_data = {
             "order_number": str(order_number),
@@ -112,7 +155,7 @@ def test_create_order(db: Database, client_id: int) -> tuple[bool, int | None]:
             "created_by_id": 1,
         }
         
-        device_id = db.add_device(device_data)
+        device_id = isolated_db.add_device(device_data)
         
         passed = device_id is not None and device_id > 0
         log_test("Создание заказа", passed,
@@ -123,9 +166,40 @@ def test_create_order(db: Database, client_id: int) -> tuple[bool, int | None]:
         return False, None
 
 
-def test_update_order(db: Database, device_id: int) -> bool:
+def test_update_order(isolated_db, client_id: int) -> bool:
     """Тест 4: Обновление данных заказа."""
     try:
+        # Сначала создаем заказ
+        order_number = isolated_db.get_next_order_number()
+        device_data = {
+            "order_number": str(order_number),
+            "receipt_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "completion_date": "",
+            "device_type": "Смартфон",
+            "brand": "Apple",
+            "model": "iPhone 13",
+            "serial_number": f"SN{order_number}TEST",
+            "defect": "Не включается",
+            "appearance": "Царапины",
+            "completeness": "Только телефон",
+            "work_items_json": '[]',
+            "client_name": f"Клиент {order_number}",
+            "client_status": "Новый",
+            "phone": f"+7999{order_number}0000",
+            "total_price": "5000",
+            "prepayment": "1000",
+            "status": "Диагностика",
+            "priority": "Обычный",
+            "engineer": "Тестировщик",
+            "warranty": "30 дней",
+            "notes": "Тестовый заказ",
+            "photos": "[]",
+            "expense": "0",
+            "created_by_id": 1,
+        }
+        device_id = isolated_db.add_device(device_data)
+        
+        # Теперь обновляем
         update_data = {
             "defect": "Не включается, разбит экран, не работает FaceID",
             "total_price": "7500",
@@ -135,10 +209,8 @@ def test_update_order(db: Database, device_id: int) -> bool:
             "updated_by_id": 1,
         }
         
-        success = db.update_device(device_id, update_data)
-        
-        # Проверяем что данные обновились (используем правильный API)
-        devices = db.get_all_devices()
+        success = isolated_db.update_device(device_id, update_data)
+        devices = isolated_db.get_all_devices()
         found_device = next((d for d in devices if d["id"] == device_id), None)
         passed = success and found_device is not None
         
@@ -154,19 +226,40 @@ def test_update_order(db: Database, device_id: int) -> bool:
         return False
 
 
-def test_search_and_filter(db: Database, client_id: int, device_id: int) -> bool:
+def test_search_and_filter(isolated_db, client_id: int) -> bool:
     """Тест 5: Поиск и фильтрация заказов."""
     try:
-        # Получение всех устройств
-        all_devices = db.get_all_devices()
+        # Создаем заказ для поиска
+        order_number = isolated_db.get_next_order_number()
+        device_data = {
+            "order_number": str(order_number),
+            "receipt_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "completion_date": "",
+            "device_type": "Смартфон",
+            "brand": "Apple",
+            "model": "iPhone 13",
+            "serial_number": f"SN{order_number}TEST",
+            "defect": "Не включается",
+            "status": "В работе",
+            "total_price": "5000",
+            "prepayment": "1000",
+            "priority": "Обычный",
+            "engineer": "Тестировщик",
+            "warranty": "30 дней",
+            "notes": "Тестовый заказ",
+            "photos": "[]",
+            "expense": "0",
+            "created_by_id": 1,
+        }
+        device_id = isolated_db.add_device(device_data)
+        
+        all_devices = isolated_db.get_all_devices()
         has_devices = len(all_devices) > 0
         
-        # Поиск по тексту (используем search_devices)
-        found_devices = db.search_devices(search_text=str(device_id))
+        found_devices = isolated_db.search_devices(search_text=str(device_id))
         found_by_search = len(found_devices) > 0
         
-        # Фильтрация по статусу (используем get_devices_by_filters)
-        devices_in_work = db.get_devices_by_filters(
+        devices_in_work = isolated_db.get_devices_by_filters(
             status_filter="В работе",
             priority_filter="Все",
             include_completed=True,
@@ -182,21 +275,44 @@ def test_search_and_filter(db: Database, client_id: int, device_id: int) -> bool
         return False
 
 
-def test_change_status_to_ready(db: Database, device_id: int) -> bool:
+def test_change_status_to_ready(isolated_db, client_id: int) -> bool:
     """Тест 6: Изменение статуса на 'Готов'."""
     try:
+        # Создаем заказ
+        order_number = isolated_db.get_next_order_number()
+        device_data = {
+            "order_number": str(order_number),
+            "receipt_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "completion_date": "",
+            "device_type": "Смартфон",
+            "brand": "Apple",
+            "model": "iPhone 13",
+            "serial_number": f"SN{order_number}TEST",
+            "defect": "Не включается",
+            "status": "Диагностика",
+            "total_price": "5000",
+            "prepayment": "1000",
+            "priority": "Обычный",
+            "engineer": "Тестировщик",
+            "warranty": "30 дней",
+            "notes": "Тестовый заказ",
+            "photos": "[]",
+            "expense": "0",
+            "created_by_id": 1,
+        }
+        device_id = isolated_db.add_device(device_data)
+        
+        # Меняем статус на Готов
         update_data = {
             "status": "Готов",
             "total_price": "7500",
-            "work_items_json": '[{"name": "Диагностика", "price": "500"}, {"name": "Замена экрана", "price": "2500"}, {"name": "Настройка", "price": "500"}]',
+            "work_items_json": '[{"name": "Диагностика", "price": "500"}, {"name": "Замена экрана", "price": "2500"}]',
             "notes": "Ремонт завершен",
             "updated_by_id": 1,
         }
         
-        success = db.update_device(device_id, update_data)
-        
-        # Проверяем изменение статуса
-        devices = db.get_all_devices()
+        success = isolated_db.update_device(device_id, update_data)
+        devices = isolated_db.get_all_devices()
         found_device = next((d for d in devices if d["id"] == device_id), None)
         passed = success and found_device is not None and found_device.get("status") == "Готов"
         
@@ -208,12 +324,13 @@ def test_change_status_to_ready(db: Database, device_id: int) -> bool:
         return False
 
 
-def test_client_history(db: Database, client_id: int, device_id: int) -> bool:
+def test_client_history(isolated_db, client_id: int) -> bool:
     """Тест 7: Проверка истории клиента."""
     try:
-        # Добавляем запись в историю ремонтов
+        # Создаем заказ
+        order_number = isolated_db.get_next_order_number()
         device_data = {
-            "order_number": "TEST001",
+            "order_number": str(order_number),
             "receipt_date": datetime.now().strftime("%Y-%m-%d"),
             "completion_date": "",
             "device_type": "Смартфон",
@@ -223,11 +340,11 @@ def test_client_history(db: Database, client_id: int, device_id: int) -> bool:
             "status": "В работе",
             "total_price": "5000",
         }
+        device_id = isolated_db.add_device(device_data)
         
-        db.add_to_repair_history_main(client_id, device_id, device_data)
+        isolated_db.add_to_repair_history_main(client_id, device_id, device_data)
         
-        # Получаем историю (используем данные из теста создания клиента)
-        history = db.get_client_history_main(
+        history = isolated_db.get_client_history_main(
             client_name="Тестовый Клиент",
             client_phone="+7999"
         )
@@ -241,15 +358,14 @@ def test_client_history(db: Database, client_id: int, device_id: int) -> bool:
         return False
 
 
-def test_statistics(db: Database, client_id: int, device_id: int) -> bool:
+def test_statistics(isolated_db, client_id: int) -> bool:
     """Тест 8: Статистика клиента."""
     try:
-        stats = db.get_client_stats_main(
+        stats = isolated_db.get_client_stats_main(
             client_name="Тестовый Клиент",
             client_phone="+7999"
         )
         
-        # Статистика должна быть dict (может быть пустым если клиент не найден по имени)
         passed = isinstance(stats, dict)
         log_test("Статистика клиента", passed,
                 f"Полей в статистике: {len(stats)}")
@@ -259,10 +375,9 @@ def test_statistics(db: Database, client_id: int, device_id: int) -> bool:
         return False
 
 
-def test_kernel_module_registration(core: ServiceUpCore) -> bool:
+def test_kernel_module_registration(core_instance: ServiceUpCore) -> bool:
     """Тест 9: Регистрация модулей через ядро."""
     try:
-        # Создаем mock модуль для демонстрации
         class MockModule:
             def get_info(self):
                 return {"name": "TestModule", "version": "1.0"}
@@ -272,16 +387,14 @@ def test_kernel_module_registration(core: ServiceUpCore) -> bool:
         
         mock_instance = MockModule()
         
-        # Регистрируем модуль
-        core.register_module(
+        core_instance.register_module(
             name="test_module",
             module_instance=mock_instance,
             module_type=MockModule,
             api=mock_instance,
         )
         
-        # Получаем API модуля
-        api = core.get_module_api("test_module")
+        api = core_instance.get_module_api("test_module")
         info = api.get_info() if api else {}
         
         passed = api is not None and info.get("name") == "TestModule"
@@ -293,11 +406,10 @@ def test_kernel_module_registration(core: ServiceUpCore) -> bool:
         return False
 
 
-def test_kernel_call_module_method(core: ServiceUpCore) -> bool:
+def test_kernel_call_module_method(core_instance: ServiceUpCore) -> bool:
     """Тест 10: Вызов методов модулей через ядро."""
     try:
-        # Вызываем метод зарегистрированного модуля
-        result = core.call_module_method(
+        result = core_instance.call_module_method(
             "test_module",
             "process",
             {"test": "data"},
@@ -312,20 +424,15 @@ def test_kernel_call_module_method(core: ServiceUpCore) -> bool:
         return False
 
 
-def test_cache_operations(core: ServiceUpCore) -> bool:
+def test_cache_operations(core_instance: ServiceUpCore) -> bool:
     """Тест 11: Операции с кэшем ядра."""
     try:
         cache_key = "test_key"
         cache_value = {"data": "test_value", "timestamp": time.time()}
         
-        # Установка в кэш
-        core.cache_set(cache_key, cache_value, ttl_seconds=60)
-        
-        # Чтение из кэша
-        cached = core.cache_get(cache_key)
-        
-        # Удаление из кэша
-        deleted = core.cache_delete(cache_key)
+        core_instance.cache_set(cache_key, cache_value, ttl_seconds=60)
+        cached = core_instance.cache_get(cache_key)
+        deleted = core_instance.cache_delete(cache_key)
         
         passed = cached == cache_value and deleted
         log_test("Операции с кэшем", passed,
@@ -336,25 +443,21 @@ def test_cache_operations(core: ServiceUpCore) -> bool:
         return False
 
 
-def test_event_bus(core: ServiceUpCore) -> bool:
+def test_event_bus(core_instance: ServiceUpCore) -> bool:
     """Тест 12: Шина событий."""
     try:
         event_received = []
         
         def handler(event):
-            # Event bus передает объект Event, а не строку
             event_received.append(event)
         
-        # Подписка на событие типа str (будет преобразовано в "str")
-        core.subscribe("TestEvent", handler)
+        core_instance.subscribe("TestEvent", handler)
         
-        # Публикация события (создаем правильный объект Event)
         from core.events.event_bus import Event
         test_event = Event(event_type="TestEvent", data={"message": "test"})
-        core.publish(test_event)
+        core_instance.publish(test_event)
         
-        # Отписка
-        core.unsubscribe("TestEvent", handler)
+        core_instance.unsubscribe("TestEvent", handler)
         
         passed = len(event_received) == 1
         log_test("Шина событий", passed,
@@ -363,111 +466,3 @@ def test_event_bus(core: ServiceUpCore) -> bool:
     except Exception as e:
         log_test("Шина событий", False, f"Ошибка: {e}")
         return False
-
-
-def run_integration_tests():
-    """Запуск всех интеграционных тестов."""
-    print("=" * 70)
-    print("INTEGRATION TESTS - ServiceUP Application")
-    print("Testing through Core + Database Facade (no direct DB access)")
-    print("=" * 70)
-    
-    results = []
-    core = None
-    db = None
-    client_id = None
-    device_id = None
-    
-    try:
-        # Инициализация ядра
-        print("\n📦 Initializing ServiceUp Core...")
-        core = ServiceUpCore()
-        core.initialize()
-        print("✅ Core initialized successfully")
-        
-        # Тест 1: Инициализация БД
-        if test_database_initialization(core):
-            db = core.get_service(Database)
-        else:
-            print("\n⚠️  Cannot continue without database")
-            return False
-        
-        # Тест 2: Создание клиента
-        passed, client_id = test_create_client(db)
-        results.append(passed)
-        if not passed:
-            print("\n⚠️  Cannot continue without client")
-            return False
-        
-        # Тест 3: Создание заказа
-        passed, device_id = test_create_order(db, client_id)
-        results.append(passed)
-        if not passed:
-            print("\n⚠️  Cannot continue without order")
-            return False
-        
-        # Тест 4: Обновление заказа
-        results.append(test_update_order(db, device_id))
-        
-        # Тест 5: Поиск и фильтрация
-        results.append(test_search_and_filter(db, client_id, device_id))
-        
-        # Тест 6: Изменение статуса
-        results.append(test_change_status_to_ready(db, device_id))
-        
-        # Тест 7: История клиента
-        results.append(test_client_history(db, client_id, device_id))
-        
-        # Тест 8: Статистика
-        results.append(test_statistics(db, client_id, device_id))
-        
-        # Тест 9: Регистрация модулей
-        results.append(test_kernel_module_registration(core))
-        
-        # Тест 10: Вызов методов модулей
-        results.append(test_kernel_call_module_method(core))
-        
-        # Тест 11: Кэш
-        results.append(test_cache_operations(core))
-        
-        # Тест 12: Шина событий
-        results.append(test_event_bus(core))
-        
-    except Exception as e:
-        print(f"\n❌ CRITICAL ERROR: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    
-    finally:
-        # Cleanup
-        if core:
-            print("\n🧹 Shutting down Core...")
-            core.shutdown()
-            print("✅ Core shutdown complete")
-    
-    # Summary
-    total = len(results)
-    passed = sum(results)
-    failed = total - passed
-    
-    print("\n" + "=" * 70)
-    print("TEST SUMMARY")
-    print("=" * 70)
-    print(f"Total tests:  {total}")
-    print(f"Passed:       {passed} ✅")
-    print(f"Failed:       {failed} ❌")
-    print(f"Success rate: {(passed/total*100):.1f}%")
-    print("=" * 70)
-    
-    if failed == 0:
-        print("\n🎉 ALL TESTS PASSED! Application is working correctly.")
-        return True
-    else:
-        print(f"\n⚠️  {failed} test(s) failed. Check logs above.")
-        return False
-
-
-if __name__ == "__main__":
-    success = run_integration_tests()
-    sys.exit(0 if success else 1)
