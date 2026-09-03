@@ -1,27 +1,10 @@
 ```
-# Dependencies
-.venv/
+# Coverage reports
+.coverage
 
-# Compiled Python files
-*.pyc
-__pycache__/
-
-# Environment files
-.env
-.env.local
-*.env.*
+# Database files
+*.db
 
 # Logs
 *.log
-
-# Editor/IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-*.tmp
-
-# Build artifacts
-build/
-dist/
 ```
