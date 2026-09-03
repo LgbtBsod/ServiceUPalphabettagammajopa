@@ -146,7 +146,7 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         ).pack(side="left")
         self._attach_tooltip(login_row.winfo_children()[-1], "Сгенерировать логин по ФИО")
 
-        self.phone_entry = self._labeled_entry(form, "Телефон:")
+        self.phone_entry = self._labeled_entry(form, "Телефон:", phone_mask=True)
         self.position_entry = self._labeled_entry(form, "Должность:")
 
         self.active_var = ctk.BooleanVar(value=True)
@@ -203,7 +203,7 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         self.login_entry.delete(0, "end")
         self.login_entry.insert(0, login)
 
-    def _labeled_entry(self, parent, label: str) -> ctk.CTkEntry:
+    def _labeled_entry(self, parent, label: str, phone_mask: bool = False) -> ctk.CTkEntry:
         ctk.CTkLabel(parent, text=label, font=ctk.CTkFont(size=12, weight="bold")).pack(
             anchor="w", pady=(0, 3)
         )
@@ -214,7 +214,78 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
             height=35,
         )
         entry.pack(fill="x", pady=(0, 10))
+        
+        # Добавляем маску телефона если нужно
+        if phone_mask:
+            entry.bind("<FocusOut>", self._format_phone_input)
+            entry.bind("<Key>", self._on_phone_key_press)
+        
         return entry
+
+    def _format_phone_input(self, event=None):
+        """Маска телефона: форматирует ввод как +7 (XXX) XXX-XX-XX.
+        
+        Применяется только при потере фокуса, чтобы не мешать вводу.
+        """
+        import re
+
+        try:
+            text = event.widget.get()
+            
+            # Если это не событие потери фокуса, пропускаем
+            if event is None or getattr(event, 'type', None) != 'FocusOut':
+                return
+                
+            # Полная форматировка только при потере фокуса
+            digits = re.sub(r"\D", "", text)
+            
+            # Обработка префиксов 8 или без кода
+            if digits.startswith("8") and len(digits) == 11:
+                digits = "7" + digits[1:]
+            elif len(digits) == 10:
+                digits = "7" + digits
+            
+            # Если цифр меньше 2, оставляем как есть или очищаем
+            if len(digits) < 2:
+                if digits:
+                    event.widget.delete(0, "end")
+                    event.widget.insert(0, "+7")
+                return
+            
+            # Форматирование по маске
+            if len(digits) <= 4:
+                formatted = f"+7 ({digits[1:]}"
+            elif len(digits) <= 7:
+                formatted = f"+7 ({digits[1:4]}) {digits[4:]}"
+            elif len(digits) <= 9:
+                formatted = f"+7 ({digits[1:4]}) {digits[4:7]}-{digits[7:]}"
+            else:
+                formatted = (
+                    f"+7 ({digits[1:4]}) {digits[4:7]}-{digits[7:9]}-{digits[9:11]}"
+                )
+            
+            # Обновляем поле только если формат отличается
+            if formatted != text:
+                event.widget.delete(0, "end")
+                event.widget.insert(0, formatted)
+                
+        except Exception:
+            pass
+
+    def _on_phone_key_press(self, event=None):
+        """Обработка нажатий клавиш в поле телефона.
+        
+        Разрешает только цифры, Backspace, Delete и навигацию.
+        """
+        # Разрешаем специальные клавиши
+        if event.keysym in ('BackSpace', 'Delete', 'Left', 'Right', 'Home', 'End', 'Tab'):
+            return None
+            
+        # Блокируем все кроме цифр
+        if not event.char.isdigit():
+            return 'break'
+            
+        return None
 
     def load_employees(self):
         from plugins.employees import ListEmployeesQuery

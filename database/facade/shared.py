@@ -116,9 +116,13 @@ def fmt_money(value: float | None) -> str:
     """
     if value is None:
         return ""
-    if float(value).is_integer():
-        return str(int(value))
-    return f"{value:.2f}"
+    try:
+        float_value = float(value)
+        if float_value.is_integer():
+            return str(int(float_value))
+        return f"{float_value:.2f}"
+    except (ValueError, TypeError):
+        return str(value)
 
 
 def device_to_row(device: DeviceModel) -> dict[str, Any]:

@@ -39,19 +39,43 @@ class DeviceWidgetsMixin:
     — все выставляются в DeviceFormDialog.__init__."""
 
     def _format_phone_input(self, event=None):
-        """Маска телефона: форматирует ввод как +7 (XXX) XXX-XX-XX."""
+        """Маска телефона: форматирует ввод как +7 (XXX) XXX-XX-XX.
+        
+        КРИТИЧЕСКИ ВАЖНО: Применяется ТОЛЬКО при потере фокуса!
+        Во время ввода маска НЕ применяется вообще - это позволяет пользователю
+        свободно вводить номер +79376396173 по одной цифре без постоянного
+        перестроения маски которое мешало бы вводу.
+        """
         import re
 
         try:
             text = self.phone_entry.get()
+            
+            # Проверяем тип события - форматируем ТОЛЬКО при FocusOut
+            event_type = getattr(event, 'type', None) if event else None
+            if event_type != 'FocusOut':
+                return  # Не делаем ничего во время ввода!
+                
+            # Очищаем от всех нецифровых символов
             digits = re.sub(r"\D", "", text)
+            
+            # Если нет цифр - очищаем поле
+            if not digits:
+                self.phone_entry.delete(0, "end")
+                return
+            
+            # Нормализация: приводим к правильному формату
             if digits.startswith("8") and len(digits) == 11:
                 digits = "7" + digits[1:]
             elif len(digits) == 10:
                 digits = "7" + digits
-            if len(digits) == 0:
-                return
-            if len(digits) <= 1:
+            elif len(digits) > 11:
+                digits = digits[:11]
+            elif not digits.startswith("7"):
+                digits = "7" + digits
+            
+            # Формируем маску +7 (XXX) XXX-XX-XX
+            if len(digits) == 1:
                 formatted = "+7"
             elif len(digits) <= 4:
                 formatted = f"+7 ({digits[1:]}"
@@ -60,16 +84,38 @@ class DeviceWidgetsMixin:
             elif len(digits) <= 9:
                 formatted = f"+7 ({digits[1:4]}) {digits[4:7]}-{digits[7:]}"
             else:
-                formatted = (
-                    f"+7 ({digits[1:4]}) {digits[4:7]}-{digits[7:9]}-{digits[9:11]}"
-                )
-            if formatted != text:
-                cursor_pos = self.phone_entry.index("insert")
-                self.phone_entry.delete(0, "end")
-                self.phone_entry.insert(0, formatted)
-                self.phone_entry.icursor(min(cursor_pos + 1, len(formatted)))
+                formatted = f"+7 ({digits[1:4]}) {digits[4:7]}-{digits[7:9]}-{digits[9:11]}"
+            
+            self.phone_entry.delete(0, "end")
+            self.phone_entry.insert(0, formatted)
+                
         except Exception:
             pass
+
+    def _on_phone_key_press(self, event=None):
+        """Обработка нажатий клавиш в поле телефона.
+        
+        РАЗРЕШАЕТ только:
+        - Цифры 0-9
+        - Backspace, Delete (удаление)
+        - Стрелки, Home, End (навигация)
+        - Tab (переход между полями)
+        
+        ЗАПРЕЩАЕТ все остальные символы.
+        НЕ применяет маску - это делается только при потере фокуса!
+        """
+        # Разрешаем специальные клавиши управления
+        allowed_keys = ('BackSpace', 'Delete', 'Left', 'Right', 'Home', 'End', 'Tab')
+        if event.keysym in allowed_keys:
+            return None
+            
+        # Разрешаем ввод цифр
+        if event.char and event.char.isdigit():
+            return None
+            
+        # Блокируем все остальное
+        return 'break'
+
 
     def _on_client_name_input(self, event=None):
         """Автозаполнение: при вводе имени клиента ищет существующих в БД."""
@@ -426,8 +472,9 @@ class DeviceWidgetsMixin:
         phone_val = device_data.get("phone", "") if device_data else ""
         self.phone_entry.insert(0, phone_val)
         self.phone_entry.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=3)
-        # Маска телефона
-        self.phone_entry.bind("<KeyRelease>", self._format_phone_input)
+        # Маска телефона: форматирование при потере фокуса и фильтрация ввода
+        self.phone_entry.bind("<FocusOut>", self._format_phone_input)
+        self.phone_entry.bind("<Key>", self._on_phone_key_press)
 
         ctk.CTkLabel(
             client_frame, text="Статус клиента:", font=ctk.CTkFont(size=12)
