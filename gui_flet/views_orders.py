@@ -25,6 +25,54 @@ def _opt(value: str, label: str | None = None) -> ft.dropdown.Option:
     return ft.dropdown.Option(key=value, text=label if label is not None else (value or "—"))
 
 
+def _print_act(app, device: dict, act_type: str) -> None:
+    """Печать акта (приёма/выполненных работ) для реального заказа — тот же
+    шаблон (reports/report_editor.py::load_template_data) и генератор
+    (reports/report_renderer.py::ActPDFGenerator), что использует классический
+    интерфейс (см. gui/main_window_parts/acts_mixin.py). Flet-шеллу нет смысла
+    заводить отдельный предпросмотр — PDF открывается системным просмотрщиком,
+    печать оттуда доступна как для любого другого документа."""
+    import os
+    import subprocess
+    import sys
+    import tempfile
+
+    from reports.report_editor import load_template_data
+    from reports.report_renderer import ActPDFGenerator
+
+    try:
+        if act_type == "completion" and device.get("work_items"):
+            from database.models import WorkItemsManager
+
+            work_manager = WorkItemsManager()
+            work_manager.from_json(device["work_items"])
+            device = {**device, "completed_work": work_manager.get_description_summary()}
+
+        template = load_template_data(act_type)
+        gen = ActPDFGenerator(template_data=template)
+        fd, path = tempfile.mkstemp(
+            suffix=f"_{act_type}_{device.get('order_number', '')}.pdf"
+        )
+        os.close(fd)
+        ok = (
+            gen.generate_completion_pdf(path, device)
+            if act_type == "completion"
+            else gen.generate_receipt_pdf(path, device)
+        )
+        if not ok or not os.path.exists(path):
+            app.show_snackbar("Не удалось сформировать акт", error=True)
+            return
+        if sys.platform == "win32":
+            os.startfile(path)
+        elif sys.platform == "darwin":
+            subprocess.run(["open", path], check=False)
+        else:
+            subprocess.run(["xdg-open", path], check=False)
+        app.show_snackbar("Акт сформирован и открыт для печати")
+    except Exception as e:
+        app.show_snackbar(f"Ошибка печати акта: {e}", error=True)
+
+
 def _status_options(current_value: str) -> list[ft.dropdown.Option]:
     """Список статусов для Dropdown, + сам current_value первым пунктом,
     если он не входит в STATUSES (устройство с легаси-статусом — например,
@@ -162,6 +210,14 @@ class OrdersView:
                         value=row["status"], width=190, dense=True,
                         options=_status_options(row["status"]),
                         on_select=on_status_change,
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.DESCRIPTION_OUTLINED, tooltip="Печать акта приёма",
+                        on_click=lambda _e, r=row: _print_act(self.app, r, "receipt"),
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.BUILD_OUTLINED, tooltip="Печать акта выполненных работ",
+                        on_click=lambda _e, r=row: _print_act(self.app, r, "completion"),
                     ),
                     ft.IconButton(icon=ft.Icons.EDIT_OUTLINED, tooltip="Открыть", on_click=on_edit),
                 ],
@@ -306,6 +362,21 @@ class OrdersView:
                         [
                             ft.FilledButton("Сохранить", on_click=on_save, bgcolor=c["accent"]),
                             ft.OutlinedButton("Отмена", on_click=on_cancel),
+                            *(
+                                [
+                                    ft.Container(expand=True),
+                                    ft.OutlinedButton(
+                                        "📄 Акт приёма",
+                                        on_click=lambda _e: _print_act(self.app, existing, "receipt"),
+                                    ),
+                                    ft.OutlinedButton(
+                                        "🔧 Акт выполненных работ",
+                                        on_click=lambda _e: _print_act(self.app, existing, "completion"),
+                                    ),
+                                ]
+                                if editing
+                                else []
+                            ),
                         ],
                         spacing=10,
                     ),
