@@ -28,7 +28,7 @@ class TaskStatus(Enum):
 class Task:
     """
     Represents a unit of work to be executed.
-    
+
     Attributes:
         id: Unique identifier for the task
         func: Callable to execute
@@ -62,7 +62,7 @@ class Task:
 class WorkerPool:
     """
     Thread pool for executing tasks concurrently.
-    
+
     Provides:
     - Configurable number of worker threads
     - Priority-based task scheduling
@@ -78,7 +78,7 @@ class WorkerPool:
     ):
         """
         Initialize worker pool.
-        
+
         Args:
             max_workers: Maximum number of concurrent workers
             name: Pool name for logging
@@ -115,7 +115,7 @@ class WorkerPool:
             )
             self._shutdown = False
             # Start worker threads
-            for i in range(self.max_workers):
+            for _i in range(self.max_workers):
                 self._executor.submit(self._worker_loop)
             logger.info(f"{self.name} started")
 
@@ -129,14 +129,14 @@ class WorkerPool:
     ) -> str | None:
         """
         Submit a task to the pool.
-        
+
         Args:
             task_id: Unique identifier for the task
             func: Callable to execute
             priority: Task priority (lower = higher priority)
             *args: Positional arguments for the callable
             **kwargs: Keyword arguments for the callable
-            
+
         Returns:
             Task ID if submitted successfully, None otherwise
         """
@@ -172,10 +172,9 @@ class WorkerPool:
         while not self._shutdown:
             try:
                 if self.enable_priority:
-                    _, task_id, task = self._task_queue.get(timeout=0.1)
+                    _, _task_id, task = self._task_queue.get(timeout=0.1)
                 else:
                     task = self._task_queue.get(timeout=0.1)
-                    task_id = task.id
 
                 self._execute_task(task)
                 self._task_queue.task_done()
@@ -225,11 +224,11 @@ class WorkerPool:
     def get_task_result(self, task_id: str, timeout: float | None = None) -> Any:
         """
         Get result of a completed task.
-        
+
         Args:
             task_id: ID of task
             timeout: Maximum time to wait for completion
-            
+
         Returns:
             Task result or None if not completed
         """
@@ -248,10 +247,10 @@ class WorkerPool:
     def cancel_task(self, task_id: str) -> bool:
         """
         Cancel a pending task.
-        
+
         Args:
             task_id: ID of task to cancel
-            
+
         Returns:
             True if cancelled, False if already running or completed
         """
@@ -271,7 +270,7 @@ class WorkerPool:
     def shutdown(self, wait: bool = True, cancel_pending: bool = True) -> None:
         """
         Shutdown the worker pool.
-        
+
         Args:
             wait: Whether to wait for running tasks to complete
             cancel_pending: Whether to cancel pending tasks

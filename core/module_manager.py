@@ -398,7 +398,7 @@ class ModuleRegistrySingleton(LoggableMixin):
         # Проверяем что это не bound method с конфликтом имен
         import inspect
         sig = inspect.signature(method)
-        params = list(sig.parameters.keys())
+        list(sig.parameters.keys())
 
         # Если первый параметр имеет то же имя что и module_name/method_name - это проблема
         # Но мы уже получили метод через getattr, так что это bound method или static

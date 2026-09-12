@@ -403,7 +403,7 @@ class ClientsPlugin(BasePlugin):
 
     def get_api(self) -> ClientService | None:
         """Return clients service API.
-        
+
         Другие модули получают доступ к функциональности клиентов
         только через этот API, используя core.call_module_method().
         """

@@ -46,7 +46,7 @@ class ScheduledTask:
 class TaskScheduler:
     """
     Task scheduler for executing tasks at specific times or intervals.
-    
+
     Features:
     - One-time scheduled execution
     - Periodic interval-based execution
@@ -104,14 +104,14 @@ class TaskScheduler:
     ) -> bool:
         """
         Schedule a task to run once at a specific time.
-        
+
         Args:
             task_id: Unique identifier for the task
             func: Callable to execute
             run_at: When to run the task
             *args: Positional arguments for the callable
             **kwargs: Keyword arguments for the callable
-            
+
         Returns:
             True if scheduled successfully, False otherwise
         """
@@ -135,7 +135,7 @@ class TaskScheduler:
     ) -> bool:
         """
         Schedule a task to run at regular intervals.
-        
+
         Args:
             task_id: Unique identifier for the task
             func: Callable to execute
@@ -143,7 +143,7 @@ class TaskScheduler:
             start_immediately: Whether to run immediately on first schedule
             *args: Positional arguments for the callable
             **kwargs: Keyword arguments for the callable
-            
+
         Returns:
             True if scheduled successfully, False otherwise
         """
@@ -195,10 +195,10 @@ class TaskScheduler:
     def cancel(self, task_id: str) -> bool:
         """
         Cancel a scheduled task.
-        
+
         Args:
             task_id: ID of task to cancel
-            
+
         Returns:
             True if cancelled, False if not found
         """

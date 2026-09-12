@@ -31,10 +31,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 # несовместимые символы станут "?", а не уронят процесс.
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
-        try:
+        with contextlib.suppress(Exception):
             _stream.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
 
 
 _HELP = """ServiceUP — учёт ремонта техники

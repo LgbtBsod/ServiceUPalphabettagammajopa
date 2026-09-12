@@ -308,7 +308,7 @@ class PluginManager(LoggableMixin):
             try:
                 module = importlib.import_module(module_name)
             except Exception as e:
-                self.logger.error(f"Failed to import plugin module '{module_name}': {e}")
+                self.logger.exception(f"Failed to import plugin module '{module_name}': {e}")
                 continue
 
             register_fn = getattr(module, "register_plugin", None)
@@ -318,7 +318,7 @@ class PluginManager(LoggableMixin):
             try:
                 plugin = register_fn()
             except Exception as e:
-                self.logger.error(f"register_plugin() failed for '{module_name}': {e}")
+                self.logger.exception(f"register_plugin() failed for '{module_name}': {e}")
                 continue
 
             if self.load(plugin.metadata.name, context):

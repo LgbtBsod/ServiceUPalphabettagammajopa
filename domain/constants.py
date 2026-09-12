@@ -199,19 +199,19 @@ DICTIONARY_TYPES: Final[dict[str, dict]] = {
 # =============================================================================
 
 __all__ = [
-    "CLOSED_STATUSES",
     # Client constants
     "CLIENT_STATUSES",
+    "CLOSED_STATUSES",
     "DEFAULT_PRIORITY",
     "DEFAULT_STATUS",
     # Reference data
     "DICTIONARY_TYPES",
     "PRIORITIES",
+    # Order constants
+    "STATUSES",
     "STATUS_ISSUED",
     "STATUS_READY",
     "STATUS_REFUSED",
-    # Order constants
-    "STATUSES",
     # Warranty constants
     "WARRANTIES",
 ]

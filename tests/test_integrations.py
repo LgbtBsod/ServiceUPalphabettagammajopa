@@ -84,7 +84,7 @@ class TestSendEmail:
                 smtp_port=587,
                 smtp_use_tls=True,
                 email_login="shop@example.com",
-                email_password="secret",
+                email_password="secret",  # noqa: S106 — test fixture, not a real credential
             )
         )
         mock_server = MagicMock()
@@ -104,7 +104,7 @@ class TestSendEmail:
                 email_notifications=True,
                 smtp_host="smtp.example.com",
                 email_login="shop@example.com",
-                email_password="secret",
+                email_password="secret",  # noqa: S106 — test fixture, not a real credential
             )
         )
         with patch("smtplib.SMTP", side_effect=RuntimeError("connection refused")):

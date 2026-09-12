@@ -11,6 +11,7 @@ self.root.after(0, ...) — Tk не потокобезопасен, трогат
 
 from __future__ import annotations
 
+import contextlib
 import itertools
 import logging
 from typing import Any, Callable
@@ -76,10 +77,8 @@ class AsyncLoadMixin:
                 # копится вечно (создаём один "одноразовый" поток на каждый
                 # load_devices/apply_filters/search_devices/update_finance_display,
                 # см. AUDIT_REPORT_v25.md, Task O verify-пасс).
-                try:
+                with contextlib.suppress(Exception):
                     self._core.stop_thread(thread_name, timeout=0.1)
-                except Exception:
-                    pass
                 if busy_indicator is not None:
                     busy_indicator.stop(error=error is not None)
                 if gens.get(key) != gen:

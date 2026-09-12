@@ -150,7 +150,7 @@ class TestResetTargetSequences:
         должен даже пытаться выполниться (и тем более не должен падать)."""
         from sqlalchemy.orm import Session
 
-        source_engine, target_engine = two_engines
+        _source_engine, target_engine = two_engines
         target_engine.create_tables()
         with Session(target_engine.get_engine()) as s:
             _reset_target_sequences(s, target_engine, ["devices", "employees"])

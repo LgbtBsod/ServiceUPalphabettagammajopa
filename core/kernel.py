@@ -52,23 +52,23 @@ class CoreServices:
 
 class ServiceUpCore(LoggableMixin):
     """Центральное ядро системы ServiceUP.
-    
+
     Все модули и плагины получают доступ к функциональности через ядро.
-    
+
     Пример использования:
         # Инициализация
         core = ServiceUpCore()
         core.initialize()
-        
+
         # Регистрация плагина
         core.register_plugin(MyPlugin())
-        
+
         # Получение сервиса через ядро
         order_service = core.get_service(OrderService)
-        
+
         # Подписка на события
         core.subscribe(OrderCreatedEvent, handler)
-        
+
         # Вызов метода другого модуля через API
         result = core.call_module_method('billing', 'calculate_total', order_id=123)
     """
@@ -344,14 +344,14 @@ class ServiceUpCore(LoggableMixin):
         **kwargs: Any,
     ) -> str | None:
         """Отправляет задачу в пул работников ядра.
-        
+
         Args:
             task_id: Уникальный идентификатор задачи
             func: Функция для выполнения
             priority: Приоритет задачи (меньше = выше приоритет)
             *args: Позиционные аргументы функции
             **kwargs: Именованные аргументы функции
-            
+
         Returns:
             ID задачи если успешно, None иначе
         """
@@ -377,7 +377,7 @@ class ServiceUpCore(LoggableMixin):
         **kwargs: Any,
     ) -> bool:
         """Планирует периодическое выполнение задачи.
-        
+
         Args:
             task_id: Уникальный идентификатор задачи
             func: Функция для выполнения
@@ -385,7 +385,7 @@ class ServiceUpCore(LoggableMixin):
             start_immediately: Выполнить немедленно при планировании
             *args: Позиционные аргументы функции
             **kwargs: Именованные аргументы функции
-            
+
         Returns:
             True если успешно, False иначе
         """
@@ -406,14 +406,14 @@ class ServiceUpCore(LoggableMixin):
         daemon: bool = False,
     ) -> str:
         """Создаёт управляемый поток через ThreadManager.
-        
+
         Args:
             name: Уникальное имя потока
             target: Целевая функция потока
             args: Позиционные аргументы функции
             kwargs: Именованные аргументы функции
             daemon: Является ли поток демоном
-            
+
         Returns:
             ID созданного потока
         """
@@ -473,7 +473,7 @@ class ServiceUpCore(LoggableMixin):
                 try:
                     self._plugin_manager.disable(plugin_info["name"])
                 except Exception as e:
-                    self.logger.error(
+                    self.logger.exception(
                         f"Error disabling plugin {plugin_info['name']}: {e}"
                     )
 
@@ -487,7 +487,7 @@ class ServiceUpCore(LoggableMixin):
             try:
                 db.close()
             except Exception as e:
-                self.logger.error(f"Error closing db_access: {e}")
+                self.logger.exception(f"Error closing db_access: {e}")
 
         self._initialized = False
         self.logger.info("ServiceUP Core shut down")

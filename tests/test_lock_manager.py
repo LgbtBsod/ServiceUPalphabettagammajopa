@@ -79,7 +79,7 @@ class TestHolderIdentity:
     def test_falls_back_when_employees_module_unavailable(self):
         core = _FakeCore(modules={})  # employees не зарегистрирован вовсе
         mgr = LockManager(core)
-        key, label = mgr._holder_identity()
+        key, _label = mgr._holder_identity()
         assert key.startswith("session:")
 
     def test_session_guid_is_stable_across_calls(self):

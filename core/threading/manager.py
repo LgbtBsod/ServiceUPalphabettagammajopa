@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 class ThreadManager:
     """
     Centralized thread manager.
-    
+
     Provides:
     - Safe thread creation and tracking
     - Graceful shutdown of all threads
@@ -86,7 +86,7 @@ class ThreadManager:
     ) -> str:
         """
         Create and register a new managed thread.
-        
+
         Args:
             name: Unique identifier for the thread
             target: Target callable to execute
@@ -94,10 +94,10 @@ class ThreadManager:
             kwargs: Keyword arguments for target
             daemon: Whether thread should be daemon
             metadata: Additional metadata for tracking
-            
+
         Returns:
             Thread ID
-            
+
         Raises:
             ValueError: If thread with given name already exists
         """
@@ -142,10 +142,10 @@ class ThreadManager:
     def start_thread(self, thread_id: str) -> bool:
         """
         Start a registered thread.
-        
+
         Args:
             thread_id: ID of thread to start
-            
+
         Returns:
             True if started successfully, False otherwise
         """
@@ -166,7 +166,7 @@ class ThreadManager:
                 logger.info(f"Thread '{thread_id}' started")
                 return True
             except Exception as e:
-                logger.error(f"Failed to start thread '{thread_id}': {e}")
+                logger.exception(f"Failed to start thread '{thread_id}': {e}")
                 thread_info.status = ThreadStatus.ERROR
                 thread_info.error = e
                 return False
@@ -174,14 +174,14 @@ class ThreadManager:
     def stop_thread(self, thread_id: str, timeout: float = 5.0) -> bool:
         """
         Stop a running thread gracefully.
-        
+
         Note: This relies on the thread checking the shutdown event
         or completing its task naturally.
-        
+
         Args:
             thread_id: ID of thread to stop
             timeout: Maximum time to wait for thread to stop
-            
+
         Returns:
             True if stopped successfully, False otherwise
         """
@@ -224,10 +224,10 @@ class ThreadManager:
     def stop_all(self, timeout: float = 10.0) -> dict[str, bool]:
         """
         Stop all managed threads gracefully.
-        
+
         Args:
             timeout: Maximum time to wait for each thread
-            
+
         Returns:
             Dictionary mapping thread IDs to success status
         """

@@ -210,7 +210,7 @@ class UpdateDialog(ctk.CTkToplevel):
         if was_frozen:
             self.progress_label.configure(text="Установлено — перезапуск...")
             self.update_idletasks()
-            self.after(800, lambda: os_exit_now())
+            self.after(800, os_exit_now)
         else:
             self.progress_label.configure(text="Установлено. Перезапустите приложение вручную.")
             self.download_btn.configure(state="disabled", text="Готово")

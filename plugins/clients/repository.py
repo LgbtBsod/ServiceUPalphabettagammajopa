@@ -67,10 +67,7 @@ class SqlAlchemyClientRepository(IClientRepository):
     def save(self, client: ClientEntity) -> bool:
         try:
             with self._engine.get_session() as s:
-                if client.id:
-                    row = s.get(Client, client.id)
-                else:
-                    row = None
+                row = s.get(Client, client.id) if client.id else None
                 if row is None:
                     row = Client(name=client.full_name, phone=client.phone)
                     s.add(row)

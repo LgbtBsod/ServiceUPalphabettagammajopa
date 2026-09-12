@@ -19,6 +19,7 @@ self.root.after(0, ...), см. AsyncLoadMixin.
 
 from __future__ import annotations
 
+import contextlib
 from enum import Enum, auto
 from tkinter import ttk
 
@@ -85,10 +86,8 @@ class SkeletonFrame(ctk.CTkFrame):
 
     def destroy(self) -> None:
         if self._pulse_job is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.after_cancel(self._pulse_job)
-            except Exception:
-                pass
             self._pulse_job = None
         super().destroy()
 
@@ -125,10 +124,8 @@ class BusyIndicator(ctk.CTkFrame):
         (диагностика для вызывающего кода), сам индикатор всё равно
         скрывается: ошибку сообщает messagebox/статус-бар, а не эта полоска."""
         self.stage = LoadingStage.ERROR if error else LoadingStage.IDLE
-        try:
+        with contextlib.suppress(Exception):
             self._bar.stop()
-        except Exception:
-            pass
         self.pack_forget()
 
 

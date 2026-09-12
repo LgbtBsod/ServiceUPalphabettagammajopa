@@ -208,7 +208,11 @@ class AutoUpdater:
     # ── HTTP ─────────────────────────────────────────────────────
 
     def _create_request(self, url: str) -> Request:
-        req = Request(url)
+        # url всегда строится этим же классом из releases.atom/api.github.com
+        # (github.com/api.github.com, releases/download/...), никогда не
+        # приходит от пользователя как есть — тот же bandit-аудит, что и на
+        # _urlopen() ниже.
+        req = Request(url)  # noqa: S310
         req.add_header("User-Agent", f"{APP_NAME}/{self.current_version}")
         return req
 
@@ -492,7 +496,7 @@ class AutoUpdater:
             logger.info("Откат из бэкапа выполнен успешно")
             return True
         except Exception as exc:
-            logger.error("Не удалось выполнить откат из бэкапа: %s", exc)
+            logger.exception("Не удалось выполнить откат из бэкапа: %s", exc)
             return False
 
     def _cleanup_backup(self) -> None:
@@ -645,7 +649,7 @@ class AutoUpdater:
             )
             logger.info("Обновление подменено, новый процесс запущен.")
         except OSError as exc:
-            logger.error("Обновление установлено, но перезапуск не удался (%s)", exc)
+            logger.exception("Обновление установлено, но перезапуск не удался (%s)", exc)
 
     def _stage_and_relaunch(self, new_exe: Path) -> bool:
         try:
@@ -662,7 +666,7 @@ class AutoUpdater:
         try:
             shutil.copy2(new_exe, staged_exe)
         except OSError as exc:
-            logger.error("Не удалось подготовить обновление: %s", exc)
+            logger.exception("Не удалось подготовить обновление: %s", exc)
             return False
         if not staged_exe.exists() or staged_exe.stat().st_size < self.MIN_UPDATE_SIZE:
             return False
@@ -738,12 +742,12 @@ class AutoUpdater:
             return result
 
         except UpdateError as exc:
-            logger.error("Ошибка обновления: %s", exc)
+            logger.exception("Ошибка обновления: %s", exc)
             if exc.recoverable:
                 self._restore_from_backup()
             return False
         except Exception as exc:
-            logger.error("Непредвиденная ошибка обновления: %s", exc)
+            logger.exception("Непредвиденная ошибка обновления: %s", exc)
             self._restore_from_backup()
             return False
         finally:

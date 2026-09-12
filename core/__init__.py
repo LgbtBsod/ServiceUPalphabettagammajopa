@@ -93,9 +93,9 @@ __all__ = [
     "PDFGenerationError",
     "PermissionError",
     "ServiceError",
-    "ValidationError",
     # Kernel (единственная точка входа — см. AUDIT_REPORT_v20.md)
     "ServiceUpCore",
+    "ValidationError",
     "get_core",
     # Functions
     "get_event_bus",

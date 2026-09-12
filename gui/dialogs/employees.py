@@ -224,7 +224,7 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
 
     def _format_phone_input(self, event=None):
         """Маска телефона: форматирует ввод как +7 (XXX) XXX-XX-XX.
-        
+
         Применяется только при потере фокуса, чтобы не мешать вводу.
         """
         import re
@@ -274,7 +274,7 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
 
     def _on_phone_key_press(self, event=None):
         """Обработка нажатий клавиш в поле телефона.
-        
+
         Разрешает только цифры, Backspace, Delete и навигацию.
         """
         # Разрешаем специальные клавиши
