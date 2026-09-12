@@ -171,9 +171,15 @@ def initialize_kernel():
     from plugins.clients.repository import SqlAlchemyClientRepository
     from plugins.employees import IEmployeeRepository
     from plugins.employees.repository import SqlAlchemyEmployeeRepository
+    from plugins.orders import IOrderRepository
+    from plugins.orders.repository import SqlAlchemyOrderRepository
 
     core.register_service(IClientRepository, SqlAlchemyClientRepository(db.engine))
     core.register_service(IEmployeeRepository, SqlAlchemyEmployeeRepository(db.engine))
+    # orders — в отличие от clients/employees, репозиторий оборачивает уже
+    # готовый Database facade (db), а не голый db.engine — см.
+    # plugins/orders/repository.py за причиной.
+    core.register_service(IOrderRepository, SqlAlchemyOrderRepository(db))
     loaded = core.services.plugin_manager.discover("plugins", context=core)
     if loaded:
         core.logger.info(f"Плагины загружены: {', '.join(loaded)}")
