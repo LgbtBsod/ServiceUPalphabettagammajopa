@@ -33,21 +33,26 @@ class PhotoManager:
         except Exception as e:
             logger.error(f"Ошибка создания директорий для фото: {e}", exc_info=True)
 
-    def get_client_photos_dir(self, client_name: str, client_phone: str) -> str:
-        """Получение пути к директории клиента для фотографий"""
-        safe_name = re.sub(r"[^\w\-_]", "", f"{client_name}_{client_phone}")[:50]
-        client_dir = os.path.join(self.photos_dir, safe_name)
+    @staticmethod
+    def _safe_client_dirname(client_name: str, client_phone: str) -> str:
+        """Санитизированное имя папки клиента — общая часть, которую раньше
+        по одной и той же формуле дублировали get_client_photos_dir и
+        get_client_thumbnails_dir (риск разъехаться при правке одной копии)."""
+        return re.sub(r"[^\w\-_]", "", f"{client_name}_{client_phone}")[:50]
+
+    def _client_dir(self, base_dir: str, client_name: str, client_phone: str) -> str:
+        client_dir = os.path.join(base_dir, self._safe_client_dirname(client_name, client_phone))
         if not os.path.exists(client_dir):
             os.makedirs(client_dir)
         return client_dir
 
+    def get_client_photos_dir(self, client_name: str, client_phone: str) -> str:
+        """Получение пути к директории клиента для фотографий"""
+        return self._client_dir(self.photos_dir, client_name, client_phone)
+
     def get_client_thumbnails_dir(self, client_name: str, client_phone: str) -> str:
         """Получение пути к директории миниатюр клиента"""
-        safe_name = re.sub(r"[^\w\-_]", "", f"{client_name}_{client_phone}")[:50]
-        thumb_dir = os.path.join(self.thumbnails_dir, safe_name)
-        if not os.path.exists(thumb_dir):
-            os.makedirs(thumb_dir)
-        return thumb_dir
+        return self._client_dir(self.thumbnails_dir, client_name, client_phone)
 
     def _resample_method(self):
         """Возвращает доступный метод ресемплинга для текущей версии Pillow."""

@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from core.base import BaseService, PermissionObject
+from utils.constants import DEFAULT_SETTINGS
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,9 @@ class AnalyticsService(BaseService):
     # priority_breakdown) упадут TypeError'ом на неожиданном kwarg'е, если
     # подставлять его всем подряд.
     _THRESHOLD_AWARE_REPORTS = frozenset({"overdue_count", "overdue_orders", "dashboard_stats"})
-    _DEFAULT_OVERDUE_DAYS = 14
+    # Из DEFAULT_SETTINGS (SSOT) — раньше 14 было захардкожено здесь ВТОРЫМ
+    # независимым литералом (utils/constants.py уже хранит "overdue_days": 14).
+    _DEFAULT_OVERDUE_DAYS = DEFAULT_SETTINGS["overdue_days"]
 
     def __init__(self, core):
         # Ядро — единственный путь к db_access. Analytics не владеет своей

@@ -18,15 +18,28 @@ class BackupManager:
 
     def __init__(self, settings):
         self.settings = settings
-        # DEFAULT_SETTINGS["backup_path"] хранит "" (utils/constants.py), а не
-        # отсутствие ключа — settings.get("backup_path", BACKUP_DIR) поэтому
-        # всегда возвращал "" вместо фолбэка на BACKUP_DIR. os.path.join("", x)
-        # == x, так что бэкап писался бare-именем в текущую рабочую директорию
-        # процесса (непредсказуемо для GUI/exe), а os.makedirs("")/os.listdir("")
-        # падали (проглатывались) — pruning по backup_count не работал вообще.
-        # gui/dialogs/settings.py уже использует идиому `or BACKUP_DIR`.
-        self.backup_path = settings.get("backup_path") or BACKUP_DIR
         self.create_backup_dir()
+
+    @property
+    def backup_path(self) -> str:
+        """Читает путь для бэкапов ИЗ SettingsManager при каждом обращении,
+        а не один раз в __init__.
+
+        Раньше кэшировался в self.backup_path на конструкторе — правка пути
+        в "Настройки → Резервное копирование" (gui/dialogs/settings.py,
+        settings.set("backup_path", ...)) молча не действовала до
+        перезапуска приложения: create_backup()/cleanup_old_backups()
+        продолжали писать/чистить по старому пути весь остаток сессии.
+
+        DEFAULT_SETTINGS["backup_path"] хранит "" (utils/constants.py), а не
+        отсутствие ключа — settings.get("backup_path", BACKUP_DIR) поэтому
+        всегда возвращал "" вместо фолбэка на BACKUP_DIR. os.path.join("", x)
+        == x, так что бэкап писался бare-именем в текущую рабочую директорию
+        процесса (непредсказуемо для GUI/exe), а os.makedirs("")/os.listdir("")
+        падали (проглатывались) — pruning по backup_count не работал вообще.
+        gui/dialogs/settings.py уже использует идиому `or BACKUP_DIR`.
+        """
+        return self.settings.get("backup_path") or BACKUP_DIR
 
     def create_backup_dir(self):
         """Создание директории для бэкапов"""
@@ -50,6 +63,12 @@ class BackupManager:
             ):
                 logger.warning("Пропуск бэкапа: файл БД отсутствует или пуст")
                 return None
+
+            # backup_path теперь читается live (см. свойство выше) — если
+            # пользователь только что сменил путь в настройках, новая папка
+            # ещё может не существовать; create_backup_dir() создаёт её
+            # заново, если нужно (дёшево — no-op, если папка уже есть).
+            self.create_backup_dir()
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_name = f"backup_{timestamp}.db"

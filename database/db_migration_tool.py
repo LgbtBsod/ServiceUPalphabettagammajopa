@@ -29,6 +29,7 @@ from database.sqlalchemy_models import (
     Employee,
     FinanceRecord,
     PhotoRecord,
+    RecordLock,
     RepairHistoryMain,
     Settings,
     WorkItemRecord,
@@ -55,6 +56,11 @@ _ALL_MODELS: dict[str, type] = {
     "photos_db": PhotoRecord,
     "completed_repairs": CompletedRepair,
     "repair_history_main": RepairHistoryMain,
+    # Раньше отсутствовала — модуль обещает "копирует ВСЕ таблицы схемы", но
+    # молча пропускал record_locks (пессимистичные блокировки, см.
+    # managers/locking.py). Не FK-зависима (нет self-reference), обычный
+    # generic copy path, отдельного кода не требует.
+    "record_locks": RecordLock,
 }
 
 

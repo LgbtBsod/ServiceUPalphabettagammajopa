@@ -25,11 +25,16 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from core.base import BaseService
+from utils.constants import DEFAULT_SETTINGS
 from utils.messages import Msg
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_TTL_SECONDS = 300
+# Из DEFAULT_SETTINGS (SSOT), а не отдельным литералом — раньше 300 было
+# захардкожено здесь же ВТОРОЙ раз (utils/constants.py и managers/locking.py
+# по отдельности), и оба сейчас совпадают только потому, что их никто ещё
+# не поправил в одном месте, забыв про другое.
+_DEFAULT_TTL_SECONDS = DEFAULT_SETTINGS["lock_ttl_seconds"]
 
 
 @dataclass

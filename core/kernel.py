@@ -187,13 +187,6 @@ class ServiceUpCore(LoggableMixin):
 
         self._plugin_manager.disable(plugin_name)
 
-    def get_plugin_api(self, plugin_name: str) -> Any | None:
-        """Получает публичный API плагина."""
-        if not self._initialized:
-            raise RuntimeError("Core not initialized")
-
-        return self._plugin_manager.get_api(plugin_name)
-
     def register_module(
         self,
         name: str,

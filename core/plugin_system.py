@@ -162,7 +162,6 @@ class PluginManager(LoggableMixin):
     def __init__(self):
         self._plugins: dict[str, IPlugin] = {}
         self._states: dict[str, PluginState] = {}
-        self._apis: dict[str, Any] = {}
 
     def register(self, plugin: IPlugin) -> None:
         """Register a plugin instance."""
@@ -189,8 +188,6 @@ class PluginManager(LoggableMixin):
 
         del self._plugins[plugin_name]
         del self._states[plugin_name]
-        if plugin_name in self._apis:
-            del self._apis[plugin_name]
 
         self.logger.info(f"Plugin '{plugin_name}' unregistered")
 
@@ -217,7 +214,6 @@ class PluginManager(LoggableMixin):
             if success:
                 self._states[plugin_name] = PluginState.ACTIVE
                 plugin._state = PluginState.ACTIVE  # Update plugin's internal state
-                self._apis[plugin_name] = plugin.get_api()
                 self.logger.info(f"Plugin '{plugin_name}' loaded successfully")
                 return True
             else:
@@ -242,8 +238,6 @@ class PluginManager(LoggableMixin):
         try:
             plugin.shutdown()
             self._states[plugin_name] = PluginState.UNLOADED
-            if plugin_name in self._apis:
-                del self._apis[plugin_name]
             self.logger.info(f"Plugin '{plugin_name}' unloaded successfully")
         except Exception as e:
             self._states[plugin_name] = PluginState.ERROR
@@ -331,10 +325,6 @@ class PluginManager(LoggableMixin):
         if plugin_name not in self._plugins:
             raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
         return self._plugins[plugin_name]
-
-    def get_api(self, plugin_name: str) -> Any | None:
-        """Get plugin's public API by name."""
-        return self._apis.get(plugin_name)
 
     def get_state(self, plugin_name: str) -> PluginState:
         """Get plugin's current state."""

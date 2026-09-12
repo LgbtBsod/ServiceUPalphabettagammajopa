@@ -173,6 +173,7 @@ class IClientRepository(BaseRepository[ClientEntity]):
     ) -> list[ClientEntity]:
         """Search clients by name, phone, or email."""
 
+    @abstractmethod
     def get_with_order_history(
         self, min_orders: int = 1, limit: int = 100
     ) -> list[ClientEntity]:
