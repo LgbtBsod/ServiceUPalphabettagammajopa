@@ -1,22 +1,30 @@
 """Update Dialog Module
 
 GUI диалог для показа доступных обновлений пользователю с автоскачиванием.
+
+Раньше скачивание шло через download_and_prepare_update() + отдельный
+процесс apply_update.py (start_update_process) — два независимых шага без
+проверки контрольной суммы и без бэкапа. Теперь AutoUpdater.download_update()
+сам делает всё: бэкап -> скачивание с прогрессом -> проверка SHA256 ->
+установка (frozen: подмена .exe + перезапуск нового процесса; из исходников:
+copytree поверх + version.txt) -> откат при ошибке.
 """
 
 from __future__ import annotations
 
+import sys
 import threading
 from typing import Any
 
 import customtkinter as ctk
 
 from config.settings import get_version
-from utils.update_manager import download_and_prepare_update, start_update_process
+from utils.update_manager import AutoUpdater, DownloadProgress
 
 
 class UpdateDialog(ctk.CTkToplevel):
     """Диалог обновления приложения
-    
+
     Показывает информацию о новой версии и предлагает скачать обновление.
     Поддерживает тихое скачивание и автоматическую установку.
     """
@@ -28,10 +36,10 @@ class UpdateDialog(ctk.CTkToplevel):
         **kwargs
     ):
         """Инициализация диалога обновления
-        
+
         Args:
             parent: Родительское окно
-            update_info: Информация об обновлении от UpdateManager
+            update_info: Информация об обновлении (см. utils.update_manager.check_updates_at_startup)
             **kwargs: Дополнительные аргументы для CTkToplevel
         """
         super().__init__(parent, **kwargs)
@@ -42,15 +50,6 @@ class UpdateDialog(ctk.CTkToplevel):
         self.release_notes = self.update_info.get("release_notes", "")
         self.download_url = self.update_info.get("download_url", "")
 
-        # Для автоскачивания - создаем структуру данных для update_manager
-        self._update_data = {
-            "version": self.latest_version,
-            "url": self.download_url,
-            "notes": self.release_notes
-        }
-
-        # Для автоскачивания
-        self.temp_path = None
         self.is_downloading = False
 
         # Настройка окна
@@ -169,38 +168,52 @@ class UpdateDialog(ctk.CTkToplevel):
         )
         later_btn.pack(side="left", fill="x", expand=True, padx=(10, 0))
 
-    def _progress_callback(self, message: str, percent: int):
-        """Обновление прогресса скачивания"""
-        self.progress_label.configure(text=message)
-        self.progress_bar.set(percent / 100)
-        self.update_idletasks()
+    def _progress_callback(self, progress: DownloadProgress) -> None:
+        """Колбэк AutoUpdater — вызывается из ФОНОВОГО потока загрузки.
 
-    def _download_thread(self):
-        """Поток для скачивания и установки"""
+        Раньше здесь напрямую трогались виджеты (configure/set/update_idletasks)
+        из не-Tk потока — customtkinter/Tk не потокобезопасны, это гонка,
+        которая на практике то тормозит, то роняет интерфейс необъяснимо
+        редким образом. self.after(0, ...) передаёт обновление в Tk-поток."""
+        text = f"{progress.percent:.0f}%   {progress.formatted_speed}" if progress.total_bytes else (
+            f"{progress.bytes_downloaded // 1024} КБ"
+        )
+        value = progress.percent / 100 if progress.total_bytes else 0
+        self.after(0, lambda: self._apply_progress(text, value))
+
+    def _apply_progress(self, text: str, value: float) -> None:
+        self.progress_label.configure(text=text)
+        self.progress_bar.set(value)
+
+    def _download_thread(self) -> None:
+        """Поток для скачивания и установки."""
+        updater = AutoUpdater(current_version=self.current_version)
+        updater.progress_callback = self._progress_callback
         try:
-            # Скачиваем и подготавливаем файлы
-            self.temp_path = download_and_prepare_update(
-                self._update_data,
-                self._progress_callback
-            )
-
-            if self.temp_path:
-                # Запускаем процесс обновления
-                self.after(0, lambda: self._start_installation())
-            else:
-                self.after(0, lambda: self._show_error("Не удалось скачать обновление"))
+            ok = updater.download_update(self.download_url, self.latest_version)
         except Exception as e:
-            # Раньше `except Exception:` без `as e`, но лямбда ниже читала `e` —
-            # NameError вместо предполагаемого текста ошибки на любом сбое
-            # скачивания. default-arg привязывает текущее значение e, а не имя
-            # (иначе к моменту вызова колбэка `e` уже не в области видимости).
             self.after(0, lambda err=e: self._show_error(str(err)))
+            return
+        if ok:
+            self.after(0, lambda: self._on_installed(updater.is_frozen))
+        else:
+            self.after(0, lambda: self._show_error("Не удалось установить обновление"))
 
-    def _start_installation(self):
-        """Запуск установки после скачивания"""
-        self.progress_label.configure(text="Запуск установки...")
-        start_update_process(self.temp_path)
-        self.destroy()
+    def _on_installed(self, was_frozen: bool) -> None:
+        """Обновление установлено — сообщаем и завершаем процесс.
+
+        Frozen: AutoUpdater уже подменил .exe и запустил НОВЫЙ процесс
+        (см. _relaunch_after_update) — этому, старому, остаётся только выйти,
+        иначе оба будут держать файлы/порт PWA одновременно. Из исходников:
+        файлы скопированы на месте, но текущий процесс их уже импортировал —
+        нужен ручной перезапуск, поэтому просто просим пользователя."""
+        if was_frozen:
+            self.progress_label.configure(text="Установлено — перезапуск...")
+            self.update_idletasks()
+            self.after(800, lambda: os_exit_now())
+        else:
+            self.progress_label.configure(text="Установлено. Перезапустите приложение вручную.")
+            self.download_btn.configure(state="disabled", text="Готово")
 
     def _show_error(self, message: str):
         """Показ ошибки"""
@@ -211,7 +224,8 @@ class UpdateDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(size=12),
         )
         error_label.pack(pady=(0, 10))
-        self.download_btn.configure(state="normal")
+        self.download_btn.configure(state="normal", text="⬇️ Скачать и установить")
+        self.is_downloading = False
 
     def _on_download(self) -> None:
         """Обработчик кнопки скачивания"""
@@ -235,16 +249,27 @@ class UpdateDialog(ctk.CTkToplevel):
         self.destroy()
 
 
+def os_exit_now() -> None:
+    """Немедленный выход без cleanup — новый процесс (после подмены .exe)
+    уже запущен отдельно, старому здесь больше нечего делать корректно
+    закрывать (GUI-обработчики закрытия окна тут неприменимы)."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    import os
+
+    os._exit(0)
+
+
 def show_update_dialog(
     parent: ctk.CTkBaseClass | None,
     update_info: dict[str, Any],
 ) -> bool:
     """Показать диалог обновления
-    
+
     Args:
         parent: Родительское окно
         update_info: Информация об обновлении
-        
+
     Returns:
         bool: True если пользователь нажал "Скачать", False если "Позже"
     """

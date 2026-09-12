@@ -7,8 +7,11 @@
 захардкожен ('15.0') и расходился с реальной версией (см. AUDIT_REPORT_v21.md).
 """
 
+import contextlib
 import sys
+import time
 import warnings
+from pathlib import Path
 
 # Точечно (не все категории целиком — раньше это маскировало и полезные
 # предупреждения, например о неверном использовании API сторонних
@@ -34,8 +37,67 @@ for _stream in (sys.stdout, sys.stderr):
             pass
 
 
+_HELP = """ServiceUP — учёт ремонта техники
+
+  --version        показать версию и выйти
+  --help, -h       эта справка
+  --no-update      (frozen) не проверять обновления на этом запуске
+"""
+
+
+def _finish_pending_update() -> bool:
+    """Frozen only: файл ``<exe>.updated`` рядом с нами означает, что
+    self-update скачал новый бинарник, но подмена могла не завершиться (крэш
+    между скачиванием и swap, антивирус придержал файл и т.п.). Если
+    staged-файл существует — отдаём его свежему AutoUpdater на до-установку и
+    выходим; иначе чистим мусор. Возвращает True, если процесс должен выйти
+    (перезапуск уже запущен)."""
+    if not getattr(sys, "frozen", False):
+        return False
+    exe = Path(sys.executable).resolve()
+    staged = exe.with_name(exe.name + ".updated")
+    if not staged.is_file():
+        return False
+    try:
+        from utils.update_manager import AutoUpdater
+
+        AutoUpdater()._relaunch_after_update()
+        return True
+    except Exception as e:
+        print(f"⚠️ Не удалось завершить отложенное обновление: {e}")
+        with contextlib.suppress(OSError):
+            staged.unlink()
+        return False
+
+
+def _cleanup_update_leftovers() -> None:
+    """Frozen only: удаляет ``<exe>.old``, оставленный предыдущей подменой
+    бинарника (utils/update_manager.AutoUpdater._swap_windows_binary)."""
+    if not getattr(sys, "frozen", False):
+        return
+    exe = Path(sys.executable).resolve()
+    old = exe.with_name(exe.name + ".old")
+    for attempt in range(3):
+        try:
+            if old.exists():
+                old.unlink()
+            break
+        except OSError:
+            time.sleep(0.3 * (attempt + 1))
+
+
 def main():
     """Точка входа в приложение"""
+    args = sys.argv[1:]
+    if "--version" in args:
+        from config import APP_VERSION
+
+        print(APP_VERSION)
+        return
+    if "--help" in args or "-h" in args:
+        print(_HELP)
+        return
+
     # ==================== ПРОВЕРКА ЗАВИСИМОСТЕЙ ====================
     from bootstrap import check_dependencies, ensure_directories, initialize_kernel
 
@@ -44,17 +106,25 @@ def main():
 
     ensure_directories()
 
+    if _finish_pending_update():
+        print("⏳ Отложенное обновление передано свежему процессу — выходим.")
+        return
+    _cleanup_update_leftovers()
+
     # Импортируем customtkinter после проверки зависимостей
     import customtkinter as ctk
 
     # ==================== ПРОВЕРКА ОБНОВЛЕНИЙ ====================
-    # Проверяем обновления перед инициализацией ядра и запуском GUI
+    # Проверяем обновления перед инициализацией ядра и запуском GUI.
+    # --no-update: после self-update relaunch (см. AutoUpdater._relaunch_*)
+    # свежий процесс не должен сразу же снова себя обновлять.
     update_result = None
-    try:
-        from utils.update_manager import check_updates_at_startup
-        update_result = check_updates_at_startup(show_dialog=False)
-    except Exception as e:
-        print(f"⚠️ Не удалось проверить обновления: {e}")
+    if "--no-update" not in args:
+        try:
+            from utils.update_manager import check_updates_at_startup
+            update_result = check_updates_at_startup()
+        except Exception as e:
+            print(f"⚠️ Не удалось проверить обновления: {e}")
     # ============================================================
 
     # Импортируем основное приложение
@@ -132,7 +202,13 @@ def main():
         import traceback
 
         traceback.print_exc()
-        input("\nНажмите Enter для выхода...")
+        # sys.stdin.isatty(): в frozen --windowed сборке консоли нет вообще
+        # (stdin — не просто "не терминал", а зачастую None/недоступен) —
+        # input() там сразу падал EOFError/TypeError, ЗАМЕНЯЯ настоящую
+        # трассировку выше на невнятную вторую ошибку вместо паузы для чтения.
+        if sys.stdin is not None and sys.stdin.isatty():
+            with contextlib.suppress(EOFError, OSError):
+                input("\nНажмите Enter для выхода...")
         sys.exit(1)
 
 

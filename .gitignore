@@ -20,8 +20,10 @@ htmlcov/
 # Логи и рантайм-данные (лежат рядом с приложением, не в репозитории)
 *.log
 data/logs/
+data/.last_update_check
 logs/
 backups/
+.update_backup/
 *.tmp
 *.swp
 *.swo

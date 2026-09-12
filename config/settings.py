@@ -47,6 +47,24 @@ def _writable_root() -> Path:
     return Path(__file__).parent.parent
 
 
+def _read_version_file() -> str:
+    """version.txt — SSOT версии приложения.
+
+    Раньше AppSettings.version хардкодил "23.0" прямо в поле, а version.txt
+    лежал рядом неиспользуемым (разошёлся: файл говорил 23.0, pyproject.toml —
+    25.0.0) — ни CI, ни апдейтер не могли свериться с единым источником.
+    Теперь version.txt — то, что читает и апдейтер (utils/update_manager.py,
+    сверка с тегом релиза), и CI (version.txt должен совпадать с тегом
+    перед публикацией). Читаем из _resource_root() (не _writable_root()) —
+    это версия ИСПОЛНЯЕМОГО КОДА, бандлится PyInstaller'ом рядом с exe
+    (--add-data "version.txt;."), а не пользовательские данные."""
+    try:
+        text = (_resource_root() / "version.txt").read_text(encoding="utf-8")
+        return text.strip().lstrip("vV").strip(". \t\r\n") or "0.0.0"
+    except OSError:
+        return "0.0.0"
+
+
 class DatabaseSettings(BaseSettings):
     """Database configuration settings"""
 
@@ -80,7 +98,9 @@ class AppSettings(BaseSettings):
     )
 
     name: str = Field(default="ServiceUP", description="Application name")
-    version: str = Field(default="23.0", description="Application version")
+    version: str = Field(
+        default_factory=_read_version_file, description="Application version"
+    )
     debug: bool = Field(default=False, description="Debug mode")
     language: str = Field(default="ru_RU", description="Default language code")
     data_dir: Path = Field(default=Path("data"), description="Data directory")
