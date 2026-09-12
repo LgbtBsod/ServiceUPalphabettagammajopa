@@ -42,6 +42,8 @@ _HELP = """ServiceUP — учёт ремонта техники
   --version        показать версию и выйти
   --help, -h       эта справка
   --no-update      (frozen) не проверять обновления на этом запуске
+  --ui=classic     запустить классический интерфейс (customtkinter), без диалога выбора
+  --ui=flet        запустить Flet-интерфейс (браузер), без диалога выбора
 """
 
 
@@ -137,8 +139,10 @@ def main():
     from utils.license_manager import LicenseManager
 
     # Kernel — единая точка сборки зависимостей (Database, менеджеры) для
-    # gui/main_window.py и pwa/server.py.
-    initialize_kernel()
+    # gui/main_window.py, gui_flet/app.py и pwa/server.py.
+    core = initialize_kernel()
+
+    ui_override = next((a.split("=", 1)[1] for a in args if a.startswith("--ui=")), None)
 
     from config import APP_VERSION
 
@@ -191,9 +195,30 @@ def main():
             except Exception as e:
                 print(f"⚠️ Не удалось показать диалог обновления: {e}")
 
-        # --- Запуск приложения (только если лицензия пройдена) ---
-        app = ServiceCenterApp()
-        app.run()
+        # --- Выбор оболочки (классический интерфейс / Flet-браузер) ---
+        ui_mode = ui_override
+        if ui_mode not in ("classic", "flet"):
+            settings_api = core.get_module_api("settings")
+            from gui.dialogs.ui_chooser import choose_ui_mode
+            from utils.colors import get_colors
+
+            chooser_root = ctk.CTk()
+            chooser_root.withdraw()
+            ui_mode = choose_ui_mode(
+                chooser_root, settings_api,
+                get_colors(settings_api.get("theme", "light")),
+            )
+            chooser_root.destroy()
+
+        if ui_mode == "flet":
+            print("🌐 Запуск Flet-интерфейса (браузер)...")
+            from gui_flet import run_app as run_flet_app
+
+            run_flet_app(core)
+        else:
+            # --- Запуск классического интерфейса ---
+            app = ServiceCenterApp()
+            app.run()
 
     except KeyboardInterrupt:
         print("\n👋 Программа завершена")

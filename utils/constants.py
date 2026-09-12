@@ -76,6 +76,11 @@ def _get_default_settings() -> dict:
         # функция, которая теоретически могла бы их использовать) нигде не
         # вызывается, см. AUDIT_REPORT_v25.md.
         "window_geometry": {},
+        # Какую оболочку открывать при старте: "classic" (customtkinter) или
+        # "flet" (браузер, gui_flet/). "" — ещё не выбрано, main.py спросит
+        # при каждом запуске, пока пользователь не отметит "запомнить выбор"
+        # в диалоге выбора интерфейса (см. gui/dialogs/ui_chooser.py).
+        "ui_mode": "",
         "pwa": {
             "port": 5000,
             "auto_start": False,
