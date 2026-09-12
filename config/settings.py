@@ -33,7 +33,7 @@ def _writable_root() -> Path:
 
     Раньше все эти пути (DatabaseSettings.path, AppSettings.data_dir/backup_dir,
     get_config_path, BASE_DIR) резолвились через Path(__file__).parent.parent —
-    для frozen --onefile сборки (tools/build.py, build_exe.bat) это тот же
+    для frozen --onefile сборки (build.py) это тот же
     sys._MEIPASS, который PyInstaller УДАЛЯЕТ при выходе из процесса. Итог:
     БД клиента, бэкапы и сгенерированные акты создавались в эфемерной папке и
     пропадали между запусками (единственное, что уже переживало обновление —

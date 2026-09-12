@@ -108,15 +108,26 @@ def _is_frozen() -> bool:
 
 
 def _app_dir() -> Path:
-    """Каталог, куда пишем бэкапы/staged-обновление.
+    """Каталог, ГДЕ ЛЕЖАТ ДАННЫЕ — то же самое место, что и
+    config.settings._writable_root() (data/, backups/, service_center.config).
 
-    Frozen: рядом с исполняемым .exe (там же, где backups/, data/ — см.
-    config._writable_root(), которая для frozen резолвится в
-    %LOCALAPPDATA%\\ServiceUP; но подменяемый .exe лежит там, куда его
-    положил пользователь — sys.executable, а НЕ _writable_root()). Из
-    исходников — корень репозитория."""
+    Раньше здесь ошибочно был "рядом с исполняемым .exe"
+    (Path(sys.executable).parent) — для frozen-сборки это НЕ то же место,
+    что config._writable_root() (%LOCALAPPDATA%\\ServiceUP): пользователь
+    может распаковать .exe куда угодно (Рабочий стол, Program Files),
+    а данные всё равно идут в LOCALAPPDATA. С багом бэкап перед
+    обновлением (_create_backup) смотрел в пустую папку рядом с .exe и
+    ничего не находил — окажись после этого обновление битым, откатывать
+    было бы нечего. Найдено живым прогоном собранного .exe (build.py
+    --onedir): data/.last_update_check создавался в dist/ServiceUP/data/
+    вместо %LOCALAPPDATA%\\ServiceUP\\data\\, где реально лежит БД.
+
+    Файл .exe для swap/relaunch — отдельно, self.current_exe
+    (Path(sys.executable) в AutoUpdater.__init__), НЕ этот каталог."""
     if _is_frozen():
-        return Path(sys.executable).resolve().parent
+        from config import get_data_dir
+
+        return get_data_dir().parent
     return Path(__file__).resolve().parent.parent
 
 
