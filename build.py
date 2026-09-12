@@ -55,6 +55,14 @@ HIDDEN_IMPORTS = [
     "phonenumbers",
 ]
 
+# flet/flet_web нужны --collect-all (не просто --hidden-import) — тянут
+# нестандартные data-файлы (веб-ассеты Flutter), которые PyInstaller не
+# находит через обычный анализ импортов. flet_desktop исключён: gui_flet
+# запускается только в ft.AppView.WEB_BROWSER (см. gui_flet/app.py), нативный
+# Flutter-движок для desktop-режима Flet не нужен и просто раздувает сборку.
+COLLECT_ALL = ["flet", "flet_web"]
+EXCLUDE_MODULES = ["matplotlib", "flet_desktop"]
+
 
 def info(m):
     print(f"[INFO] {m}")
@@ -83,7 +91,7 @@ def install_deps() -> None:
         sys.exit(1)
     probe = subprocess.run(
         [sys.executable, "-c",
-         "import customtkinter, flask, pydantic_settings, sqlalchemy, reportlab, PyInstaller"],
+         "import customtkinter, flask, pydantic_settings, sqlalchemy, reportlab, flet, PyInstaller"],
         capture_output=True, text=True,
     )
     if probe.returncode != 0:
@@ -118,6 +126,7 @@ def main() -> None:
         "--add-data", f"version.txt{sep}.",
         "--add-data", f"reports/templates{sep}reports/templates",
         "--collect-submodules", "gui",
+        "--collect-submodules", "gui_flet",
         "--collect-submodules", "core",
         "--collect-submodules", "database",
         "--collect-submodules", "managers",
@@ -125,11 +134,14 @@ def main() -> None:
         "--collect-submodules", "reports",
         "--collect-submodules", "domain",
         "--collect-submodules", "pwa",
-        "--exclude-module", "matplotlib",
         "--noupx",
     ]
     for imp in HIDDEN_IMPORTS:
         cmd += ["--hidden-import", imp]
+    for pkg in COLLECT_ALL:
+        cmd += ["--collect-all", pkg]
+    for mod in EXCLUDE_MODULES:
+        cmd += ["--exclude-module", mod]
     if sys.platform == "win32":
         cmd += ["--windowed"]
     elif sys.platform == "darwin":

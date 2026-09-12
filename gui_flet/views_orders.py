@@ -104,9 +104,15 @@ class OrdersView:
         )
 
         if not rows:
+            # ft.alignment.center не существует в этой версии Flet (нет
+            # готовых констант в модуле) — Alignment(0, 0) эквивалентен
+            # Flutter Alignment.center. Не сработал ни один прежний живой
+            # прогон (тестовая БД никогда не была пустой) — вскрылось только
+            # на СВЕЖЕЙ базе frozen-сборки (%LOCALAPPDATA%\ServiceUP только
+            # что создан, заказов ещё нет).
             body = ft.Container(
                 ft.Text("Заказов не найдено.", color=c["text_secondary"]),
-                padding=30, alignment=ft.alignment.center,
+                padding=30, alignment=ft.alignment.Alignment(0, 0),
             )
         else:
             body = ft.Column([self._order_card(r) for r in rows], spacing=10)

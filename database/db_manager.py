@@ -245,9 +245,20 @@ class Database:
                 )
                 if cursor.fetchone()[0] == 0:
                     for i, value in enumerate(config["default_values"]):
+                        # created_at указан явно: эта же таблица в актуальной
+                        # схеме создаётся SQLAlchemy (database/sqlalchemy_models.py
+                        # ::DictionaryItem) с default на СТОРОНЕ ORM (Python
+                        # datetime.now()), а не server_default в DDL — колонка
+                        # NOT NULL без дефолта на уровне SQLite. Раньше INSERT
+                        # не указывал колонку — на fresh БД (таблицу уже создал
+                        # SQLAlchemy, этот CREATE TABLE IF NOT EXISTS — no-op)
+                        # падал NOT NULL constraint failed на каждом первом
+                        # запуске, caught и залогирован как ошибка, но реально
+                        # ронял миграцию клиентских БД (main_window.py).
                         cursor.execute(
                             """
-                            INSERT INTO dictionaries (dict_type, value, sort_order) VALUES (?, ?, ?)
+                            INSERT INTO dictionaries (dict_type, value, sort_order, created_at)
+                            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                         """,
                             (dict_type, value, i),
                         )
@@ -483,8 +494,8 @@ class Database:
 
             cursor.execute(
                 """
-                INSERT INTO dictionaries (dict_type, value, sort_order, additional_info)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO dictionaries (dict_type, value, sort_order, additional_info, created_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
                 (dict_type, value, sort_order, additional_info),
             )
