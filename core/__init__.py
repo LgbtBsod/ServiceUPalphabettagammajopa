@@ -4,6 +4,7 @@
 SSOT: Единая точка входа во все контракты и сервисы ядра.
 """
 
+from config import APP_VERSION
 from core.base import (
     BaseGenerator,
     BaseRepository,
@@ -26,6 +27,7 @@ from core.contracts import (
     kernel,
 )
 from core.events import Event, EventBus, EventType, get_event_bus
+from core.kernel import ServiceUpCore, get_core
 from core.logging import (
     # Exceptions
     BaseAppError,
@@ -49,8 +51,6 @@ from core.logging import (
     get_logger,
     setup_logging,
 )
-from config import APP_VERSION
-from core.kernel import ServiceUpCore, get_core
 
 __version__ = APP_VERSION
 __author__ = "ServiceUP Team"

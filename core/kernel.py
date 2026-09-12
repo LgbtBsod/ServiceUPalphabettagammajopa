@@ -16,24 +16,23 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from core.base import LoggableMixin
 from core.di.container import DIContainer, get_container
 from core.events import EventBus, get_event_bus
-from core.plugin_system import IPlugin, PluginManager, get_plugin_manager
-from core.threading import ThreadManager, WorkerPool, TaskScheduler
 from core.module_manager import (
     ModuleCache,
     ModuleRegistrySingleton,
     get_module_cache,
     get_module_singleton_registry,
 )
+from core.plugin_system import IPlugin, PluginManager, get_plugin_manager
+from core.threading import TaskScheduler, ThreadManager, WorkerPool
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from types import ModuleType
 
 
 @dataclass
@@ -98,7 +97,7 @@ class ServiceUpCore(LoggableMixin):
         """Возвращает сервисы ядра."""
         if not self._initialized:
             raise RuntimeError("Core not initialized. Call initialize() first.")
-        
+
         return CoreServices(
             container=self._container,
             event_bus=self._event_bus,
@@ -153,16 +152,16 @@ class ServiceUpCore(LoggableMixin):
         """Регистрирует сервисы ядра в DI контейнере."""
         # Регистрируем само ядро как singleton
         self._container.register_instance(ServiceUpCore, self)
-        
+
         # Регистрируем EventBus
         self._container.register_instance(EventBus, self._event_bus)
-        
+
         # Регистрируем PluginManager
         self._container.register_instance(PluginManager, self._plugin_manager)
-        
+
         # Регистрируем ModuleCache
         self._container.register_instance(ModuleCache, self._module_cache)
-        
+
         # Регистрируем ModuleRegistrySingleton
         self._container.register_instance(ModuleRegistrySingleton, self._module_registry)
 
@@ -170,7 +169,7 @@ class ServiceUpCore(LoggableMixin):
         """Регистрирует плагин в системе."""
         if not self._initialized:
             raise RuntimeError("Core not initialized")
-        
+
         self._plugin_manager.register(plugin)
         self.logger.info(f"Plugin '{plugin.metadata.name}' registered")
 
@@ -178,21 +177,21 @@ class ServiceUpCore(LoggableMixin):
         """Включает плагин по имени."""
         if not self._initialized:
             raise RuntimeError("Core not initialized")
-        
+
         return self._plugin_manager.enable(plugin_name)
 
     def disable_plugin(self, plugin_name: str) -> None:
         """Отключает плагин по имени."""
         if not self._initialized:
             raise RuntimeError("Core not initialized")
-        
+
         self._plugin_manager.disable(plugin_name)
 
     def get_plugin_api(self, plugin_name: str) -> Any | None:
         """Получает публичный API плагина."""
         if not self._initialized:
             raise RuntimeError("Core not initialized")
-        
+
         return self._plugin_manager.get_api(plugin_name)
 
     def register_module(
@@ -319,21 +318,21 @@ class ServiceUpCore(LoggableMixin):
         """Подписывается на событие."""
         if not self._initialized:
             raise RuntimeError("Core not initialized")
-        
+
         self._event_bus.subscribe(event_type, handler)
 
     def unsubscribe(self, event_type: type, handler: Callable) -> None:
         """Отписывается от события."""
         if not self._initialized:
             raise RuntimeError("Core not initialized")
-        
+
         self._event_bus.unsubscribe(event_type, handler)
 
     def publish(self, event: object) -> None:
         """Публикует событие."""
         if not self._initialized:
             raise RuntimeError("Core not initialized")
-        
+
         self._event_bus.publish(event)
 
     def submit_task(
@@ -358,14 +357,15 @@ class ServiceUpCore(LoggableMixin):
         """
         if not self._initialized:
             raise RuntimeError("Core not initialized")
-        
-        return self._worker_pool.submit(
-            task_id=task_id,
-            func=func,
-            priority=priority,
-            *args,
-            **kwargs,
-        )
+
+        # Позиционно, а не task_id=task_id/func=func/priority=priority вперемешку
+        # с *args — f(x=1, *args) при непустом args падает "got multiple values
+        # for argument", т.к. распаковка *args заполняет параметры позиционно
+        # раньше, чем применяются keyword-и (см. AUDIT: тот же баг уже был
+        # исправлен в call_module_method ниже, здесь пропущен). Ловится
+        # только реальным вызовом с непустыми *args — тесты почти всегда шлют
+        # только kwargs.
+        return self._worker_pool.submit(task_id, func, priority, *args, **kwargs)
 
     def schedule_task(
         self,
@@ -391,14 +391,10 @@ class ServiceUpCore(LoggableMixin):
         """
         if not self._initialized:
             raise RuntimeError("Core not initialized")
-        
+
+        # Позиционно — та же причина, что в submit_task() выше.
         return self._task_scheduler.schedule_interval(
-            task_id=task_id,
-            func=func,
-            interval_seconds=interval_seconds,
-            start_immediately=start_immediately,
-            *args,
-            **kwargs,
+            task_id, func, interval_seconds, start_immediately, *args, **kwargs
         )
 
     def create_thread(
@@ -423,7 +419,7 @@ class ServiceUpCore(LoggableMixin):
         """
         if not self._initialized:
             raise RuntimeError("Core not initialized")
-        
+
         return self._thread_manager.create_thread(
             name=name,
             target=target,
@@ -480,6 +476,18 @@ class ServiceUpCore(LoggableMixin):
                     self.logger.error(
                         f"Error disabling plugin {plugin_info['name']}: {e}"
                     )
+
+        # Закрываем БД (движок + claim на conn_str) — раньше не делалось нигде,
+        # из-за чего DatabaseCore._claimed_connection_strings рос и второй
+        # initialize_kernel() на тот же файл падал DuplicateDatabaseConnectionError
+        # (см. tests/test_integration_full.py: reset_core() -> initialize_kernel()
+        # в каждом тесте).
+        db = self._module_registry.get_db_access()
+        if db is not None and hasattr(db, "close"):
+            try:
+                db.close()
+            except Exception as e:
+                self.logger.error(f"Error closing db_access: {e}")
 
         self._initialized = False
         self.logger.info("ServiceUP Core shut down")

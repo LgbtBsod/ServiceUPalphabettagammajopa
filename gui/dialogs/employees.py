@@ -214,12 +214,12 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
             height=35,
         )
         entry.pack(fill="x", pady=(0, 10))
-        
+
         # Добавляем маску телефона если нужно
         if phone_mask:
             entry.bind("<FocusOut>", self._format_phone_input)
             entry.bind("<Key>", self._on_phone_key_press)
-        
+
         return entry
 
     def _format_phone_input(self, event=None):
@@ -231,27 +231,27 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
 
         try:
             text = event.widget.get()
-            
+
             # Если это не событие потери фокуса, пропускаем
             if event is None or getattr(event, 'type', None) != 'FocusOut':
                 return
-                
+
             # Полная форматировка только при потере фокуса
             digits = re.sub(r"\D", "", text)
-            
+
             # Обработка префиксов 8 или без кода
             if digits.startswith("8") and len(digits) == 11:
                 digits = "7" + digits[1:]
             elif len(digits) == 10:
                 digits = "7" + digits
-            
+
             # Если цифр меньше 2, оставляем как есть или очищаем
             if len(digits) < 2:
                 if digits:
                     event.widget.delete(0, "end")
                     event.widget.insert(0, "+7")
                 return
-            
+
             # Форматирование по маске
             if len(digits) <= 4:
                 formatted = f"+7 ({digits[1:]}"
@@ -263,12 +263,12 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
                 formatted = (
                     f"+7 ({digits[1:4]}) {digits[4:7]}-{digits[7:9]}-{digits[9:11]}"
                 )
-            
+
             # Обновляем поле только если формат отличается
             if formatted != text:
                 event.widget.delete(0, "end")
                 event.widget.insert(0, formatted)
-                
+
         except Exception:
             pass
 
@@ -280,11 +280,11 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         # Разрешаем специальные клавиши
         if event.keysym in ('BackSpace', 'Delete', 'Left', 'Right', 'Home', 'End', 'Tab'):
             return None
-            
+
         # Блокируем все кроме цифр
         if not event.char.isdigit():
             return 'break'
-            
+
         return None
 
     def load_employees(self):

@@ -3,15 +3,14 @@ Worker Pool and Task definitions.
 Provides a thread pool for executing tasks concurrently.
 """
 
-import threading
-import queue
 import logging
-from typing import Callable, Any
+import queue
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
-from concurrent.futures import Future, ThreadPoolExecutor
 from enum import Enum
-
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +53,8 @@ class Task:
     created_at: datetime = field(default_factory=datetime.now)
     started_at: datetime | None = None
     completed_at: datetime | None = None
-    
-    def __lt__(self, other: "Task") -> bool:
+
+    def __lt__(self, other: Task) -> bool:
         """Compare tasks by priority for priority queue."""
         return self.priority < other.priority
 
@@ -70,7 +69,7 @@ class WorkerPool:
     - Task status tracking
     - Graceful shutdown
     """
-    
+
     def __init__(
         self,
         max_workers: int = 4,
@@ -88,28 +87,28 @@ class WorkerPool:
         self.max_workers = max_workers
         self.name = name
         self.enable_priority = enable_priority
-        
+
         self._executor: ThreadPoolExecutor | None = None
         self._task_queue: queue.PriorityQueue if enable_priority else queue.Queue
         self._tasks: dict[str, Task] = {}
         self._futures: dict[str, Future] = {}
         self._lock = threading.RLock()
         self._shutdown = False
-        
+
         if enable_priority:
             self._task_queue = queue.PriorityQueue()
         else:
             self._task_queue = queue.Queue()
-        
+
         logger.info(f"{name} initialized with {max_workers} workers")
-    
+
     def start(self):
         """Start the worker pool."""
         with self._lock:
             if self._executor is not None:
                 logger.warning(f"{self.name} already started")
                 return
-            
+
             self._executor = ThreadPoolExecutor(
                 max_workers=self.max_workers,
                 thread_name_prefix=self.name,
@@ -119,7 +118,7 @@ class WorkerPool:
             for i in range(self.max_workers):
                 self._executor.submit(self._worker_loop)
             logger.info(f"{self.name} started")
-    
+
     def submit(
         self,
         task_id: str,
@@ -145,11 +144,11 @@ class WorkerPool:
             if self._shutdown:
                 logger.warning(f"{self.name} is shutting down, task rejected")
                 return None
-            
+
             if task_id in self._tasks:
                 logger.warning(f"Task '{task_id}' already exists")
                 return None
-            
+
             task = Task(
                 id=task_id,
                 func=func,
@@ -157,17 +156,17 @@ class WorkerPool:
                 kwargs=kwargs,
                 priority=priority,
             )
-            
+
             self._tasks[task_id] = task
-            
+
             if self.enable_priority:
                 self._task_queue.put((priority, task_id, task))
             else:
                 self._task_queue.put(task)
-            
+
             logger.debug(f"Task '{task_id}' submitted with priority {priority}")
             return task_id
-    
+
     def _worker_loop(self):
         """Worker loop to process tasks from queue."""
         while not self._shutdown:
@@ -177,37 +176,37 @@ class WorkerPool:
                 else:
                     task = self._task_queue.get(timeout=0.1)
                     task_id = task.id
-                
+
                 self._execute_task(task)
                 self._task_queue.task_done()
-                
+
             except queue.Empty:
                 continue
             except Exception as e:
                 logger.error(f"{self.name} worker error: {e}", exc_info=True)
-    
+
     def _execute_task(self, task: Task):
         """Execute a single task."""
         with self._lock:
             if task.status == TaskStatus.CANCELLED:
                 return
-            
+
             task.status = TaskStatus.RUNNING
             task.started_at = datetime.now()
             self._tasks[task.id] = task
-        
+
         try:
             logger.debug(f"Executing task '{task.id}'")
             result = task.func(*task.args, **task.kwargs)
-            
+
             with self._lock:
                 task.status = TaskStatus.COMPLETED
                 task.result = result
                 task.completed_at = datetime.now()
                 self._tasks[task.id] = task
-            
+
             logger.debug(f"Task '{task.id}' completed successfully")
-            
+
         except Exception as e:
             logger.error(f"Task '{task.id}' failed: {e}", exc_info=True)
             with self._lock:
@@ -215,14 +214,14 @@ class WorkerPool:
                 task.error = e
                 task.completed_at = datetime.now()
                 self._tasks[task.id] = task
-    
+
     def get_task_status(self, task_id: str) -> TaskStatus | None:
         """Get status of a specific task."""
         with self._lock:
             if task_id not in self._tasks:
                 return None
             return self._tasks[task_id].status
-    
+
     def get_task_result(self, task_id: str, timeout: float | None = None) -> Any:
         """
         Get result of a completed task.
@@ -238,14 +237,14 @@ class WorkerPool:
             if task_id not in self._tasks:
                 return None
             task = self._tasks[task_id]
-        
+
         if task.status == TaskStatus.COMPLETED:
             return task.result
         elif task.status == TaskStatus.FAILED:
             raise task.error or RuntimeError("Task failed with unknown error")
-        
+
         return None
-    
+
     def cancel_task(self, task_id: str) -> bool:
         """
         Cancel a pending task.
@@ -259,16 +258,16 @@ class WorkerPool:
         with self._lock:
             if task_id not in self._tasks:
                 return False
-            
+
             task = self._tasks[task_id]
             if task.status != TaskStatus.PENDING:
                 return False
-            
+
             task.status = TaskStatus.CANCELLED
             task.completed_at = datetime.now()
             logger.info(f"Task '{task_id}' cancelled")
             return True
-    
+
     def shutdown(self, wait: bool = True, cancel_pending: bool = True) -> None:
         """
         Shutdown the worker pool.
@@ -278,22 +277,22 @@ class WorkerPool:
             cancel_pending: Whether to cancel pending tasks
         """
         logger.info(f"Shutting down {self.name}...")
-        
+
         with self._lock:
             self._shutdown = True
-            
+
             if cancel_pending:
                 for task in self._tasks.values():
                     if task.status == TaskStatus.PENDING:
                         task.status = TaskStatus.CANCELLED
                         task.completed_at = datetime.now()
-        
+
         if self._executor:
             self._executor.shutdown(wait=wait)
             self._executor = None
-        
+
         logger.info(f"{self.name} shut down complete")
-    
+
     @property
     def active_count(self) -> int:
         """Get count of currently running tasks."""
@@ -302,7 +301,7 @@ class WorkerPool:
                 1 for task in self._tasks.values()
                 if task.status == TaskStatus.RUNNING
             )
-    
+
     @property
     def pending_count(self) -> int:
         """Get count of pending tasks."""
@@ -311,7 +310,7 @@ class WorkerPool:
                 1 for task in self._tasks.values()
                 if task.status == TaskStatus.PENDING
             )
-    
+
     def get_all_tasks(self) -> list[Task]:
         """Get list of all tasks."""
         with self._lock:

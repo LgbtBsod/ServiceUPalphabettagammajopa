@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 from core.base import LoggableMixin
 
 if TYPE_CHECKING:
-    from core.kernel import ServiceUpCore
+    pass
 
 # Контекст, передаваемый плагинам в initialize(). Пока это сам ServiceUpCore
 # (узкий фасад не нужен — у ServiceUpCore уже минимальный публичный API:

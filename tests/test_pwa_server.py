@@ -12,11 +12,10 @@ import tempfile
 
 import pytest
 
+import gui  # noqa: F401  — тот же обход циклического импорта managers/__init__.py
 from database.db_config import DatabaseConfig
 from database.engines.sqlite_engine import SQLiteEngine
 from database.sqlalchemy_database import Database
-
-import gui  # noqa: F401  — тот же обход циклического импорта managers/__init__.py
 from pwa import server as pwa_server
 
 

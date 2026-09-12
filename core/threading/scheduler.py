@@ -3,15 +3,14 @@ Task Scheduler.
 Provides scheduled task execution with support for cron-like scheduling.
 """
 
+import heapq
+import logging
 import threading
 import time
-import logging
-from typing import Callable, Any
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-import heapq
-
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +37,8 @@ class ScheduledTask:
     run_count: int = 0
     last_run: datetime | None = None
     last_error: Exception | None = None
-    
-    def __lt__(self, other: "ScheduledTask") -> bool:
+
+    def __lt__(self, other: ScheduledTask) -> bool:
         """Compare by next_run time for heap operations."""
         return self.next_run < other.next_run
 
@@ -55,7 +54,7 @@ class TaskScheduler:
     - Thread-safe operations
     - Graceful shutdown
     """
-    
+
     def __init__(self, name: str = "TaskScheduler"):
         self.name = name
         self._tasks: dict[str, ScheduledTask] = {}
@@ -64,16 +63,16 @@ class TaskScheduler:
         self._shutdown = False
         self._thread: threading.Thread | None = None
         self._wake_event = threading.Event()
-        
+
         logger.info(f"{name} initialized")
-    
+
     def start(self):
         """Start the scheduler thread."""
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 logger.warning(f"{self.name} already running")
                 return
-            
+
             self._shutdown = False
             self._thread = threading.Thread(
                 target=self._scheduler_loop,
@@ -82,19 +81,19 @@ class TaskScheduler:
             )
             self._thread.start()
             logger.info(f"{self.name} started")
-    
+
     def stop(self, wait: bool = True) -> None:
         """Stop the scheduler."""
         logger.info(f"Stopping {self.name}...")
         self._shutdown = True
         self._wake_event.set()
-        
+
         if wait and self._thread:
             self._thread.join(timeout=5.0)
             self._thread = None
-        
+
         logger.info(f"{self.name} stopped")
-    
+
     def schedule_once(
         self,
         task_id: str,
@@ -124,7 +123,7 @@ class TaskScheduler:
             schedule_type=ScheduleType.ONCE,
             next_run=run_at,
         )
-    
+
     def schedule_interval(
         self,
         task_id: str,
@@ -149,7 +148,7 @@ class TaskScheduler:
             True if scheduled successfully, False otherwise
         """
         next_run = datetime.now() if start_immediately else datetime.now() + timedelta(seconds=interval_seconds)
-        
+
         return self._schedule_task(
             task_id=task_id,
             func=func,
@@ -159,7 +158,7 @@ class TaskScheduler:
             next_run=next_run,
             interval_seconds=interval_seconds,
         )
-    
+
     def _schedule_task(
         self,
         task_id: str,
@@ -185,14 +184,14 @@ class TaskScheduler:
                 next_run=next_run,
                 interval_seconds=interval_seconds,
             )
-            
+
             self._tasks[task_id] = task
             heapq.heappush(self._heap, task)
-            
+
             self._wake_event.set()  # Wake up scheduler to re-evaluate
             logger.info(f"Scheduled task '{task_id}' for {next_run}")
             return True
-    
+
     def cancel(self, task_id: str) -> bool:
         """
         Cancel a scheduled task.
@@ -206,19 +205,19 @@ class TaskScheduler:
         with self._lock:
             if task_id not in self._tasks:
                 return False
-            
+
             self._tasks[task_id].enabled = False
             # Remove from heap (will be skipped in scheduler loop)
             logger.info(f"Cancelled scheduled task '{task_id}'")
             return True
-    
+
     def _scheduler_loop(self):
         """Main scheduler loop."""
         while not self._shutdown:
             try:
                 now = datetime.now()
                 tasks_to_run = []
-                
+
                 with self._lock:
                     # Collect all tasks that should run now
                     while self._heap and self._heap[0].next_run <= now:
@@ -229,11 +228,11 @@ class TaskScheduler:
                             # Re-schedule disabled interval tasks
                             task.next_run = now + timedelta(seconds=task.interval_seconds or 0)
                             heapq.heappush(self._heap, task)
-                
+
                 # Execute collected tasks outside lock
                 for task in tasks_to_run:
                     self._execute_task(task)
-                
+
                 # Calculate sleep time until next task
                 with self._lock:
                     if self._heap:
@@ -241,46 +240,46 @@ class TaskScheduler:
                         sleep_seconds = max(0, (next_run - datetime.now()).total_seconds())
                     else:
                         sleep_seconds = 1.0  # Default check interval
-                
+
                 # Wait for wake event or timeout
                 self._wake_event.wait(timeout=min(sleep_seconds, 1.0))
                 self._wake_event.clear()
-                
+
             except Exception as e:
                 logger.error(f"{self.name} error: {e}", exc_info=True)
                 time.sleep(1.0)
-    
+
     def _execute_task(self, task: ScheduledTask):
         """Execute a scheduled task."""
         try:
             logger.debug(f"Executing scheduled task '{task.id}'")
             task.func(*task.args, **task.kwargs)
-            
+
             with self._lock:
                 task.run_count += 1
                 task.last_run = datetime.now()
-                
+
                 # Re-schedule if interval-based
                 if task.schedule_type == ScheduleType.INTERVAL and task.interval_seconds:
                     task.next_run = datetime.now() + timedelta(seconds=task.interval_seconds)
                     heapq.heappush(self._heap, task)
-                    
+
         except Exception as e:
             logger.error(f"Scheduled task '{task.id}' failed: {e}", exc_info=True)
             with self._lock:
                 task.last_error = e
-                
+
                 # Still re-schedule interval tasks even on error
                 if task.schedule_type == ScheduleType.INTERVAL and task.interval_seconds:
                     task.next_run = datetime.now() + timedelta(seconds=task.interval_seconds)
                     heapq.heappush(self._heap, task)
-    
+
     def get_task_info(self, task_id: str) -> dict[str, Any] | None:
         """Get information about a scheduled task."""
         with self._lock:
             if task_id not in self._tasks:
                 return None
-            
+
             task = self._tasks[task_id]
             return {
                 "id": task.id,
@@ -291,7 +290,7 @@ class TaskScheduler:
                 "enabled": task.enabled,
                 "last_error": str(task.last_error) if task.last_error else None,
             }
-    
+
     def get_all_tasks(self) -> list[dict[str, Any]]:
         """Get information about all scheduled tasks."""
         with self._lock:
@@ -306,7 +305,7 @@ class TaskScheduler:
                 }
                 for task in self._tasks.values()
             ]
-    
+
     @property
     def pending_count(self) -> int:
         """Get count of pending scheduled tasks."""

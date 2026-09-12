@@ -27,7 +27,7 @@ from typing import (
 from core.base import LoggableMixin
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    pass
 
 T = TypeVar("T")
 

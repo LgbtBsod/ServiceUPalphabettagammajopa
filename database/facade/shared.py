@@ -6,13 +6,20 @@ database/facade/*_mixin.py — извлечены сюда, а не продуб
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from database.db_core import DuplicateDatabaseConnectionError  # noqa: F401 — реэкспорт
-from database.sqlalchemy_models import Client, CompletedRepair, DictionaryItem, Employee
+from database.sqlalchemy_models import (
+    Client,
+    CompletedRepair,
+    DictionaryItem,
+    Employee,
+    FinanceRecord,
+    RepairHistoryMain,
+    WorkTemplate,
+)
 from database.sqlalchemy_models import Device as DeviceModel
-from database.sqlalchemy_models import FinanceRecord, RepairHistoryMain, WorkTemplate
 from utils.formatters import parse_price_to_float
 
 logger = logging.getLogger(__name__)
@@ -105,7 +112,7 @@ def as_utc(dt: datetime) -> datetime:
     читает их обратно как naive datetime, хотя писали всегда
     datetime.now(timezone.utc). Без этой нормализации сравнение
     "now - row.last_heartbeat_at" падает TypeError'ом (naive - aware)."""
-    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
 def fmt_money(value: float | None) -> str:

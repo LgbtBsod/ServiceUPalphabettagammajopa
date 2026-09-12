@@ -7,16 +7,22 @@ AUDIT_REPORT_v25.md, Task T (перенесено из main_window.py без и�
 from __future__ import annotations
 
 import contextlib
-
-import customtkinter as ctk
 from tkinter import ttk
 
+import customtkinter as ctk
+
 from config import APP_VERSION
-from gui.widgets import ModernButton, ModernCard, ModernCombobox, ModernLabel, ModernSwitch
+from domain.constants import PRIORITIES, STATUSES
+from gui.widgets import (
+    ModernButton,
+    ModernCard,
+    ModernCombobox,
+    ModernLabel,
+    ModernSwitch,
+)
 from gui.widgets.dashboard import PremiumDashboard
 from gui.widgets.modern import ModernEntry
 from gui.widgets.skeleton import SKELETON_TAG, BusyIndicator
-from domain.constants import PRIORITIES, STATUSES
 
 
 class WidgetsMixin:

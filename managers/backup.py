@@ -18,7 +18,14 @@ class BackupManager:
 
     def __init__(self, settings):
         self.settings = settings
-        self.backup_path = settings.get("backup_path", BACKUP_DIR)
+        # DEFAULT_SETTINGS["backup_path"] хранит "" (utils/constants.py), а не
+        # отсутствие ключа — settings.get("backup_path", BACKUP_DIR) поэтому
+        # всегда возвращал "" вместо фолбэка на BACKUP_DIR. os.path.join("", x)
+        # == x, так что бэкап писался бare-именем в текущую рабочую директорию
+        # процесса (непредсказуемо для GUI/exe), а os.makedirs("")/os.listdir("")
+        # падали (проглатывались) — pruning по backup_count не работал вообще.
+        # gui/dialogs/settings.py уже использует идиому `or BACKUP_DIR`.
+        self.backup_path = settings.get("backup_path") or BACKUP_DIR
         self.create_backup_dir()
 
     def create_backup_dir(self):

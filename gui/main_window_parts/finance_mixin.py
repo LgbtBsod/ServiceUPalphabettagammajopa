@@ -16,7 +16,12 @@ import customtkinter as ctk
 
 from gui.widgets import ModernCard
 from gui.widgets.skeleton import LoadingOverlay
-from utils.formatters import format_date, format_order_number_for_db, format_order_number_for_display, format_price
+from utils.formatters import (
+    format_date,
+    format_order_number_for_db,
+    format_order_number_for_display,
+    format_price,
+)
 from utils.messages import Msg
 
 logger = logging.getLogger(__name__)

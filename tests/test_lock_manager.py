@@ -6,14 +6,14 @@
 знать, что core ненастоящий, он общается с ним только через
 get_module_api()/call_module_method()."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import gui  # noqa: F401  — см. tests/test_analytics.py: без этого managers/__init__.py's
+
 # eager import chain (.reports -> ... -> gui.dialogs.client_history ->
 # "from managers import ReportGenerator") падает, застав managers/__init__.py
 # ещё не полностью выполненным.
-
-from managers.locking import LockManager, LockResult
+from managers.locking import LockManager
 
 
 class _FakeEmployee:
@@ -142,7 +142,7 @@ class TestTryAcquire:
         )
         result = LockManager(core).try_acquire("device", 1)
         assert isinstance(result.started_at, datetime)
-        assert result.started_at == datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
+        assert result.started_at == datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
 
     def test_fails_closed_on_db_error(self):
         """Регрессия: раньше при исключении try_acquire() отдавал ok=True

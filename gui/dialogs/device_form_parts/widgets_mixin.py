@@ -50,20 +50,20 @@ class DeviceWidgetsMixin:
 
         try:
             text = self.phone_entry.get()
-            
+
             # Проверяем тип события - форматируем ТОЛЬКО при FocusOut
             event_type = getattr(event, 'type', None) if event else None
             if event_type != 'FocusOut':
                 return  # Не делаем ничего во время ввода!
-                
+
             # Очищаем от всех нецифровых символов
             digits = re.sub(r"\D", "", text)
-            
+
             # Если нет цифр - очищаем поле
             if not digits:
                 self.phone_entry.delete(0, "end")
                 return
-            
+
             # Нормализация: приводим к правильному формату
             if digits.startswith("8") and len(digits) == 11:
                 digits = "7" + digits[1:]
@@ -73,7 +73,7 @@ class DeviceWidgetsMixin:
                 digits = digits[:11]
             elif not digits.startswith("7"):
                 digits = "7" + digits
-            
+
             # Формируем маску +7 (XXX) XXX-XX-XX
             if len(digits) == 1:
                 formatted = "+7"
@@ -85,10 +85,10 @@ class DeviceWidgetsMixin:
                 formatted = f"+7 ({digits[1:4]}) {digits[4:7]}-{digits[7:]}"
             else:
                 formatted = f"+7 ({digits[1:4]}) {digits[4:7]}-{digits[7:9]}-{digits[9:11]}"
-            
+
             self.phone_entry.delete(0, "end")
             self.phone_entry.insert(0, formatted)
-                
+
         except Exception:
             pass
 
@@ -108,11 +108,11 @@ class DeviceWidgetsMixin:
         allowed_keys = ('BackSpace', 'Delete', 'Left', 'Right', 'Home', 'End', 'Tab')
         if event.keysym in allowed_keys:
             return None
-            
+
         # Разрешаем ввод цифр
         if event.char and event.char.isdigit():
             return None
-            
+
         # Блокируем все остальное
         return 'break'
 

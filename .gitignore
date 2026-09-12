@@ -1,36 +1,49 @@
-```
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*.egg-info/
 .Python
+
+# Виртуальные окружения
 venv/
 .venv/
-.env
-.env.local
-*.env.*
+env/
+
+# Тесты / покрытие
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .coverage
 coverage/
 htmlcov/
 
-# Database
-*.db
-*.db-journal
-
-# Logs
+# Логи и рантайм-данные (лежат рядом с приложением, не в репозитории)
 *.log
-
-# Temporary files
+data/logs/
+logs/
+backups/
 *.tmp
 *.swp
 *.swo
 
-# OS
+# Пользовательские данные / состояние (машинно-зависимое, часто с PII)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.license
+.env
+.env.*
+service_center.config
+
+# Сборка
+build/
+dist/
+*.spec
+*.manifest
+
+# ОС / IDE
 .DS_Store
 Thumbs.db
-
-# IDE
 .vscode/
 .idea/
-```

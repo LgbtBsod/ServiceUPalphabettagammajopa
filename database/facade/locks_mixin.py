@@ -8,7 +8,7 @@ Task T."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
@@ -37,7 +37,7 @@ class LocksMixin:
         (была свободна / уже была его / забрана как протухшая). {"ok":
         False, "holder_key"/"holder_label"/"started_at": ...} — занята
         другим, ttl ещё не истёк."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with self._session() as s:
             row = s.execute(
                 select(RecordLock).where(
@@ -136,7 +136,7 @@ class LocksMixin:
             ).scalar_one_or_none()
             if row is None:
                 return False
-            row.last_heartbeat_at = datetime.now(timezone.utc)
+            row.last_heartbeat_at = datetime.now(UTC)
             s.commit()
             return True
 

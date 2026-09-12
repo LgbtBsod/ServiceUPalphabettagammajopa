@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 from core.base import LoggableMixin
 
 if TYPE_CHECKING:
-    from datetime import timedelta
+    pass
 
 
 @dataclass
@@ -208,7 +208,7 @@ class ModuleCache(LoggableMixin):
                     cache_key = key
                 else:
                     # Генерируем ключ из имени функции и аргументов
-                    cache_key = f"{func.__module__}:{func.__name__}:{str(args)}:{str(kwargs)}"
+                    cache_key = f"{func.__module__}:{func.__name__}:{args!s}:{kwargs!s}"
 
                 # Пытаемся получить из кэша
                 cached_value = self.get(cache_key)
@@ -394,12 +394,12 @@ class ModuleRegistrySingleton(LoggableMixin):
             )
 
         self.logger.debug(f"Calling {module_name}.{method_name}()")
-        
+
         # Проверяем что это не bound method с конфликтом имен
         import inspect
         sig = inspect.signature(method)
         params = list(sig.parameters.keys())
-        
+
         # Если первый параметр имеет то же имя что и module_name/method_name - это проблема
         # Но мы уже получили метод через getattr, так что это bound method или static
         return method(*args, **kwargs)
@@ -498,10 +498,10 @@ def reset_module_system() -> None:
 
 
 __all__ = [
+    "CacheEntry",
     "ModuleCache",
     "ModuleRegistrySingleton",
     "ModuleSingleton",
-    "CacheEntry",
     "get_module_cache",
     "get_module_singleton_registry",
     "reset_module_system",

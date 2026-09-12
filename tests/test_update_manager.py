@@ -7,9 +7,7 @@ update detection, and download preparation.
 from __future__ import annotations
 
 import json
-import os
 import tempfile
-import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -61,7 +59,7 @@ class TestGetCurrentVersion:
         """Test reading version from existing file"""
         version_file = tmp_path / "version.txt"
         version_file.write_text("23.0", encoding="utf-8")
-        
+
         with patch.object(Path, "__new__", return_value=version_file):
             # This is a simplified test - in reality we'd need to mock differently
             pass
@@ -91,7 +89,7 @@ class TestCheckForUpdates:
 
         with patch("utils.update_manager.get_current_version", return_value="23.0"):
             result = check_for_updates()
-            
+
             assert result is not None
             assert result["version"] == "24.0"
             assert "url" in result
@@ -162,14 +160,14 @@ class TestDownloadAndPrepareUpdate:
                 with patch("os.listdir", return_value=["repo-dir"]):
                     with patch("os.path.isdir", return_value=True):
                         result = download_and_prepare_update(update_data)
-                        
+
                         assert result is not None
                         assert isinstance(result, str)
 
     def test_invalid_update_data(self):
         """Test with invalid update data"""
         update_data = {}  # Missing required fields
-        
+
         result = download_and_prepare_update(update_data)
         assert result is None
 
@@ -189,7 +187,7 @@ class TestUpdateManagerClass:
             with patch("utils.update_manager.check_for_updates", return_value=None):
                 manager = UpdateManager()
                 result = manager.check_for_updates()
-                
+
                 assert isinstance(result, dict)
                 assert "has_update" in result
                 assert "current_version" in result
@@ -205,12 +203,12 @@ class TestUpdateManagerClass:
             "url": "https://example.com/update.zip",
             "notes": "Bug fixes"
         }
-        
+
         with patch.object(UpdateManager, "_read_local_version", return_value="23.0"):
             with patch("utils.update_manager.check_for_updates", return_value=update_info):
                 manager = UpdateManager()
                 result = manager.check_for_updates()
-                
+
                 assert result["has_update"] is True
                 assert result["latest_version"] == "24.0"
                 assert result["release_notes"] == "Bug fixes"
@@ -224,12 +222,12 @@ class TestStartUpdateProcess:
     def test_starts_update_process(self, mock_popen):
         """Test that update process is started correctly"""
         source_path = "/tmp/update_files"
-        
+
         start_update_process(source_path)
-        
+
         mock_popen.assert_called_once()
         call_args = mock_popen.call_args[0][0]
-        
+
         # call_args[0] is the command list, check if it contains apply_update.py and source_path
         assert any("apply_update.py" in arg for arg in call_args), f"apply_update.py not found in {call_args}"
         assert source_path in call_args, f"Source path {source_path} not found in {call_args}"
@@ -251,7 +249,7 @@ class TestCheckUpdatesAtStartup:
         mock_manager_class.return_value = mock_manager
 
         result = check_updates_at_startup(show_dialog=False)
-        
+
         assert result["has_update"] is True
         assert result["latest_version"] == "24.0"
 
@@ -268,7 +266,7 @@ class TestCheckUpdatesAtStartup:
         mock_manager_class.return_value = mock_manager
 
         result = check_updates_at_startup(show_dialog=False)
-        
+
         assert result["has_update"] is False
 
 

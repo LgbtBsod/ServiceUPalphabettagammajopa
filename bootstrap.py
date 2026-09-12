@@ -86,6 +86,18 @@ def initialize_kernel():
     core = get_core()
     core.initialize()
 
+    # ServiceUpCore.initialize() запускает WorkerPool (не-daemon executor-потоки
+    # concurrent.futures) — ни main.py, ни gui/main_window.py.on_closing() нигде
+    # не звали core.shutdown(), поэтому при выходе из mainloop интерпретатор
+    # вешался навсегда на join() этих потоков (worker-loop не видит флага
+    # остановки executor'а, только свой self._shutdown, который выставляет
+    # только core.shutdown()). atexit — самая надёжная точка: срабатывает и на
+    # нормальном выходе, и на необработанном исключении, её нельзя случайно
+    # пропустить ранним return из on_closing(). core.shutdown() идемпотентен.
+    import atexit
+
+    atexit.register(core.shutdown)
+
     db = Database()
     settings = SettingsManager()
     backup_mgr = BackupManager(settings)

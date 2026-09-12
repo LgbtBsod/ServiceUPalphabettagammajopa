@@ -10,7 +10,11 @@ import tempfile
 import pytest
 
 from database.db_config import DatabaseConfig
-from database.db_migration_tool import _reset_target_sequences, migrate_data, verify_migration
+from database.db_migration_tool import (
+    _reset_target_sequences,
+    migrate_data,
+    verify_migration,
+)
 from database.engines.sqlite_engine import SQLiteEngine
 from database.sqlalchemy_database import Database
 

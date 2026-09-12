@@ -21,9 +21,8 @@ import os
 import sys
 from datetime import datetime
 
-from config import BASE_DIR
+from config import BASE_DIR, get_license_key_file
 from config import LICENSE_SECRET_KEY as SECRET_KEY
-from config import get_license_key_file
 from utils.hardware import get_hwid
 
 logger = logging.getLogger(__name__)
@@ -41,6 +40,38 @@ REG_KEY_PATH = r"SOFTWARE\ServiceUP"
 LICENSE_FILE = str(get_license_key_file())
 _LEGACY_LICENSE_FILE = os.path.join(BASE_DIR, ".license")
 
+# Windows: FILE_ATTRIBUTE_HIDDEN / _NORMAL
+_FILE_ATTRIBUTE_HIDDEN = 0x2
+_FILE_ATTRIBUTE_NORMAL = 0x80
+
+
+def _set_hidden(path: str, hidden: bool) -> None:
+    """Ставит/снимает атрибут «скрытый» на Windows. No-op на других ОС и при
+    любой ошибке (атрибут — косметика, не должен ронять работу с лицензией)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        attr = _FILE_ATTRIBUTE_HIDDEN if hidden else _FILE_ATTRIBUTE_NORMAL
+        ctypes.windll.kernel32.SetFileAttributesW(str(path), attr)
+    except Exception:
+        pass
+
+
+def _open_for_write(path: str):
+    """``open(path, "w")``, но переживает уже существующий СКРЫТЫЙ файл.
+
+    На Windows ``open(hidden_file, "w")`` (режим ``CREATE_ALWAYS``) падает
+    ``PermissionError``: нельзя пересоздать файл с атрибутом HIDDEN, не передав
+    этот атрибут в ``CreateFile``. ``_write_license_file`` сам помечает
+    ``.license`` скрытым — из-за чего КАЖДЫЙ последующий запуск не мог обновить
+    ``last_seen`` и запись падала (найдено живым прогоном ``main.py``). Снимаем
+    атрибут перед открытием; ``_write_license_file`` вернёт его после записи."""
+    if os.path.exists(path):
+        _set_hidden(path, False)
+    return open(path, "w", encoding="utf-8")
+
 
 def _migrate_legacy_license_file() -> None:
     """Одноразовый перенос .license из корня проекта в новое расположение.
@@ -57,7 +88,7 @@ def _migrate_legacy_license_file() -> None:
         os.makedirs(os.path.dirname(LICENSE_FILE), exist_ok=True)
         with open(_LEGACY_LICENSE_FILE, encoding="utf-8") as src:
             content = src.read()
-        with open(LICENSE_FILE, "w", encoding="utf-8") as dst:
+        with _open_for_write(LICENSE_FILE) as dst:
             dst.write(content)
         logger.info(f"Файл лицензии перенесён: {_LEGACY_LICENSE_FILE} -> {LICENSE_FILE}")
     except Exception as e:
@@ -167,18 +198,10 @@ class LicenseManager:
             payload = json.dumps(data, sort_keys=True)
             data_with_sig = dict(data)
             data_with_sig["signature"] = _compute_checksum(payload)
-            with open(LICENSE_FILE, "w", encoding="utf-8") as f:
+            with _open_for_write(LICENSE_FILE) as f:
                 json.dump(data_with_sig, f, indent=2)
-            # Скрываем файл на Windows
-            if sys.platform == "win32":
-                try:
-                    import ctypes
-
-                    ctypes.windll.kernel32.SetFileAttributesW(
-                        LICENSE_FILE, 0x2
-                    )  # FILE_ATTRIBUTE_HIDDEN
-                except Exception:
-                    pass
+            # Скрываем файл на Windows (снова — _open_for_write снял атрибут).
+            _set_hidden(LICENSE_FILE, True)
             return True
         except Exception as e:
             logger.error(f"Ошибка записи лицензии: {e}", exc_info=True)

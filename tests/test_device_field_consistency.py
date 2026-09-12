@@ -14,7 +14,6 @@ gui/dialogs/device_form.py::_SCALAR_FIELD_NAMES и _apply_scalar_fields
 промолчит."""
 
 import gui  # noqa: F401 — обход циклического импорта managers/__init__.py
-
 from database.sqlalchemy_database import DEVICE_UPDATE_FIELDS
 from gui.dialogs.device_form import _SCALAR_FIELD_NAMES
 

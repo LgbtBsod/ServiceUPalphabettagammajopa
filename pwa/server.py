@@ -33,7 +33,6 @@ from config import PHOTOS_DIR
 from database import ClientDatabaseManager, WorkItemsManager
 from database.models import WorkItem
 from database.sqlalchemy_database import Database, OptimisticLockError
-from managers import PhotoManager
 from domain.constants import (
     CLIENT_STATUSES,
     PRIORITIES,
@@ -41,6 +40,7 @@ from domain.constants import (
     STATUSES,
     WARRANTIES,
 )
+from managers import PhotoManager
 from utils.formatters import (
     format_date,
     format_order_number_for_display,
@@ -953,12 +953,30 @@ class PWAServerManager:
             self.host = host
             self.app = create_flask_app()
             self._server_ready.clear()
+            self._werkzeug_server = None
+            self._start_error: Exception | None = None
+
+            # get_url() кладёт PWA_API_KEY в query string (единственный способ
+            # авторизовать <img>-запросы к фото) — werkzeug логирует полную
+            # request line на каждый запрос, включая "?api_key=...", в лог
+            # уровня INFO (консоль/файл-хендлер приложения). ERROR не глушит
+            # реальные 5xx (те логирует сам app.py/logger.error), только убирает
+            # построчный access-лог с секретом.
+            logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
             def _serve():
-                # werkzeug без reloader/log, чтобы не плодить потоки
                 from werkzeug.serving import make_server
 
-                server = make_server(host, port, self.app, threaded=True)
+                try:
+                    server = make_server(host, port, self.app, threaded=True)
+                except OSError as e:
+                    # Порт занят/нет прав — раньше исключение тонуло в
+                    # ThreadManager (логировалось и терялось), start() не
+                    # видел его, self._running=True выставлялся безусловно, и
+                    # is_running/get_url/QR-диалог врали, что сервер поднят.
+                    self._start_error = e
+                    self._server_ready.set()
+                    return
                 self._werkzeug_server = server
                 self._server_ready.set()
                 server.serve_forever()
@@ -973,7 +991,16 @@ class PWAServerManager:
             core.start_thread(self._THREAD_NAME)
             # Ждём, пока werkzeug реально поднимется, чтобы stop() сразу после
             # start() не оказался no-op из-за гонки за self._werkzeug_server.
-            self._server_ready.wait(timeout=5.0)
+            ready = self._server_ready.wait(timeout=5.0)
+            if not ready or self._werkzeug_server is None:
+                logger.error(
+                    "PWA-сервер не поднялся на %s:%s: %s",
+                    host, port, self._start_error or "timeout",
+                )
+                with contextlib.suppress(Exception):
+                    core.stop_thread(self._THREAD_NAME, timeout=0.1)
+                self._running = False
+                return False
             self._running = True
             return True
         except Exception as e:

@@ -76,6 +76,7 @@ class DatabaseCore:
             conn_str = str(self._engine.get_engine().url)
         except Exception:
             conn_str = None
+        self._conn_str: str | None = conn_str
         if conn_str is not None:
             if conn_str in _claimed_connection_strings:
                 raise DuplicateDatabaseConnectionError(
@@ -107,3 +108,19 @@ class DatabaseCore:
         size_before = self.query_cache.get_stats()["size"]
         self.query_cache.clear()
         return size_before
+
+    def close(self) -> None:
+        """Освобождает claim на conn_str и движок БД.
+
+        Раньше отсутствовал: guard в __init__ добавлял conn_str в
+        _claimed_connection_strings навсегда — второй Database() на тот же
+        файл (повторный bootstrap.initialize_kernel(), например в тестах
+        через core.reset_core()) падал DuplicateDatabaseConnectionError, хотя
+        первый экземпляр давно не используется. Идемпотентно: повторный
+        вызов — no-op (conn_str уже отсутствует в множестве)."""
+        if self._conn_str is not None:
+            _claimed_connection_strings.discard(self._conn_str)
+        try:
+            self._engine.dispose()
+        except Exception:
+            logger.warning("Ошибка при закрытии движка БД", exc_info=True)

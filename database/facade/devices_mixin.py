@@ -21,7 +21,11 @@ from database.sqlalchemy_models import Device as DeviceModel
 from domain.constants import CLOSED_STATUSES as _CLOSED_STATUSES
 from domain.constants import STATUS_ISSUED as _ISSUED_STATUS
 from domain.constants import STATUS_READY as _READY_STATUS
-from utils.formatters import normalize_phone_digits, parse_price_to_float, row_matches_search
+from utils.formatters import (
+    normalize_phone_digits,
+    parse_price_to_float,
+    row_matches_search,
+)
 
 
 class DevicesMixin:

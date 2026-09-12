@@ -20,19 +20,18 @@ class ActivationDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.parent = parent
         self.lic = license_manager
-        self.colors = colors or {
-            "bg_primary": "#f5f5f7",
-            "bg_secondary": "#ffffff",
-            "bg_tertiary": "#ececef",
-            "bg_hover": "#e5e5ea",
-            "accent": "#007aff",
-            "accent_hover": "#0051d5",
-            "text_primary": "#1d1d1f",
-            "text_secondary": "#6e6e73",
-            "border": "#d1d1d6",
-            "success": "#34c759",
-            "error": "#ff3b30",
-        }
+        # get_colors() — единый источник палитры (utils/colors.py). Раньше тут
+        # был свой урезанный словарь без ключей bg_card / border_light / text /
+        # bg_input и др., которые требуют ModernCard / ModernButton / ModernEntry
+        # хардкодом (colors["bg_card"]) -> KeyError валил окно активации, которое
+        # main.py показывает как раз когда с лицензией что-то не так (trial
+        # истёк / файл повреждён) — единственный экран, который в этот момент
+        # виден пользователю. Найдено живым прогоном main.py.
+        if colors is None:
+            from utils.colors import get_colors
+
+            colors = get_colors("light")
+        self.colors = colors
         self.activated = False
 
         self.title("🔐 Активация ServiceUP")

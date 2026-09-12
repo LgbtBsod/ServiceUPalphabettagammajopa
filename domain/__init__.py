@@ -31,9 +31,9 @@ __all__ = [
     "DEFAULT_STATUS",
     "DICTIONARY_TYPES",
     "PRIORITIES",
+    "STATUSES",
     "STATUS_ISSUED",
     "STATUS_READY",
     "STATUS_REFUSED",
-    "STATUSES",
     "WARRANTIES",
 ]

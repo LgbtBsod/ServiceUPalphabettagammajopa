@@ -18,7 +18,7 @@ from typing import Any
 import customtkinter as ctk
 
 from database import ClientDatabaseManager, Database, WorkItemsManager
-from database.sqlalchemy_database import OptimisticLockError  # noqa: F401 — реэкспорт
+from database.sqlalchemy_database import OptimisticLockError
 from gui.dialogs.device_form_parts.acts_mixin import DeviceActsMixin
 from gui.dialogs.device_form_parts.locking_mixin import (
     SCALAR_FIELD_NAMES as _SCALAR_FIELD_NAMES,
@@ -33,7 +33,11 @@ from utils.window_effects import apply_dialog_translucency
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["DeviceFormDialog", "OptimisticLockError"]
+# _SCALAR_FIELD_NAMES в __all__ — иначе ruff (F401 unused-import) снова сотрёт
+# реэкспорт при следующем `ruff --fix`: он не виден нигде в этом файле, только
+# читается из tests/test_device_field_consistency.py (уже случалось — см. git
+# blame). Присутствие в __all__ признаётся pyflakes/ruff как использование.
+__all__ = ["_SCALAR_FIELD_NAMES", "DeviceFormDialog", "OptimisticLockError"]
 
 
 class DeviceFormDialog(

@@ -5,12 +5,12 @@ Implements the Thread Manager pattern for safe concurrent execution.
 """
 
 from .manager import ThreadManager
-from .worker import WorkerPool, Task
 from .scheduler import TaskScheduler
+from .worker import Task, WorkerPool
 
 __all__ = [
-    "ThreadManager",
-    "WorkerPool",
     "Task",
     "TaskScheduler",
+    "ThreadManager",
+    "WorkerPool",
 ]

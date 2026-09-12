@@ -8,7 +8,12 @@ from typing import Any
 
 from sqlalchemy import select
 
-from database.facade.shared import FILTER_OPERATORS, QUERYABLE_MODELS, QueryError, resolve_queryable_model
+from database.facade.shared import (
+    FILTER_OPERATORS,
+    QUERYABLE_MODELS,
+    QueryError,
+    resolve_queryable_model,
+)
 
 
 class QueryMixin:

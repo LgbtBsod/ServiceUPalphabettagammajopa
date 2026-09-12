@@ -103,5 +103,13 @@ class Database(
         return self.core.refresh_query_cache()
 
     def close(self) -> None:
-        """Совместимость с legacy API — сессии открываются и закрываются
-        по одной на вызов, отдельного постоянного соединения нет."""
+        """Освобождает движок БД и claim на conn_str (см. DatabaseCore.close).
+
+        Раньше был пустым no-op — на Windows это держало файловый хендл
+        SQLAlchemy-движка открытым: временные БД тестов (isolated_db) не
+        удалялись (PermissionError), а core.reset_core() не мог
+        переинициализировать ядро на том же файле (DuplicateDatabaseConnectionError,
+        см. AUDIT: db_core.py connection guard). Сессии по-прежнему открываются
+        и закрываются по одной на вызов — close() освобождает пул соединений
+        движка целиком."""
+        self.core.close()

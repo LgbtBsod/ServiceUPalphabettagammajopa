@@ -4,12 +4,12 @@ Centralized manager for all application threads.
 Ensures safe creation, monitoring, and shutdown of threads.
 """
 
-import threading
 import logging
-from typing import Callable, Any
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Any, Callable
 
 
 class ThreadStatus(Enum):
@@ -46,11 +46,11 @@ class ThreadManager:
     - Error handling and recovery
     - Thread status monitoring
     """
-    
-    _instance: "ThreadManager | None" = None
+
+    _instance: ThreadManager | None = None
     _lock = threading.Lock()
-    
-    def __new__(cls) -> "ThreadManager":
+
+    def __new__(cls) -> ThreadManager:
         """Singleton pattern to ensure single thread manager instance."""
         if cls._instance is None:
             with cls._lock:
@@ -58,23 +58,23 @@ class ThreadManager:
                     cls._instance = super().__new__(cls)
                     cls._instance._initialized = False
         return cls._instance
-    
+
     def __init__(self):
         if self._initialized:
             return
-        
+
         self._threads: dict[str, ThreadInfo] = {}
         self._lock = threading.RLock()
         self._shutdown_event = threading.Event()
         self._initialized = True
-        
+
         logger.info("ThreadManager initialized")
-    
+
     @classmethod
-    def get_instance(cls) -> "ThreadManager":
+    def get_instance(cls) -> ThreadManager:
         """Get the singleton instance."""
         return cls()
-    
+
     def create_thread(
         self,
         name: str,
@@ -104,7 +104,7 @@ class ThreadManager:
         with self._lock:
             if name in self._threads:
                 raise ValueError(f"Thread '{name}' already exists")
-            
+
             def wrapped_target():
                 try:
                     logger.debug(f"Thread '{name}' started")
@@ -120,25 +120,25 @@ class ThreadManager:
                         if name in self._threads:
                             self._threads[name].status = ThreadStatus.STOPPED
                             self._threads[name].stopped_at = datetime.now()
-            
+
             thread = threading.Thread(
                 target=wrapped_target,
                 name=name,
                 daemon=daemon,
             )
-            
+
             thread_info = ThreadInfo(
                 thread_id=name,
                 thread=thread,
                 status=ThreadStatus.CREATED,
                 metadata=metadata or {},
             )
-            
+
             self._threads[name] = thread_info
             logger.info(f"Thread '{name}' created")
-            
+
             return name
-    
+
     def start_thread(self, thread_id: str) -> bool:
         """
         Start a registered thread.
@@ -153,12 +153,12 @@ class ThreadManager:
             if thread_id not in self._threads:
                 logger.error(f"Thread '{thread_id}' not found")
                 return False
-            
+
             thread_info = self._threads[thread_id]
             if thread_info.status != ThreadStatus.CREATED:
                 logger.warning(f"Thread '{thread_id}' is not in CREATED state")
                 return False
-            
+
             try:
                 thread_info.thread.start()
                 thread_info.status = ThreadStatus.RUNNING
@@ -170,7 +170,7 @@ class ThreadManager:
                 thread_info.status = ThreadStatus.ERROR
                 thread_info.error = e
                 return False
-    
+
     def stop_thread(self, thread_id: str, timeout: float = 5.0) -> bool:
         """
         Stop a running thread gracefully.
@@ -205,22 +205,22 @@ class ThreadManager:
                 # это ожидаемый путь очистки записи ThreadManager, а не сбой.
                 logger.debug(f"Thread '{thread_id}' is not running")
                 return False
-            
+
             thread_info.status = ThreadStatus.STOPPING
             logger.info(f"Stopping thread '{thread_id}'")
-        
+
         # Wait outside lock to avoid deadlock
         thread_info.thread.join(timeout=timeout)
-        
+
         with self._lock:
             if thread_info.thread.is_alive():
                 logger.warning(f"Thread '{thread_id}' did not stop within timeout")
                 return False
-            
+
             thread_info.stopped_at = datetime.now()
             logger.info(f"Thread '{thread_id}' stopped")
             return True
-    
+
     def stop_all(self, timeout: float = 10.0) -> dict[str, bool]:
         """
         Stop all managed threads gracefully.
@@ -233,45 +233,45 @@ class ThreadManager:
         """
         logger.info("Stopping all threads...")
         self._shutdown_event.set()
-        
+
         results = {}
         with self._lock:
             thread_ids = list(self._threads.keys())
-        
+
         for thread_id in thread_ids:
             results[thread_id] = self.stop_thread(thread_id, timeout=timeout / max(len(thread_ids), 1))
-        
+
         logger.info(f"All threads stopped. Success: {sum(results.values())}/{len(results)}")
         return results
-    
+
     def get_thread_status(self, thread_id: str) -> ThreadStatus | None:
         """Get status of a specific thread."""
         with self._lock:
             if thread_id not in self._threads:
                 return None
             return self._threads[thread_id].status
-    
+
     def get_all_statuses(self) -> dict[str, ThreadStatus]:
         """Get statuses of all managed threads."""
         with self._lock:
             return {
-                thread_id: info.status 
+                thread_id: info.status
                 for thread_id, info in self._threads.items()
             }
-    
+
     def is_running(self, thread_id: str) -> bool:
         """Check if a specific thread is running."""
         status = self.get_thread_status(thread_id)
         return status == ThreadStatus.RUNNING
-    
+
     def get_active_count(self) -> int:
         """Get count of currently running threads."""
         with self._lock:
             return sum(
-                1 for info in self._threads.values() 
+                1 for info in self._threads.values()
                 if info.status == ThreadStatus.RUNNING
             )
-    
+
     def cleanup_stopped(self) -> int:
         """Remove stopped threads from tracking. Returns count of removed threads."""
         with self._lock:
@@ -282,12 +282,12 @@ class ThreadManager:
             for tid in to_remove:
                 del self._threads[tid]
             return len(to_remove)
-    
+
     @property
     def shutdown_event(self) -> threading.Event:
         """Get the global shutdown event for threads to monitor."""
         return self._shutdown_event
-    
+
     def reset_shutdown(self):
         """Reset shutdown event for new operation cycle."""
         self._shutdown_event.clear()

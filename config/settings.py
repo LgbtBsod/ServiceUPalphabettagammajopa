@@ -6,11 +6,45 @@ Replaces manual .ini/.json parsing with standard best-practice library
 from __future__ import annotations
 
 import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _frozen() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
+def _resource_root() -> Path:
+    """Корень для ЧТЕНИЯ бандленных ресурсов (gui/assets, reports/templates).
+
+    Из исходников — корень репозитория. Во frozen (PyInstaller --onefile)
+    сборке — sys._MEIPASS, временная папка распаковки текущего запуска."""
+    if _frozen():
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    return Path(__file__).parent.parent
+
+
+def _writable_root() -> Path:
+    """Корень для ЗАПИСИ (БД, бэкапы, фото, экспорт, конфиг).
+
+    Раньше все эти пути (DatabaseSettings.path, AppSettings.data_dir/backup_dir,
+    get_config_path, BASE_DIR) резолвились через Path(__file__).parent.parent —
+    для frozen --onefile сборки (tools/build.py, build_exe.bat) это тот же
+    sys._MEIPASS, который PyInstaller УДАЛЯЕТ при выходе из процесса. Итог:
+    БД клиента, бэкапы и сгенерированные акты создавались в эфемерной папке и
+    пропадали между запусками (единственное, что уже переживало обновление —
+    get_license_key_file(), который явно вынесен в %LOCALAPPDATA%). Теперь
+    записываемые пути идут туда же, рядом с .license."""
+    if _frozen():
+        local_appdata = os.environ.get("LOCALAPPDATA")
+        base = Path(local_appdata) / "ServiceUP" if local_appdata else Path(sys.executable).parent
+        base.mkdir(parents=True, exist_ok=True)
+        return base
+    return Path(__file__).parent.parent
 
 
 class DatabaseSettings(BaseSettings):
@@ -30,9 +64,10 @@ class DatabaseSettings(BaseSettings):
     def validate_path(cls, v: str | Path) -> Path:
         """Ensure database directory exists and return absolute Path"""
         db_path = Path(v) if isinstance(v, str) else v
-        # Make path absolute relative to project root
+        # Make path absolute relative to the writable root (project root from
+        # source, %LOCALAPPDATA%\ServiceUP when frozen — see _writable_root()).
         if not db_path.is_absolute():
-            db_path = Path(__file__).parent.parent / db_path
+            db_path = _writable_root() / db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
         return db_path
 
@@ -58,9 +93,9 @@ class AppSettings(BaseSettings):
     def validate_dirs(cls, v: str | Path) -> Path:
         """Ensure directories are absolute paths"""
         dir_path = Path(v) if isinstance(v, str) else v
-        # Make path absolute relative to project root
+        # Make path absolute relative to the writable root (see _writable_root()).
         if not dir_path.is_absolute():
-            dir_path = Path(__file__).parent.parent / dir_path
+            dir_path = _writable_root() / dir_path
         dir_path.mkdir(parents=True, exist_ok=True)
         return dir_path
 
@@ -243,8 +278,12 @@ def get_export_dir() -> Path:
 
 
 def get_config_path() -> Path:
-    """Get main config file path (absolute)"""
-    return Path(__file__).parent.parent / "service_center.config"
+    """Get main config file path (absolute).
+
+    Пользовательский (перезаписываемый) файл — не бандленный ресурс, поэтому
+    идёт через _writable_root(), а не _resource_root() (см. модульный
+    docstring про frozen --onefile и sys._MEIPASS)."""
+    return _writable_root() / "service_center.config"
 
 
 def get_license_key_file() -> Path:
@@ -274,7 +313,7 @@ def get_license_key_file() -> Path:
 # Will be removed in version 25.0 - update your code to use the new functions above.
 # =============================================================================
 
-BASE_DIR: Path = Path(__file__).parent.parent  # workspace root
+BASE_DIR: Path = _resource_root()  # корень для бандленных ресурсов (см. модульный docstring)
 APP_VERSION: str = get_version()
 APP_NAME: str = get_app_name()
 DB_PATH: Path = get_db_path()

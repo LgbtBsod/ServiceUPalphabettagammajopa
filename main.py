@@ -112,7 +112,7 @@ def main():
         if update_result and update_result.get("has_update"):
             try:
                 from gui.dialogs.update_dialog import show_update_dialog
-                
+
                 # Создаем временное окно для диалога обновлений
                 temp_root = ctk.CTk()
                 temp_root.withdraw()

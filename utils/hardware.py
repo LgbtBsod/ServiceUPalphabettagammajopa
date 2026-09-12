@@ -15,52 +15,68 @@ _cached_hwid = None
 _cached_raw = None
 
 
-def _get_wmi_value(wmi_query: str) -> str:
-    """Выполняет WMI-запрос через PowerShell (wmic устарел в новых Windows).
+def _run_and_decode(cmd: list[str]) -> str:
+    """Запускает команду, возвращает декодированный stdout.
 
-    Использует bytes + ручную декодировку, т.к. PowerShell на русской Windows
-    может вернуть вывод в cp866, что ломает text=True.
+    bytes + ручная декодировка: PowerShell на русской Windows может вернуть
+    вывод в cp866, что ломает text=True.
     """
     import subprocess as sp
 
-    def _run_and_decode(cmd):
-        """Запускает команду, возвращает декодированный stdout."""
-        try:
-            r = sp.run(
-                cmd,
-                capture_output=True,
-                timeout=10,
-                creationflags=0x08000000 if sys.platform == "win32" else 0,
-            )
-            # Пробуем utf-8, потом cp866 (русская Windows), потом latin-1
-            for enc in ("utf-8", "cp866", "cp1251", "latin-1"):
-                try:
-                    return r.stdout.decode(enc).strip()
-                except (UnicodeDecodeError, AttributeError):
-                    continue
-            return r.stdout.decode("latin-1", errors="replace").strip()
-        except Exception:
-            return ""
-
-    # PowerShell
     try:
-        ps_cmd = f"(Get-WmiObject {wmi_query})"
-        out = _run_and_decode(["powershell", "-NoProfile", "-Command", ps_cmd])
-        if out and out.lower() not in ("", "default", "none"):
-            lines = [l.strip() for l in out.split("\n") if l.strip()]
-            return lines[0] if lines else out
+        r = sp.run(
+            cmd,
+            capture_output=True,
+            timeout=10,
+            creationflags=0x08000000 if sys.platform == "win32" else 0,
+        )
+        for enc in ("utf-8", "cp866", "cp1251", "latin-1"):
+            try:
+                return r.stdout.decode(enc).strip()
+            except (UnicodeDecodeError, AttributeError):
+                continue
+        return r.stdout.decode("latin-1", errors="replace").strip()
     except Exception:
-        pass
+        return ""
 
-    # Fallback — wmic (старые системы)
-    out = _run_and_decode(["wmic", *wmi_query.split()])
-    if out:
-        lines = [l.strip() for l in out.split("\n") if l.strip()]
-        if len(lines) >= 2:
-            return lines[-1]
-        elif lines:
-            return lines[0]
-    return ""
+
+def _get_wmi_value(cim_class: str, cim_property: str) -> str:
+    """Читает одно свойство WMI/CIM-класса.
+
+    Раньше вызывалось как ``_get_wmi_value("baseboard get serialnumber")`` и
+    подставлялось в ``(Get-WmiObject baseboard get serialnumber)`` — это
+    синтаксис *wmic*, а не PowerShell: команда падала, функция возвращала "" —
+    и HWID собирался только из ``uuid.getnode()``, который на машине без
+    доступного MAC отдаёт СЛУЧАЙНОЕ число при каждом запуске. Итог: HWID
+    (и привязанная к нему лицензия) менялся между запусками. Теперь —
+    ``Get-CimInstance`` (``Get-WmiObject`` тоже помечен устаревшим), затем
+    ``wmic`` как fallback для старых систем.
+    """
+    if sys.platform != "win32":
+        return ""
+
+    out = _run_and_decode([
+        "powershell", "-NoProfile", "-NonInteractive", "-Command",
+        f"(Get-CimInstance -ClassName {cim_class} -ErrorAction SilentlyContinue)."
+        f"{cim_property}",
+    ])
+    for line in (l.strip() for l in out.splitlines() if l.strip()):
+        if line.lower() not in ("default", "none", "to be filled by o.e.m.", "o.e.m."):
+            return line
+
+    # Fallback — wmic (Windows 10 и старее; в 11 24H2+ удалён)
+    wmic_map = {"serialnumber": "get serialnumber", "processorid": "get processorid"}
+    out = _run_and_decode(["wmic", cim_class_to_wmic(cim_class), wmic_map.get(cim_property.lower(), f"get {cim_property.lower()}")])
+    lines = [l.strip() for l in out.splitlines() if l.strip()]
+    if len(lines) >= 2:
+        return lines[-1]
+    return lines[0] if lines else ""
+
+
+def cim_class_to_wmic(cim_class: str) -> str:
+    return {"win32_baseboard": "baseboard", "win32_processor": "cpu"}.get(
+        cim_class.lower(), cim_class
+    )
 
 
 def _get_raw_hardware_data() -> str:
@@ -71,34 +87,50 @@ def _get_raw_hardware_data() -> str:
 
     parts = []
 
-    if sys.platform == "win32":
-        # Серийный номер материнской платы
-        motherboard = _get_wmi_value("baseboard get serialnumber")
-        if motherboard and motherboard.lower() not in ("default", "none", ""):
-            parts.append(f"MB:{motherboard}")
-
-        # ID процессора
-        cpu_id = _get_wmi_value("cpu get processorid")
-        if cpu_id and cpu_id.lower() not in ("default", "none", ""):
-            parts.append(f"CPU:{cpu_id}")
-
-    # Fallback — всегда добавляем uuid.getnode() (MAC-based)
-    node = uuid.getnode()
-    parts.append(f"UUID:{node}")
-
-    # MachineGuid из реестра Windows (уникален для установки ОС)
+    # MachineGuid из реестра Windows — уникален для установки ОС, стабилен,
+    # есть всегда. Ставим ПЕРВЫМ (самый надёжный идентификатор), а не в конце.
+    # Раньше путь был r"SOFTWARE\\Microsoft\\Cryptography" — raw-строка, т.е.
+    # ДВЕ обратных косых подряд: winreg такой ключ не открывал, GUID терялся.
     if sys.platform == "win32":
         try:
             import winreg
 
             with winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\Microsoft\\Cryptography"
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\Cryptography",
+                0,
+                winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
             ) as key:
                 guid, _ = winreg.QueryValueEx(key, "MachineGuid")
                 if guid:
                     parts.append(f"GUID:{guid}")
-        except Exception:
+        except OSError:
             pass
+
+        motherboard = _get_wmi_value("Win32_BaseBoard", "SerialNumber")
+        if motherboard:
+            parts.append(f"MB:{motherboard}")
+
+        cpu_id = _get_wmi_value("Win32_Processor", "ProcessorId")
+        if cpu_id:
+            parts.append(f"CPU:{cpu_id}")
+
+    # uuid.getnode() — ТОЛЬКО если ничего стабильного не нашли. На машине без
+    # читаемого MAC он возвращает случайное 48-битное число (multicast-бит
+    # выставлен) на каждый вызов — такой HWID меняется между запусками, поэтому
+    # random-fallback явно отбраковываем.
+    if not parts:
+        node = uuid.getnode()
+        is_random = bool(node >> 40 & 0x01)  # multicast bit -> не настоящий MAC
+        if not is_random:
+            parts.append(f"UUID:{node}")
+
+    if not parts:
+        # Совсем ничего стабильного — привязываемся к имени машины + пользователю.
+        import getpass
+        import platform
+
+        parts.append(f"HOST:{platform.node()}:{getpass.getuser()}")
 
     _cached_raw = "|".join(parts)
     return _cached_raw
