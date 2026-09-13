@@ -252,7 +252,11 @@ class PluginManager(LoggableMixin):
         if self._states[plugin_name] == PluginState.ACTIVE:
             return True
 
-        if self._states[plugin_name] != PluginState.UNLOADED:
+        # disable() ниже переводит плагин именно в DISABLED (не в UNLOADED)
+        # — эта проверка требовала ТОЛЬКО UNLOADED, поэтому однажды
+        # отключённый плагин нельзя было включить обратно НИКОГДА через
+        # публичный enable()/enable_plugin() (workflow-найденный баг).
+        if self._states[plugin_name] not in (PluginState.UNLOADED, PluginState.DISABLED):
             self.logger.warning(
                 f"Plugin '{plugin_name}' is in {self._states[plugin_name]} state"
             )

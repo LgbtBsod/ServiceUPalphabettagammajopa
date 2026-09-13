@@ -45,6 +45,7 @@ class ServiceApp:
         self._rail: ft.NavigationRail | None = None
         self._host: ft.Container | None = None
         self._scroll: ft.Column | None = None
+        self._divider: ft.VerticalDivider | None = None
 
     # ── lifecycle ─────────────────────────────────────────────
 
@@ -68,32 +69,36 @@ class ServiceApp:
             extended=True,
             group_alignment=-0.95,
             bgcolor="transparent",
-            leading=ft.Container(
-                ft.Row(
-                    [ft.Icon(ft.Icons.BUILD_CIRCLE_ROUNDED, color=self.colors["accent"], size=22),
-                     ft.Text("ServiceUP", weight=ft.FontWeight.W_700, size=15,
-                             color=self.colors["text_primary"])],
-                    spacing=10,
-                ),
-                padding=ft.Padding(16, 18, 8, 18),
-            ),
+            leading=self._build_rail_leading(),
             destinations=[
                 ft.NavigationRailDestination(icon=ft.Icon(off), selected_icon=ft.Icon(on), label=label)
                 for _key, label, off, on in _NAV
             ],
             on_change=self._on_nav_change,
         )
+        self._divider = ft.VerticalDivider(width=1, color=self.colors["border"])
 
         self._scroll = ft.Column([], expand=True, scroll=ft.ScrollMode.AUTO, spacing=0)
         self._host = ft.Container(self._scroll, expand=True,
                                    padding=ft.Padding(28, 24, 28, 24), bgcolor=self.colors["bg_primary"])
         page.add(
             ft.Row(
-                [self._rail, ft.VerticalDivider(width=1, color=self.colors["border"]), self._host],
+                [self._rail, self._divider, self._host],
                 expand=True, spacing=0,
             )
         )
         self.navigate("orders")
+
+    def _build_rail_leading(self) -> ft.Container:
+        return ft.Container(
+            ft.Row(
+                [ft.Icon(ft.Icons.BUILD_CIRCLE_ROUNDED, color=self.colors["accent"], size=22),
+                 ft.Text("ServiceUP", weight=ft.FontWeight.W_700, size=15,
+                         color=self.colors["text_primary"])],
+                spacing=10,
+            ),
+            padding=ft.Padding(16, 18, 8, 18),
+        )
 
     def _apply_theme(self) -> None:
         page = self.page
@@ -109,6 +114,16 @@ class ServiceApp:
         self._apply_theme()
         if self._host is not None:
             self._host.bgcolor = self.colors["bg_primary"]
+        # rerender() ниже перерисовывает только self._scroll (текущее вью) —
+        # self._rail строится ОДИН раз в main() с цветами, зафиксированными
+        # на момент запуска, и никогда не трогается заново; тот же случай с
+        # self._divider. Без этого переключение темы перекрашивало фон и
+        # текущее вью, но лого/название "ServiceUP" в навигации и разделитель
+        # оставались в цветах старой темы (workflow-найденный баг).
+        if self._rail is not None:
+            self._rail.leading = self._build_rail_leading()
+        if self._divider is not None:
+            self._divider.color = self.colors["border"]
         self.rerender()
         self.page.update()
 

@@ -237,9 +237,19 @@ class EmployeeService(BaseService):
             if command.full_name is not None and command.full_name.strip() != employee.full_name:
                 employee.full_name = command.full_name.strip()
                 changed = True
-            if command.phone is not None and command.phone != employee.phone:
-                employee.phone = command.phone
-                changed = True
+            if command.phone is not None:
+                # Прямое присваивание employee.phone НЕ прогоняет
+                # EmployeeEntity.__post_init__ (тот срабатывает только при
+                # КОНСТРУИРОВАНИИ сущности, не при мутации уже созданной) —
+                # без явной нормализации здесь create_employee() нормализует
+                # телефон, а update_employee() молча сохранял бы его как
+                # есть (workflow-найденный баг).
+                from utils.formatters import normalize_phone
+
+                normalized_phone = normalize_phone(command.phone) or command.phone
+                if normalized_phone != employee.phone:
+                    employee.phone = normalized_phone
+                    changed = True
             if command.position is not None and command.position != employee.position:
                 employee.position = command.position
                 changed = True

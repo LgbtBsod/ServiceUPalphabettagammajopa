@@ -8,10 +8,10 @@ Task T."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from database.facade.shared import as_utc
@@ -84,17 +84,52 @@ class LocksMixin:
 
             stale = (now - as_utc(row.last_heartbeat_at)).total_seconds() > ttl_seconds
             if stale:
-                row.holder_key = holder_key
-                row.holder_label = holder_label
-                row.started_at = now
-                row.last_heartbeat_at = now
+                # НЕ read-then-write на уже загруженном ORM-объекте: между
+                # нашим SELECT выше и этим UPDATE другой параллельный
+                # вызывающий (второй GUI/PWA-сеанс, тоже увидевший протухшую
+                # блокировку) мог успеть точно так же прочитать row как
+                # stale — без атомарной перепроверки staleness ПРЯМО В
+                # UPDATE оба заявителя получили бы {"ok": True} на одну и ту
+                # же запись (workflow-найденный баг). WHERE здесь
+                # перепроверяет last_heartbeat_at ЗАНОВО на момент самого
+                # UPDATE (не на момент нашего более раннего SELECT) —
+                # rowcount==0 означает, что кто-то другой уже успел обновить
+                # эту блокировку первым.
+                stale_cutoff = now - timedelta(seconds=ttl_seconds)
+                result = s.execute(
+                    update(RecordLock)
+                    .where(
+                        RecordLock.object_type == object_type,
+                        RecordLock.object_id == object_id,
+                        RecordLock.last_heartbeat_at < stale_cutoff,
+                    )
+                    .values(
+                        holder_key=holder_key,
+                        holder_label=holder_label,
+                        started_at=now,
+                        last_heartbeat_at=now,
+                    )
+                    # synchronize_session="evaluate" (умолчание) пытается
+                    # ДОПОЛНИТЕЛЬНО перепроверить WHERE в чистом Python
+                    # против уже загруженного в сессию row — SQLite всегда
+                    # отдаёт last_heartbeat_at naive (см. as_utc() выше по
+                    # файлу), а stale_cutoff aware (UTC), и это падает
+                    # TypeError'ом "can't compare offset-naive and
+                    # offset-aware datetimes". Настоящая проверка WHERE всё
+                    # равно выполняется в БД — Python-side синхронизация
+                    # сессии здесь не нужна (row в этой ветке больше не
+                    # используется).
+                    .execution_options(synchronize_session=False)
+                )
                 s.commit()
-                return {
-                    "ok": True,
-                    "holder_key": holder_key,
-                    "holder_label": holder_label,
-                    "started_at": now.isoformat(),
-                }
+                if result.rowcount > 0:
+                    return {
+                        "ok": True,
+                        "holder_key": holder_key,
+                        "holder_label": holder_label,
+                        "started_at": now.isoformat(),
+                    }
+                return self._lock_row_to_conflict(s, object_type, object_id)
 
             return {
                 "ok": False,

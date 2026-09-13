@@ -125,8 +125,18 @@ class OrdersView:
         c = self.app.colors
         rows = self._fetch_rows()
 
-        def on_search(e: ft.ControlEvent) -> None:
+        def on_search_change(e: ft.ControlEvent) -> None:
+            # НЕ вызывает rerender() на каждый символ: rerender()
+            # пересобирает весь список Column'ом с нуля — ни один из его
+            # контролов не задаёт key=, поэтому Flet-реконсилиатор видит
+            # НОВОЕ текстовое поле поиска (а не патч уже существующего) и
+            # демонтирует/монтирует его заново, теряя фокус ввода после
+            # КАЖДОГО символа (workflow-найденный баг — многосимвольный
+            # поиск был фактически неюзабелен). Значение копим здесь,
+            # реальный поиск запускается по Enter/кнопке ниже.
             self.search_text = e.control.value
+
+        def on_search_submit(_e) -> None:
             self.app.rerender()
 
         def on_status_filter(e: ft.ControlEvent) -> None:
@@ -149,8 +159,12 @@ class OrdersView:
         toolbar = ft.Row(
             [
                 ft.TextField(
-                    label="Поиск (клиент, телефон, номер заказа...)",
-                    value=self.search_text, on_change=on_search, expand=True, dense=True,
+                    label="Поиск (клиент, телефон, номер заказа...) — Enter для поиска",
+                    value=self.search_text, on_change=on_search_change,
+                    on_submit=on_search_submit, expand=True, dense=True,
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.SEARCH, tooltip="Найти", on_click=on_search_submit,
                 ),
                 ft.Dropdown(
                     label="Статус", value=self.status_filter, width=220, dense=True,
@@ -276,11 +290,20 @@ class OrdersView:
                 (existing or {}).get("priority", "Обычный"), PRIORITIES, "нет в списке"
             ),
         )
-        f_engineer = ft.TextField(label="Инженер", value=(existing or {}).get("engineer", ""))
+        f_engineer = ft.TextField(label="Инженер", value=(existing or {}).get("engineer") or "")
+        # .get("warranty", "") НЕ защищает от явного None — Device.warranty
+        # nullable (в отличие от status/priority, у которых default на
+        # уровне колонки), а device_to_row() всегда включает ключ "warranty"
+        # (так что .get()'овский default вообще не срабатывает). Для записи
+        # с warranty=None Dropdown получал бы value=None, не совпадающее ни
+        # с одной опцией (пустая строка "" в WARRANTIES — не то же самое,
+        # что None) — та же blank-Dropdown болезнь, что и у статуса/
+        # приоритета, только раньше не проявлялась на данных с непустым
+        # warranty (workflow-найденный баг).
         f_warranty = ft.Dropdown(
-            label="Гарантия", value=(existing or {}).get("warranty", ""),
+            label="Гарантия", value=(existing or {}).get("warranty") or "",
             options=_dropdown_options_with_fallback(
-                (existing or {}).get("warranty", ""), WARRANTIES, "нет в списке"
+                (existing or {}).get("warranty") or "", WARRANTIES, "нет в списке"
             ),
         )
         f_notes = ft.TextField(label="Заметки", value=(existing or {}).get("notes", ""), multiline=True)

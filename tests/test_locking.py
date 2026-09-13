@@ -69,6 +69,55 @@ class TestPessimisticLock:
         assert result["ok"] is True
         assert result["holder_key"] == "emp:2"
 
+    def test_concurrent_stale_takeover_has_exactly_one_winner(self, db):
+        """Регрессия workflow-найденного бага: раньше stale-перехват читал
+        строку, проверял протухание в Python, затем мутировал и коммитил
+        БЕЗ атомарной перепроверки в самом UPDATE — два одновременных
+        вызывающих могли оба увидеть блокировку как протухшую и оба
+        получить {"ok": True} на одну и ту же запись.
+
+        ttl_seconds=60 (не 0): с ttl=0 ЛЮБАЯ метка времени мгновенно
+        протухшая относительно чуть более позднего "now" другого потока —
+        победитель гонки, только что поставивший свежий last_heartbeat_at,
+        сам оказался бы "протухшим" для второго потока микросекундами
+        позже, что и есть корректное поведение при ttl=0, а не баг. Делаем
+        исходную блокировку старой НАПРЯМУЮ в БД, чтобы оба потока
+        соревновались за перехват ОДНОЙ реально протухшей записи при
+        реалистичном TTL — тогда свежий last_heartbeat_at победителя
+        (только что) гарантированно НЕ протухший для конкурента (нужно
+        >60с)."""
+        import threading
+        from datetime import UTC, datetime, timedelta
+
+        from database.sqlalchemy_models import RecordLock
+
+        db.acquire_lock("device", 1, "emp:1", "Иван Иванов", ttl_seconds=60)
+        long_ago = datetime.now(UTC) - timedelta(seconds=3600)
+        with db._session() as s:
+            row = s.query(RecordLock).filter_by(object_type="device", object_id=1).one()
+            row.last_heartbeat_at = long_ago
+            s.commit()
+
+        results: list[dict | None] = [None, None]
+        barrier = threading.Barrier(2)
+
+        def _try_acquire(idx: int, holder_key: str, holder_label: str) -> None:
+            barrier.wait()
+            results[idx] = db.acquire_lock("device", 1, holder_key, holder_label, ttl_seconds=60)
+
+        t1 = threading.Thread(target=_try_acquire, args=(0, "emp:2", "Пётр Петров"))
+        t2 = threading.Thread(target=_try_acquire, args=(1, "emp:3", "Сидор Сидоров"))
+        t1.start()
+        t2.start()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+
+        winners = [r for r in results if r and r["ok"]]
+        losers = [r for r in results if r and not r["ok"]]
+        assert len(winners) == 1, f"ожидался ровно один победитель гонки, получено: {results}"
+        assert len(losers) == 1
+        assert losers[0]["holder_key"] == winners[0]["holder_key"]
+
     def test_refresh_updates_heartbeat_for_own_lock(self, db):
         db.acquire_lock("device", 1, "emp:1", "Иван Иванов", ttl_seconds=300)
         assert db.refresh_lock("device", 1, "emp:1") is True

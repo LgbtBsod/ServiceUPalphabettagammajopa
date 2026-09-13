@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import logging
+import tkinter as tk
 from datetime import datetime
 from typing import Any
 
@@ -51,9 +52,13 @@ class DeviceWidgetsMixin:
         try:
             text = self.phone_entry.get()
 
-            # Проверяем тип события - форматируем ТОЛЬКО при FocusOut
-            event_type = getattr(event, 'type', None) if event else None
-            if event_type != 'FocusOut':
+            # Проверяем тип события - форматируем ТОЛЬКО при FocusOut.
+            # event.type у Tk-событий — это tkinter.EventType (str-enum),
+            # чьё СТРОКОВОЕ ЗНАЧЕНИЕ — числовой код события ("10"), а не имя
+            # члена enum'а: сравнение с литералом "FocusOut" никогда не было
+            # равным ни разу, маска не применялась ВООБЩЕ (workflow-найденный
+            # баг, независимо продублированный в gui/dialogs/employees.py).
+            if event is None or event.type != tk.EventType.FocusOut:
                 return  # Не делаем ничего во время ввода!
 
             # Очищаем от всех нецифровых символов

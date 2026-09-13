@@ -8,7 +8,7 @@
 """
 
 import contextlib
-from tkinter import messagebox, ttk
+from tkinter import EventType, messagebox, ttk
 
 import customtkinter as ctk
 
@@ -232,8 +232,13 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         try:
             text = event.widget.get()
 
-            # Если это не событие потери фокуса, пропускаем
-            if event is None or getattr(event, 'type', None) != 'FocusOut':
+            # Если это не событие потери фокуса, пропускаем.
+            # event.type — tkinter.EventType (str-enum), чьё СТРОКОВОЕ
+            # ЗНАЧЕНИЕ — числовой код события ("10"), а не имя члена enum'а:
+            # сравнение с литералом "FocusOut" никогда не было равным, маска
+            # не применялась ВООБЩЕ (тот же баг независимо продублирован в
+            # gui/dialogs/device_form_parts/widgets_mixin.py).
+            if event is None or event.type != EventType.FocusOut:
                 return
 
             # Полная форматировка только при потере фокуса

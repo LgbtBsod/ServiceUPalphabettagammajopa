@@ -107,6 +107,22 @@ class TestEmployeeService:
         )
         assert employee.display_label == "Иван Иванов — ivanov"
 
+    def test_update_employee_normalizes_phone(self, service):
+        """Регрессия workflow-найденного бага: update_employee() мутирует
+        employee.phone НАПРЯМУЮ, минуя EmployeeEntity.__post_init__ (тот
+        нормализует телефон только при КОНСТРУИРОВАНИИ) — без явной
+        нормализации в update_employee() отредактированный телефон
+        сохранялся бы как есть, а не в каноничном виде +7 (XXX) XXX-XX-XX."""
+        employee = service.create_employee(
+            CreateEmployeeCommand(full_name="Иван Иванов", login="user_upd_phone")
+        )
+        ok = service.update_employee(
+            UpdateEmployeeCommand(employee_id=employee.id, phone="89991234567")
+        )
+        assert ok is True
+        updated = service.get_employee(GetEmployeeByIdQuery(employee_id=employee.id))
+        assert updated.phone.startswith("+7")
+
     def test_update_employee(self, service):
         employee = service.create_employee(
             CreateEmployeeCommand(full_name="Старое Имя", login="user1")

@@ -1401,26 +1401,31 @@ class Database:
         try:
             db_files = glob.glob(os.path.join(CLIENTS_DB_DIR, "*.db"))
             for db_path in db_files:
+                # cl_conn открывается ДО try — если sqlite3.connect() сам
+                # бросит, закрывать нечего; всё остальное (включая любой
+                # SELECT/get_or_create_client/add_to_repair_history_main,
+                # который может бросить на битом/несовместимом файле) — в
+                # try/finally, а не в россыпи cl_conn.close() на каждом
+                # early-continue: раньше исключение МЕЖДУ open() и любым из
+                # этих close() (например, отсутствие таблицы repair_history
+                # в конкретном файле) утекало соединение/файловый дескриптор
+                # — этот же файл при повторном запуске миграции остаётся
+                # залоченным (workflow-найденный баг).
+                cl_conn = sqlite3.connect(db_path)
                 try:
-                    cl_conn = sqlite3.connect(db_path)
                     cl_conn.row_factory = sqlite3.Row
                     cl_cur = cl_conn.cursor()
                     # Читаем все ремонты клиента
                     cl_cur.execute("SELECT * FROM repair_history")
                     repairs = cl_cur.fetchall()
                     if not repairs:
-                        cl_conn.close()
                         continue
-                    # Берём имя/телефон из первой записи
-                    repairs[0]
                     client_name = self._extract_client_name(db_path)
                     client_phone = self._extract_client_phone(db_path, repairs)
                     if not client_name or not client_phone:
-                        cl_conn.close()
                         continue
                     client_id = self.get_or_create_client(client_name, client_phone)
                     if not client_id:
-                        cl_conn.close()
                         continue
                     # Переносим ремонты
                     for r in repairs:
@@ -1453,12 +1458,13 @@ class Database:
                             client_id, device_id, device_data
                         )
                     migrated += 1
-                    cl_conn.close()
                     logger.info(
                         f"Мигрирован клиент: {client_name} ({len(repairs)} ремонтов)"
                     )
                 except Exception as e:
                     logger.exception(f"Ошибка миграции {db_path}: {e}")
+                finally:
+                    cl_conn.close()
         except Exception as e:
             logger.exception(f"Ошибка миграции клиентских БД: {e}")
         return migrated

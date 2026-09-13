@@ -798,12 +798,22 @@ class ClientHistoryWindow(ctk.CTkToplevel):
 
         if device:
             from gui.dialogs.act_preview import ActPreviewWindow
+            from reports.report_editor import load_template_data
 
             report_gen = self.report_gen
             filename = report_gen.generate_receipt_act(device)
             if filename and os.path.exists(filename):
                 with open(filename, encoding="utf-8") as f:
                     content = f.read()
+                # template_data — иначе ActPreviewWindow (и генератор PDF
+                # под ним) молча откатывается на DEFAULT_COMPANY вместо
+                # настроенного в редакторе названия/шапки/логотипа, в
+                # отличие от двух других мест печати акта приёма
+                # (main_window_parts/acts_mixin.py::print_receipt_act,
+                # device_form_parts/acts_mixin.py::show_receipt_act_preview)
+                # — те всегда передают load_template_data("receipt")
+                # (workflow-найденный баг).
+                template = load_template_data("receipt")
                 ActPreviewWindow(
                     self,
                     f"Акт приема {order_number}",
@@ -811,6 +821,7 @@ class ClientHistoryWindow(ctk.CTkToplevel):
                     self.colors,
                     "receipt",
                     device,
+                    template,
                     settings=self.settings,
                 )
         else:
