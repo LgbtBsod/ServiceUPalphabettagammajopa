@@ -8,7 +8,10 @@ print_act_pdf()/open_act_pdf() удаляли временный PDF после 
 
 from __future__ import annotations
 
+import sys
 import time
+
+import pytest
 
 from reports.print_utils import _wait_for_unlock_or_timeout
 
@@ -22,6 +25,12 @@ class TestWaitForUnlockOrTimeout:
         _wait_for_unlock_or_timeout(str(path), timeout_sec=5, poll_interval=0.1)
         assert time.monotonic() - start < 1.0
 
+    @pytest.mark.skipif(
+        sys.platform != "win32",
+        reason="os.rename(path, path) is a no-op lock probe only on Windows -- "
+        "POSIX freely renames files with open handles, see print_utils.py's own "
+        "docstring on why this mechanism is only ever invoked on win32",
+    )
     def test_returns_once_lock_is_released(self, tmp_path):
         path = tmp_path / "act.pdf"
         path.write_bytes(b"%PDF-1.4")
@@ -44,6 +53,12 @@ class TestWaitForUnlockOrTimeout:
             if not handle.closed:
                 handle.close()
 
+    @pytest.mark.skipif(
+        sys.platform != "win32",
+        reason="os.rename(path, path) is a no-op lock probe only on Windows -- "
+        "POSIX freely renames files with open handles, see print_utils.py's own "
+        "docstring on why this mechanism is only ever invoked on win32",
+    )
     def test_gives_up_after_timeout_if_never_unlocked(self, tmp_path):
         path = tmp_path / "act.pdf"
         path.write_bytes(b"%PDF-1.4")
