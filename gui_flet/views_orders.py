@@ -73,16 +73,26 @@ def _print_act(app, device: dict, act_type: str) -> None:
         app.show_snackbar(f"Ошибка печати акта: {e}", error=True)
 
 
-def _status_options(current_value: str) -> list[ft.dropdown.Option]:
-    """Список статусов для Dropdown, + сам current_value первым пунктом,
-    если он не входит в STATUSES (устройство с легаси-статусом — например,
-    "Готов" вместо нынешнего "Готов к выдаче" — иначе Dropdown.value не
-    находит совпадения ни по одному ключу и Flutter рисует пустую строку
-    вместо текста, даже когда реальное значение в БД корректно)."""
-    opts = [_opt(s) for s in STATUSES]
-    if current_value and current_value not in STATUSES:
-        opts.insert(0, _opt(current_value, label=f"{current_value} (устаревший статус)"))
+def _dropdown_options_with_fallback(
+    current_value: str, known_values: list[str], legacy_label: str
+) -> list[ft.dropdown.Option]:
+    """Опции для Dropdown, + сам current_value первым пунктом, если он не
+    входит в known_values — иначе Dropdown.value не находит совпадения ни по
+    одному ключу, Flutter рисует пустую строку вместо текста ДАЖЕ когда
+    реальное значение в БД корректно, и (что хуже) сохранение формы молча
+    затирает это значение пустым, потому что Dropdown.value читается как ""
+    (см. _status_options — тот же класс бага повторялся у warranty/priority,
+    у которых в классическом интерфейсе поле — редактируемый CTkComboBox, а
+    не закрытый список, так что произвольное легаси-значение там абсолютно
+    легально)."""
+    opts = [_opt(v) for v in known_values]
+    if current_value and current_value not in known_values:
+        opts.insert(0, _opt(current_value, label=f"{current_value} ({legacy_label})"))
     return opts
+
+
+def _status_options(current_value: str) -> list[ft.dropdown.Option]:
+    return _dropdown_options_with_fallback(current_value, STATUSES, "устаревший статус")
 
 
 class OrdersView:
@@ -262,12 +272,16 @@ class OrdersView:
         )
         f_priority = ft.Dropdown(
             label="Приоритет", value=(existing or {}).get("priority", "Обычный"),
-            options=[_opt(p) for p in PRIORITIES],
+            options=_dropdown_options_with_fallback(
+                (existing or {}).get("priority", "Обычный"), PRIORITIES, "нет в списке"
+            ),
         )
         f_engineer = ft.TextField(label="Инженер", value=(existing or {}).get("engineer", ""))
         f_warranty = ft.Dropdown(
             label="Гарантия", value=(existing or {}).get("warranty", ""),
-            options=[_opt(w) for w in WARRANTIES],
+            options=_dropdown_options_with_fallback(
+                (existing or {}).get("warranty", ""), WARRANTIES, "нет в списке"
+            ),
         )
         f_notes = ft.TextField(label="Заметки", value=(existing or {}).get("notes", ""), multiline=True)
 
@@ -300,6 +314,17 @@ class OrdersView:
                 "engineer": f_engineer.value,
                 "warranty": f_warranty.value or "",
                 "notes": f_notes.value,
+                # Эта форма не показывает completeness/appearance/expense/
+                # фото/работы — но update_device()/_sync_photos()/
+                # _sync_work_items() трактуют ОТСУТСТВИЕ ключа как "очистить
+                # всё" (device_data.get(key, "") -> пустая строка -> все
+                # существующие фото/работы удаляются). Пробрасываем текущие
+                # значения без изменений, а не молчим о них.
+                "completeness": (existing or {}).get("completeness", ""),
+                "appearance": (existing or {}).get("appearance", ""),
+                "expense": (existing or {}).get("expense", "0"),
+                "work_items_json": (existing or {}).get("work_items", ""),
+                "photos": (existing or {}).get("photos", ""),
             }
 
             if editing:
@@ -317,6 +342,16 @@ class OrdersView:
                     self.app.page.update()
                     return
             else:
+                # order_preview — это peek_next_order_number() (для превью в
+                # заголовке формы), он НЕ увеличивает счётчик. Использовать
+                # его как реальный order_number привело бы к тому, что два
+                # заказа подряд, созданных через Flet, получали бы один и тот
+                # же номер и падали на unique-ограничении devices.order_number
+                # — реальный номер берём здесь, непосредственно перед
+                # вставкой (та же точка, что и save_mixin.py в классическом
+                # интерфейсе).
+                real_order_number = str(db.get_next_order_number())
+                device_data["order_number"] = real_order_number
                 device_data["receipt_date"] = _now_str()
                 device_data["completion_date"] = ""
                 new_id = db.add_device(device_data)
@@ -324,7 +359,7 @@ class OrdersView:
                     error_text.value = "Не удалось создать заказ."
                     self.app.page.update()
                     return
-                self.app.show_snackbar(f"Заказ №{order_preview} создан")
+                self.app.show_snackbar(f"Заказ №{real_order_number} создан")
 
             self.mode = "list"
             self.app.rerender()

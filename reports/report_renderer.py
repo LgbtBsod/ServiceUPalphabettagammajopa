@@ -15,6 +15,9 @@
 экранируется для XML/ReportLab Paragraph.
 """
 
+import atexit
+import contextlib
+import logging
 import os
 import tempfile
 from datetime import datetime
@@ -30,6 +33,12 @@ from utils.formatters import (
     format_price,
     parse_price_to_float,
 )
+
+# Раньше в этом файле не было логирования вообще — все ошибки уходили в
+# bare print(), который в frozen-сборке (--windowed, без консоли) и в CI не
+# попадает никуда: PDF молча возвращался как False/недоступный без единой
+# строчки в логах приложения (см. workflow-найденный баг о шрифтах).
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Константы оформления (соответствуют .fr3)
@@ -83,67 +92,97 @@ def _color(hex_str: str):
         return black
 
 
-def _font() -> str:
-    """Возвращает имя доступного шрифта (Trebuchet MS или fallback)."""
-    try:
-        import glob
-
-        from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.ttfonts import TTFont
-
-        names = pdfmetrics.getRegisteredFontNames()
-        if "TrebuchetMS" not in names:
-            candidates = glob.glob(r"C:\Windows\Fonts\trebuc.ttf")
-            if candidates:
-                pdfmetrics.registerFont(TTFont("TrebuchetMS", candidates[0]))
-                return "TrebuchetMS"
-        if "TrebuchetMS" in pdfmetrics.getRegisteredFontNames():
-            return "TrebuchetMS"
-        return FONT_FALLBACK
-    except Exception:
-        return FONT_FALLBACK
+def _first_existing(paths: tuple[str, ...]) -> str | None:
+    return next((p for p in paths if os.path.exists(p)), None)
 
 
-# Маппинг: имя шрифта в UI → (TTF-regular, TTF-bold, имя для reportlab)
+# Маппинг: имя шрифта в UI → (варианты TTF-regular, варианты TTF-bold, имя
+# regular для reportlab, имя bold для reportlab). Каждый шрифт даёт СПИСОК
+# путей-кандидатов, а не один: раньше здесь был единственный жёстко зашитый
+# C:\Windows\Fonts\... путь на семейство — на любом non-Windows CI-раннере
+# (ubuntu-latest/macos-latest в .github/workflows/build.yml, и на любой
+# Linux/macOS машине пользователя) НИ ОДИН такой путь не существует, поэтому
+# _register_act_font() ниже молча откатывался на core-Helvetica — стандартный
+# PDF-шрифт, вообще не способный отрисовать кириллицу (см. workflow-найденный
+# баг). Первый реально существующий путь в списке побеждает; Trebuchet MS —
+# проприетарный шрифт Microsoft, которого на Linux/macOS обычно нет вовсе,
+# поэтому и для него, и для остальных семейств добавлены типичные
+# предустановленные Cyrillic-совместимые замены (DejaVu Sans — Ubuntu/Debian
+# по умолчанию, Liberation Sans — частый пакет на Linux, Arial из
+# /System/Library/Fonts/Supplemental — macOS).
+_LINUX_MAC_SANS = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/Library/Fonts/Arial.ttf",
+)
+_LINUX_MAC_SANS_BOLD = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/Library/Fonts/Arial Bold.ttf",
+)
+
 _FONT_TTF_MAP = {
     "Trebuchet MS": (
-        r"C:\Windows\Fonts\trebuc.ttf",
-        r"C:\Windows\Fonts\trebucbd.ttf",
+        (r"C:\Windows\Fonts\trebuc.ttf", *_LINUX_MAC_SANS),
+        (r"C:\Windows\Fonts\trebucbd.ttf", *_LINUX_MAC_SANS_BOLD),
         "TrebuchetMS",
         "TrebuchetMS-Bold",
     ),
     "Arial": (
-        r"C:\Windows\Fonts\arial.ttf",
-        r"C:\Windows\Fonts\arialbd.ttf",
+        (r"C:\Windows\Fonts\arial.ttf", *_LINUX_MAC_SANS),
+        (r"C:\Windows\Fonts\arialbd.ttf", *_LINUX_MAC_SANS_BOLD),
         "ActArial",
         "ActArial-Bold",
     ),
     "Times New Roman": (
-        r"C:\Windows\Fonts\times.ttf",
-        r"C:\Windows\Fonts\timesbd.ttf",
+        (r"C:\Windows\Fonts\times.ttf", *_LINUX_MAC_SANS),
+        (r"C:\Windows\Fonts\timesbd.ttf", *_LINUX_MAC_SANS_BOLD),
         "ActTimes",
         "ActTimes-Bold",
     ),
     "Helvetica": (
-        r"C:\Windows\Fonts\arial.ttf",
-        r"C:\Windows\Fonts\arialbd.ttf",
+        (r"C:\Windows\Fonts\arial.ttf", *_LINUX_MAC_SANS),
+        (r"C:\Windows\Fonts\arialbd.ttf", *_LINUX_MAC_SANS_BOLD),
         "ActArial",
         "ActArial-Bold",
     ),
     # Tahoma и Verdana как альтернативы
     "Tahoma": (
-        r"C:\Windows\Fonts\tahoma.ttf",
-        r"C:\Windows\Fonts\tahomabd.ttf",
+        (r"C:\Windows\Fonts\tahoma.ttf", *_LINUX_MAC_SANS),
+        (r"C:\Windows\Fonts\tahomabd.ttf", *_LINUX_MAC_SANS_BOLD),
         "ActTahoma",
         "ActTahoma-Bold",
     ),
     "Verdana": (
-        r"C:\Windows\Fonts\verdana.ttf",
-        r"C:\Windows\Fonts\verdanab.ttf",
+        (r"C:\Windows\Fonts\verdana.ttf", *_LINUX_MAC_SANS),
+        (r"C:\Windows\Fonts\verdanab.ttf", *_LINUX_MAC_SANS_BOLD),
         "ActVerdana",
         "ActVerdana-Bold",
     ),
 }
+
+
+def _font() -> str:
+    """Возвращает имя доступного шрифта (Trebuchet MS/кросс-платформенная
+    замена, либо fallback) — используется только как последний рубеж внутри
+    _register_act_font() ниже."""
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+
+        names = pdfmetrics.getRegisteredFontNames()
+        if "TrebuchetMS" in names:
+            return "TrebuchetMS"
+        ttf_candidates, _bold, name_reg, _name_bold = _FONT_TTF_MAP["Trebuchet MS"]
+        path = _first_existing(ttf_candidates)
+        if path:
+            pdfmetrics.registerFont(TTFont(name_reg, path))
+            return name_reg
+        return FONT_FALLBACK
+    except Exception:
+        return FONT_FALLBACK
 
 
 def _register_act_font(font_name: str):
@@ -151,11 +190,9 @@ def _register_act_font(font_name: str):
 
     Возвращает (font_regular, font_bold) — имена для reportlab.
     Стандартные PDF-шрифты (Helvetica/Times-Roman) НЕ поддерживают кириллицу,
-    поэтому ВСЕ шрифты регистрируем через TTF-файлы Windows.
-    Fallback на Trebuchet MS, если файл не найден.
+    поэтому ВСЕ шрифты регистрируем через TTF-файлы — первый существующий
+    путь-кандидат для текущей ОС (см. _FONT_TTF_MAP).
     """
-    import os
-
     try:
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
@@ -163,14 +200,18 @@ def _register_act_font(font_name: str):
         return FONT_FALLBACK, "Helvetica-Bold"
 
     entry = _FONT_TTF_MAP.get(font_name) or _FONT_TTF_MAP["Trebuchet MS"]
-    ttf_reg, ttf_bold, name_reg, name_bold = entry
+    ttf_reg_candidates, ttf_bold_candidates, name_reg, name_bold = entry
 
     names = pdfmetrics.getRegisteredFontNames()
     try:
-        if name_reg not in names and os.path.exists(ttf_reg):
-            pdfmetrics.registerFont(TTFont(name_reg, ttf_reg))
-        if name_bold not in names and os.path.exists(ttf_bold):
-            pdfmetrics.registerFont(TTFont(name_bold, ttf_bold))
+        if name_reg not in names:
+            path = _first_existing(ttf_reg_candidates)
+            if path:
+                pdfmetrics.registerFont(TTFont(name_reg, path))
+        if name_bold not in names:
+            path = _first_existing(ttf_bold_candidates)
+            if path:
+                pdfmetrics.registerFont(TTFont(name_bold, path))
         if name_reg in pdfmetrics.getRegisteredFontNames():
             bold = (
                 name_bold
@@ -179,10 +220,18 @@ def _register_act_font(font_name: str):
             )
             return name_reg, bold
     except Exception as e:
-        print(f"Не удалось зарегистрировать шрифт {font_name}: {e}")
+        logger.error(f"Не удалось зарегистрировать шрифт {font_name}: {e}", exc_info=True)
 
-    # Fallback на Trebuchet MS
-    return _font(), _font() + "-Bold" if _font() != FONT_FALLBACK else FONT_FALLBACK
+    # Ни один кандидат для запрошенного семейства не найден — последний
+    # рубеж: попытаться зарегистрировать хоть что-то Cyrillic-совместимое.
+    # Один и тот же зарегистрированный TTF и на regular, и на bold слот —
+    # жирный текст выйдет визуально не жирным, но НЕ упадёт на неизвестном
+    # имени шрифта (в отличие от прежнего `_font() + "-Bold"`, которое
+    # возвращало имя, никогда фактически не зарегистрированное).
+    fallback = _font()
+    if fallback == FONT_FALLBACK:
+        return FONT_FALLBACK, "Helvetica-Bold"
+    return fallback, fallback
 
 
 # ---------------------------------------------------------------------------
@@ -190,15 +239,44 @@ def _register_act_font(font_name: str):
 # ---------------------------------------------------------------------------
 
 
+# Кэш конвертированных логотипов/QR: path -> (mtime на момент конвертации,
+# путь к временному PNG). Раньше _prepare_image() создавал НОВЫЙ temp PNG на
+# КАЖДЫЙ вызов (то есть на каждую печать акта) без какой-либо очистки — при
+# печати дюжины актов в день неделями (обычный режим работы для этого
+# desktop+PWA сервиса) в temp-каталоге пользователя копились сотни
+# orphan-файлов act_img_*.png (см. workflow-найденный баг). Теперь один и тот
+# же исходник конвертируется один раз за время работы процесса; mtime в
+# ключе — чтобы заменённый пользователем логотип не отдавал стухший кэш.
+_image_cache: dict[str, tuple[float, str]] = {}
+
+
+def _cleanup_image_cache() -> None:
+    for _mtime, tmp_png in _image_cache.values():
+        with contextlib.suppress(OSError):
+            os.remove(tmp_png)
+    _image_cache.clear()
+
+
+atexit.register(_cleanup_image_cache)
+
+
 def _prepare_image(path: str) -> str | None:
     """Готовит изображение для ReportLab.
 
     ReportLab плохо переваривает BMP. Конвертируем любой формат (.bmp/.gif/...)
     через PIL во временный PNG. Возвращает путь к PNG либо None при ошибке.
-    Original не удаляется. Временный PNG живёт до завершения процесса.
-    """
+    Повторные вызовы с тем же path (тем же mtime) отдают уже сконвертированный
+    файл из _image_cache вместо создания нового — временные PNG удаляются при
+    завершении процесса через _cleanup_image_cache(), а не живут вечно."""
     if not path or not os.path.exists(path):
         return None
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return None
+    cached = _image_cache.get(path)
+    if cached and cached[0] == mtime and os.path.exists(cached[1]):
+        return cached[1]
     try:
         from PIL import Image as _PILImage
     except Exception:
@@ -210,9 +288,13 @@ def _prepare_image(path: str) -> str | None:
         fd, tmp_png = tempfile.mkstemp(suffix=".png", prefix="act_img_")
         os.close(fd)
         img.save(tmp_png, "PNG")
+        if cached:
+            with contextlib.suppress(OSError):
+                os.remove(cached[1])
+        _image_cache[path] = (mtime, tmp_png)
         return tmp_png
     except Exception as e:
-        print(f"Не удалось подготовить изображение {path}: {e}")
+        logger.error(f"Не удалось подготовить изображение {path}: {e}", exc_info=True)
         return None
 
 
@@ -252,7 +334,7 @@ def _parse_work_items(work_items_json: str) -> list[dict[str, Any]]:
             )
         return result
     except (json.JSONDecodeError, TypeError, ValueError) as e:
-        print(f"Ошибка разбора work_items: {e}")
+        logger.error(f"Ошибка разбора work_items: {e}", exc_info=True)
         return []
 
 
@@ -333,7 +415,7 @@ class ActPDFGenerator:
             story = self._build_receipt_story(device)
             return self._save_pdf(filepath, story)
         except Exception as e:
-            print(f"Ошибка генерации акта приёма (PDF): {e}")
+            logger.error(f"Ошибка генерации акта приёма (PDF): {e}", exc_info=True)
             return False
 
     def generate_completion_pdf(self, filepath: str, device: dict[str, Any]) -> bool:
@@ -341,7 +423,7 @@ class ActPDFGenerator:
             story = self._build_completion_story(device)
             return self._save_pdf(filepath, story)
         except Exception as e:
-            print(f"Ошибка генерации акта выполненных работ (PDF): {e}")
+            logger.error(f"Ошибка генерации акта выполненных работ (PDF): {e}", exc_info=True)
             return False
 
     def render_receipt_text(self, device: dict[str, Any]) -> str:
@@ -377,6 +459,7 @@ class ActPDFGenerator:
         device2: dict[str, Any] | None = None,
         act_type1: str = "receipt",
         act_type2: str = "completion",
+        template_data2: dict[str, Any] | None = None,
     ) -> bool:
         """Генерирует PDF с двумя актами на одном листе A4 (каждый A5).
 
@@ -385,6 +468,15 @@ class ActPDFGenerator:
             act_type1, act_type2 — 'receipt' или 'completion' для каждого акта.
                 По умолчанию: receipt (верх) + completion (низ).
                 Для двух одинаковых: act_type1='receipt', act_type2='receipt'.
+            template_data2 — шаблон ВТОРОГО акта, если он отличается от типа
+                первого (act_type1 != act_type2) — акт приёма и акт
+                выполненных работ настраиваются в редакторе НЕЗАВИСИМО
+                (разный header_text/fields/warranty_text, см.
+                reports/report_editor.py::_DEFAULT_TEMPLATES), поэтому
+                смешанная пара "приём+работы" не может честно рендериться из
+                одного self.template. Если не передан, акт 2 рендерится тем
+                же генератором/шаблоном, что и акт 1 (старое поведение —
+                корректно, когда act_type1 == act_type2).
         """
         try:
             from reportlab.lib.pagesizes import A4
@@ -404,27 +496,34 @@ class ActPDFGenerator:
             content_w = a4_w - 2 * self.margin
             half_h = (a4_h - 2 * self.margin) / 2 - 10
 
-            def _build_story(device, act_type):
-                """Выбирает нужный story по типу акта."""
+            def _build_story(gen: ActPDFGenerator, device, act_type):
+                """Выбирает нужный story по типу акта, из указанного генератора
+                (у каждого — свой self.template)."""
                 if act_type == "completion":
-                    return self._build_completion_story(device)
-                return self._build_receipt_story(device)
+                    return gen._build_completion_story(device)
+                return gen._build_receipt_story(device)
+
+            gen2 = (
+                ActPDFGenerator(self.company, template_data=template_data2)
+                if template_data2 is not None
+                else self
+            )
 
             story = []
             # Акт 1
-            story1 = _build_story(device1, act_type1)
+            story1 = _build_story(self, device1, act_type1)
             story.append(KeepInFrame(content_w, half_h, story1, mode="shrink"))
             story.append(Spacer(1, 8))
 
             # Акт 2 (если есть)
             if device2:
-                story2 = _build_story(device2, act_type2)
+                story2 = _build_story(gen2, device2, act_type2)
                 story.append(KeepInFrame(content_w, half_h, story2, mode="shrink"))
 
             doc.build(story)
             return True
         except Exception as e:
-            print(f"Ошибка генерации двойного акта (PDF): {e}")
+            logger.error(f"Ошибка генерации двойного акта (PDF): {e}", exc_info=True)
             return False
 
     def _styles(self):
@@ -560,7 +659,7 @@ class ActPDFGenerator:
                 img.hAlign = "CENTER"
             story.append(img)
         except Exception as e:
-            print(f"Не удалось вставить логотип: {e}")
+            logger.error(f"Не удалось вставить логотип: {e}", exc_info=True)
         return story
 
     def _header_block(self, styles) -> list:

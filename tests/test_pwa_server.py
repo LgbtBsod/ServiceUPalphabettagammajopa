@@ -181,3 +181,59 @@ class TestOrderVersionRoundTrip:
         )
         assert resp.status_code == 200, resp.get_json()
         assert database.get_device(device_id)["notes"] == "моя правка"
+
+
+class TestMalformedRequestsReturn400NotInternal500:
+    """Регрессия workflow-найденного бага: request.get_json(force=True) без
+    silent=True/None-проверка и int(request.args[...]) без валидации ловились
+    только общим except роута и превращались в 500 "внутренняя ошибка
+    сервера" — ordinary клиентские ошибки ввода отчитывались как сбой
+    сервера (см. pwa/server.py::_parse_json_body/_parse_int_query_param)."""
+
+    def test_empty_body_on_create_order_returns_400_not_500(self, pwa_client):
+        client, _database = pwa_client
+        resp = client.post(
+            "/api/orders", data=b"", content_type="application/json"
+        )
+        assert resp.status_code == 400
+        assert "error" in resp.get_json()
+
+    def test_json_null_body_on_create_order_returns_400_not_500(self, pwa_client):
+        client, _database = pwa_client
+        resp = client.post("/api/orders", data=b"null", content_type="application/json")
+        assert resp.status_code == 400
+
+    def test_malformed_body_on_update_order_returns_400_not_500(self, pwa_client):
+        client, database = pwa_client
+        device_id = database.add_device(_sample_device())
+        resp = client.put(
+            f"/api/orders/{device_id}",
+            data=b"{not valid json",
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+    def test_malformed_body_on_update_status_returns_400_not_500(self, pwa_client):
+        client, database = pwa_client
+        device_id = database.add_device(_sample_device())
+        resp = client.put(
+            f"/api/orders/{device_id}/status",
+            data=b"", content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+    def test_non_numeric_limit_returns_400_not_500(self, pwa_client):
+        client, _database = pwa_client
+        resp = client.get("/api/orders?limit=abc")
+        assert resp.status_code == 400
+
+    def test_non_numeric_offset_returns_400_not_500(self, pwa_client):
+        client, _database = pwa_client
+        resp = client.get("/api/orders?offset=xyz")
+        assert resp.status_code == 400
+
+    def test_valid_limit_offset_still_work(self, pwa_client):
+        client, database = pwa_client
+        database.add_device(_sample_device())
+        resp = client.get("/api/orders?limit=10&offset=0")
+        assert resp.status_code == 200

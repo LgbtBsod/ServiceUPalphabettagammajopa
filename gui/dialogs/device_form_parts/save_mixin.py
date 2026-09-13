@@ -37,11 +37,60 @@ class DeviceSaveMixin:
 
             from utils.formatters import normalize_phone
 
+            device_type = (
+                self.device_type_combo.get().strip()
+                if hasattr(self, "device_type_combo")
+                else ""
+            )
+            model = self.model_entry.get().strip() if hasattr(self, "model_entry") else ""
+            defect = (
+                self.defect_text.get("1.0", "end-1c").strip()
+                if hasattr(self, "defect_text")
+                else ""
+            )
             client_name = self.client_name_entry.get().strip()
             phone_raw = self.phone_entry.get().strip()
-            if not client_name or not phone_raw:
+            total_price_raw = (
+                self.total_price_entry.get().strip()
+                if hasattr(self, "total_price_entry")
+                else ""
+            )
+            prepayment_raw = (
+                self.prepayment_entry.get().strip()
+                if hasattr(self, "prepayment_entry")
+                else ""
+            )
+            expense_raw = (
+                self.expense_entry.get().strip() if hasattr(self, "expense_entry") else ""
+            )
+            # Та же обязательность/формат, что и в save() (см. ниже в этом
+            # файле) — эта тихая ветка раньше проверяла только "имя и телефон
+            # не пусты", позволяя "Печать до сохранения" создать заказ с
+            # неотформатированным телефоном/ценой и без типа/модели/дефекта,
+            # то есть данные, которые обычная кнопка "Сохранить" отклонила бы
+            # (см. workflow-найденный баг: печать нового заказа записывает
+            # его как есть, минуя валидацию).
+            if not device_type or not model or not defect or not client_name or not phone_raw:
                 if not silent:
-                    messagebox.showerror("Ошибка", "Заполните имя и телефон!")
+                    messagebox.showerror(
+                        "Ошибка", "Заполните тип устройства, модель, неисправность, имя и телефон!"
+                    )
+                return False
+            if not validate_phone(phone_raw):
+                if not silent:
+                    messagebox.showerror("Ошибка", "Неверный формат телефона!")
+                return False
+            if total_price_raw and not validate_price(total_price_raw):
+                if not silent:
+                    messagebox.showerror("Ошибка", "Неверный формат цены!")
+                return False
+            if prepayment_raw and not validate_price(prepayment_raw):
+                if not silent:
+                    messagebox.showerror("Ошибка", "Неверный формат предоплаты!")
+                return False
+            if expense_raw and not validate_price(expense_raw):
+                if not silent:
+                    messagebox.showerror("Ошибка", "Неверный формат затрат!")
                 return False
 
             phone = normalize_phone(phone_raw)

@@ -634,6 +634,21 @@ class ClientHistoryWindow(ctk.CTkToplevel):
         except (ValueError, TypeError):
             return 0.0
 
+    @staticmethod
+    def _safe_date_sort_key(value: str) -> datetime:
+        """"Дата" отображается как DD.MM.YYYY[ HH:MM] (см. sort_by_column
+        caller) — тот же класс бага, что и "Заказ №"/"Цена" здесь рядом:
+        лексикографическая сортировка такой строки сортирует по дню месяца,
+        игнорируя месяц/год. Непарсящееся значение уходит в самый ранний край."""
+        if not value or value == "—":
+            return datetime.min  # noqa: DTZ901 -- naive-vs-naive sort key only, never displayed/persisted
+        for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(value, fmt)
+            except ValueError:
+                continue
+        return datetime.min  # noqa: DTZ901 -- naive-vs-naive sort key only, never displayed/persisted
+
     def sort_by_column(self, col):
         """Сортировка по колонке"""
         items = [
@@ -656,6 +671,8 @@ class ClientHistoryWindow(ctk.CTkToplevel):
                     return 0
 
             items.sort(key=lambda x: _order_key(x[0]))
+        elif col == "Дата":
+            items.sort(key=lambda x: self._safe_date_sort_key(x[0]))
         else:
             items.sort(key=lambda x: str(x[0]).lower())
 

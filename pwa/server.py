@@ -291,8 +291,13 @@ def create_flask_app():
             hide_completed = (
                 request.args.get("hide_completed", "false").lower() == "true"
             )
-            limit = min(int(request.args.get("limit", 200)), 500)
-            offset = int(request.args.get("offset", 0))
+            limit, err = _parse_int_query_param("limit", 200)
+            if err:
+                return err
+            offset, err = _parse_int_query_param("offset", 0)
+            if err:
+                return err
+            limit = min(limit, 500)
 
             if status and status != "Все":
                 devices = db.get_devices_by_filters(
@@ -346,7 +351,9 @@ def create_flask_app():
         """Создание нового заказа."""
         try:
             db = _db_holder.db
-            data = request.get_json(force=True)
+            data, err = _parse_json_body()
+            if err:
+                return err
 
             if "status" in data and data.get("status") not in STATUSES:
                 return jsonify({"error": "Недопустимый статус заказа"}), 400
@@ -454,7 +461,9 @@ def create_flask_app():
                     {"error": 'Нельзя редактировать заказ со статусом "Отказано"'}
                 ), 403
 
-            data = request.get_json(force=True)
+            data, err = _parse_json_body()
+            if err:
+                return err
 
             if "status" in data and data.get("status") not in STATUSES:
                 return jsonify({"error": "Недопустимый статус заказа"}), 400
@@ -573,7 +582,9 @@ def create_flask_app():
         """Смена статуса заказа."""
         try:
             db = _db_holder.db
-            data = request.get_json(force=True)
+            data, err = _parse_json_body()
+            if err:
+                return err
             new_status = data.get("status", "").strip()
             if not new_status:
                 return jsonify({"error": "Не указан статус"}), 400
@@ -729,18 +740,26 @@ def create_flask_app():
             ext = os.path.splitext(file.filename)[1].lower() or ".jpg"
             fd, tmp_path = tempfile.mkstemp(suffix=ext)
             os.close(fd)
-            file.save(tmp_path)
+            # try/finally, а не удаление после обеих операций: раньше
+            # исключение из file.save() (диск полон/нет прав) или из
+            # _db_holder.photo (свойство _ensure() может бросить) уходило
+            # напрямую во внешний except этого route, оставляя tmp_path на
+            # диске — утечка временного файла на каждой неудачной загрузке
+            # (см. workflow-найденный баг).
+            try:
+                file.save(tmp_path)
 
-            client_name = device.get("client_name", "")
-            client_phone = device.get("phone", "")
-            order_number = device.get("order_number", "")
+                client_name = device.get("client_name", "")
+                client_phone = device.get("phone", "")
+                order_number = device.get("order_number", "")
 
-            # Сохраняем через PhotoManager (с созданием миниатюры)
-            saved_path = _db_holder.photo.save_photo(
-                tmp_path, client_name, client_phone, order_number, "device"
-            )
-            with contextlib.suppress(OSError):
-                os.remove(tmp_path)
+                # Сохраняем через PhotoManager (с созданием миниатюры)
+                saved_path = _db_holder.photo.save_photo(
+                    tmp_path, client_name, client_phone, order_number, "device"
+                )
+            finally:
+                with contextlib.suppress(OSError):
+                    os.remove(tmp_path)
 
             if not saved_path:
                 return jsonify({"error": "Не удалось сохранить фото"}), 500
@@ -860,6 +879,40 @@ def create_flask_app():
             return jsonify({"error": "Внутренняя ошибка сервера"}), 500
 
     return app
+
+
+def _parse_json_body() -> tuple[dict[str, Any] | None, tuple[Any, int] | None]:
+    """Безопасно читает JSON-тело запроса.
+
+    Возвращает (data, None) при успехе или (None, error_response) при
+    невалидном теле — вызывающий route должен сразу `return err` во втором
+    случае. Раньше все POST/PUT-роуты звали `request.get_json(force=True)`
+    без silent=True и без проверки на None: пустое/некорректное тело роняло
+    werkzeug.exceptions.BadRequest, а буквальный JSON `null` возвращал None
+    с последующим AttributeError на `data.get(...)` — оба случая ловились
+    только общим `except Exception` роута и превращались в 500 "внутренняя
+    ошибка сервера" вместо честных 400 на обычную клиентскую ошибку ввода
+    (см. workflow-найденный баг)."""
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "Тело запроса должно быть JSON-объектом"}), 400)
+    return data, None
+
+
+def _parse_int_query_param(name: str, default: int) -> tuple[int | None, tuple[Any, int] | None]:
+    """Безопасно читает целочисленный query-параметр (limit/offset).
+
+    Раньше `int(request.args.get("limit", 200))` падал ValueError'ом на
+    нечисловом значении (?limit=abc) — ловился только общим except роута и
+    превращался в 500 вместо честного 400 на обычную клиентскую ошибку
+    (см. workflow-найденный баг)."""
+    raw = request.args.get(name)
+    if raw is None:
+        return default, None
+    try:
+        return int(raw), None
+    except (TypeError, ValueError):
+        return None, (jsonify({"error": f"Параметр '{name}' должен быть целым числом"}), 400)
 
 
 def _validate_order_fields(data: dict[str, Any], *, require_client: bool) -> str | None:

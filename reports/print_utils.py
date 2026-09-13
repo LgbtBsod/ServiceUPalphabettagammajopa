@@ -32,6 +32,34 @@ def _start_cleanup_thread(cleanup: Callable[[], None]) -> None:
     core.start_thread(name)
 
 
+def _wait_for_unlock_or_timeout(
+    path: str, timeout_sec: float, poll_interval: float = 2.0
+) -> None:
+    """Лучшее, что можно сделать БЕЗ платформенных API печати
+    (win32print/CUPS): os.startfile(path, "print")/lpr/lp — все
+    fire-and-forget, ни один не даёт сигнала "печать/спулинг завершены".
+
+    Проба — os.rename(path, path) (переименование файла в самого себя), а
+    НЕ open(path, "r+b"): на Windows обычный open() по умолчанию открывает
+    файл в разделяемом режиме (_SH_DENYNO) — второй open() того же файла
+    (даже из того же процесса) СПОКОЙНО открывается параллельно, пока файл
+    занят просмотрщиком/спулером, поэтому такая проверка ничего бы не
+    ловила. Переименование же требует эксклюзивного доступа и надёжно
+    падает WinError 32 (sharing violation), пока у файла есть любой другой
+    открытый хендл — проверено эмпирически на этом же repo.
+
+    Ждём исчезновения блокировки, но не дольше timeout_sec — если
+    просмотрщик остался открытым пользователем надолго, не течём файлами
+    вечно, удаляем по истечении таймаута как раньше."""
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
+        try:
+            os.rename(path, path)
+            return
+        except OSError:
+            time.sleep(poll_interval)
+
+
 def get_exports_dir() -> str:
     """Возвращает путь к папке exports/."""
     from config import EXPORT_DIR
@@ -49,18 +77,24 @@ def generate_act_filename(act_type: str, order_number: str) -> str:
 
 
 def print_act_pdf(
-    pdf_path: str, delete_after: bool = True, delay_sec: int = 60
+    pdf_path: str, delete_after: bool = True, delay_sec: int = 180
 ) -> None:
     """Отправляет PDF на печать / открывает в просмотрщике.
 
     На Windows — открывает с командой 'print', что вызывает диалог печати
     системного просмотрщика. После задержки (delay_sec) файл удаляется,
-    чтобы не занимать место.
+    чтобы не занимать место — на Windows не раньше, чем файл перестанет
+    быть занят просмотрщиком/спулером (см. _wait_for_unlock_or_timeout);
+    на POSIX unlink() безопасен даже пока другой процесс ещё держит файл
+    открытым (inode живёт, пока не закроется последний дескриптор), поэтому
+    там фиксированная задержка не риск потери данных для печати, только
+    "не удалять слишком рано, пока печать точно не запущена".
 
     Параметры:
         pdf_path — путь к PDF файлу.
         delete_after — удалить файл после печати.
-        delay_sec — через сколько секунд удалить (даёт время на печать).
+        delay_sec — сколько ждать перед удалением (на Windows — верхняя
+            граница ожидания разблокировки, не гарантированная задержка).
     """
     try:
         if sys.platform == "win32":
@@ -78,11 +112,18 @@ def print_act_pdf(
         except Exception:
             pass
 
-    # Автоудаление через delay_sec в фоновом потоке
+    # Автоудаление в фоновом потоке — раньше это была БЕЗУСЛОВНАЯ задержка
+    # без проверки, действительно ли печать/просмотр завершены (см.
+    # workflow-найденный баг: медленная сетевая печать/большой акт могли
+    # не уложиться в фиксированные 60с, и файл удалялся прямо во время
+    # чтения просмотрщиком/спулером).
     if delete_after:
 
         def _cleanup():
-            time.sleep(delay_sec)
+            if sys.platform == "win32":
+                _wait_for_unlock_or_timeout(pdf_path, timeout_sec=delay_sec)
+            else:
+                time.sleep(delay_sec)
             try:
                 if os.path.exists(pdf_path):
                     os.remove(pdf_path)
@@ -113,7 +154,10 @@ def open_act_pdf(
     if delete_after:
 
         def _cleanup():
-            time.sleep(delay_sec)
+            if sys.platform == "win32":
+                _wait_for_unlock_or_timeout(pdf_path, timeout_sec=delay_sec)
+            else:
+                time.sleep(delay_sec)
             try:
                 if os.path.exists(pdf_path):
                     os.remove(pdf_path)

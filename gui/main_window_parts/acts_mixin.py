@@ -214,6 +214,7 @@ class ActsMixin:
                 return  # пользователь закрыл окно
 
             # 'receipt2' → 2×receipt, 'completion2' → 2×completion, 'both' → receipt+completion
+            tpl_key2 = None
             if choice == "receipt2":
                 act_type1, act_type2 = "receipt", "receipt"
                 tpl_key = "receipt"
@@ -221,8 +222,14 @@ class ActsMixin:
                 act_type1, act_type2 = "completion", "completion"
                 tpl_key = "completion"
             else:
+                # Разные типы акта — у каждого свой настроенный в редакторе
+                # шаблон (header_text/fields/warranty_text отличаются, см.
+                # reports/report_editor.py); один общий self.template отдал
+                # бы половине листа не тот заголовок/поля/гарантию (см.
+                # ActPDFGenerator.generate_dual_pdf's template_data2).
                 act_type1, act_type2 = "receipt", "completion"
                 tpl_key = "receipt"
+                tpl_key2 = "completion"
 
             from tkinter import filedialog
 
@@ -239,9 +246,15 @@ class ActsMixin:
             from reports.report_editor import load_template_data
 
             tpl = load_template_data(tpl_key)
+            tpl2 = load_template_data(tpl_key2) if tpl_key2 else None
             gen = ActPDFGenerator(template_data=tpl)
             ok = gen.generate_dual_pdf(
-                file_path, device, device, act_type1=act_type1, act_type2=act_type2
+                file_path,
+                device,
+                device,
+                act_type1=act_type1,
+                act_type2=act_type2,
+                template_data2=tpl2,
             )
             if ok:
                 messagebox.showinfo(

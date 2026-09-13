@@ -371,6 +371,35 @@ class DevicesTableMixin:
         except Exception as e:
             logger.exception(f"Ошибка поиска: {e}")
 
+    @staticmethod
+    def _price_sort_key(value: str) -> float:
+        try:
+            return float(value.replace("₽", "").replace(" ", "").replace(",", ""))
+        except (ValueError, TypeError):
+            return 0.0
+
+    @staticmethod
+    def _int_sort_key(value: str) -> int:
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return 0
+
+    @staticmethod
+    def _date_sort_key(value: str) -> datetime:
+        """"Дата приёма"/"Дата выдачи" отображаются как DD.MM.YYYY[ HH:MM]
+        (см. format_datetime_for_display) — лексикографическая сортировка
+        такой строки сортирует по дню месяца, игнорируя месяц/год.
+        Непарсящееся/пустое значение ("", "—") уходит в самый ранний край."""
+        if not value or value == "—":
+            return datetime.min  # noqa: DTZ901 -- naive-vs-naive sort key only, never displayed/persisted
+        for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(value, fmt)
+            except ValueError:
+                continue
+        return datetime.min  # noqa: DTZ901 -- naive-vs-naive sort key only, never displayed/persisted
+
     def sort_treeview(self, col):
         """Сортировка таблицы"""
         if self.sort_column == col:
@@ -383,15 +412,18 @@ class DevicesTableMixin:
             (self.tree.set(item, col), item) for item in self.tree.get_children("")
         ]
 
+        # Раньше только "Цена" сортировалась численно — "Заказ №"/"Дней"
+        # (числовые, но текстовые колонки Treeview) и обе колонки дат
+        # сортировались как обычные строки: "1"/"10"/"11"/"2" по алфавиту,
+        # дата — по дню месяца в начале строки, игнорируя месяц/год (см.
+        # уже исправленный для Заказ №/Цена sort_by_column() в
+        # client_history.py — тот же класс бага, не перенесённый сюда).
         if col == "Цена":
-            items.sort(
-                key=lambda x: (
-                    float(x[0].replace("₽", "").replace(" ", "").replace(",", ""))
-                    if x[0] != "0 ₽"
-                    else 0
-                ),
-                reverse=self.sort_reverse,
-            )
+            items.sort(key=lambda x: self._price_sort_key(x[0]), reverse=self.sort_reverse)
+        elif col in ("Заказ №", "Дней"):
+            items.sort(key=lambda x: self._int_sort_key(x[0]), reverse=self.sort_reverse)
+        elif col in ("Дата приёма", "Дата выдачи"):
+            items.sort(key=lambda x: self._date_sort_key(x[0]), reverse=self.sort_reverse)
         else:
             items.sort(reverse=self.sort_reverse)
 
