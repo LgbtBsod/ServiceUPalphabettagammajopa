@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+
+"""Тесты для core/di/container.py::DIContainer — регрессия workflow-
+найденного бага: _resolution_stack был обычным list на экземпляре
+контейнера, а DIContainer — процесс-широкий singleton (get_container()),
+к которому могут одновременно обращаться разные потоки (GUI + PWA Flask-
+сервер threaded=True + фоновые worker'ы). Обнаружение циклических
+зависимостей — по своей природе состояние ОДНОЙ цепочки вызовов ОДНОГО
+потока: с общим list два потока, одновременно конструирующих (через
+_create_instance()) один и тот же — совершенно нециклический — класс,
+видели push друг друга в стеке и один из них мог ловить ложный
+CircularDependencyError."""
+
+from __future__ import annotations
+
+import threading
+import time
+
+from core.di.container import CircularDependencyError, DIContainer
+
+
+class _SlowConstruct:
+    """Специально медленный __init__ — расширяет окно гонки, в течение
+    которого класс "числится" в _resolution_stack одного потока, пока
+    другой поток пытается сконструировать тот же класс независимо."""
+
+    def __init__(self):
+        time.sleep(0.05)
+
+
+class _NoDeps:
+    pass
+
+
+class TestResolutionStackIsPerThread:
+    def test_concurrent_create_of_same_class_does_not_false_positive_cycle(self):
+        container = DIContainer()
+        errors: list[Exception] = []
+        results: list[object] = []
+        barrier = threading.Barrier(2)
+
+        def _worker():
+            barrier.wait()
+            try:
+                results.append(container.create(_SlowConstruct))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=_worker) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+
+        assert errors == [], (
+            f"независимое конкурентное конструирование одного и того же "
+            f"класса из разных потоков не должно падать: {errors}"
+        )
+        assert len(results) == 2
+        assert all(isinstance(r, _SlowConstruct) for r in results)
+
+    def test_resolution_stack_is_empty_after_create_on_each_thread(self):
+        """_resolution_stack — приватная деталь реализации, но её "утечка"
+        (не опустошается после успешного _create_instance) сломала бы
+        обнаружение РЕАЛЬНЫХ циклов при следующем вызове в том же потоке."""
+        container = DIContainer()
+        container.create(_NoDeps)
+        assert container._resolution_stack == []
+
+    def test_real_circular_dependency_still_detected_within_one_thread(self):
+        """Позитивный контроль: thread-local не должен маскировать
+        настоящий цикл внутри ОДНОЙ цепочки вызовов одного потока."""
+        container = DIContainer()
+        # Симулируем то же состояние, что _create_instance видит в середине
+        # рекурсивного разрешения зависимостей одного вызова.
+        container._resolution_stack.append(_NoDeps)
+        try:
+            import pytest
+
+            with pytest.raises(CircularDependencyError):
+                container._create_instance(_NoDeps)
+        finally:
+            container._resolution_stack.pop()

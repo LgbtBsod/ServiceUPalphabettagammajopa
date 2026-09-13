@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -87,8 +88,26 @@ class DIContainer(LoggableMixin):
         super().__init__()
         self._services: dict[type, ServiceDescriptor] = {}
         self._aliases: dict[str, type] = {}
-        self._resolution_stack: list[type] = []
+        # threading.local(), не обычный list: DIContainer — процесс-широкий
+        # singleton (см. get_container() ниже), к которому могут одновременно
+        # обращаться разные потоки (GUI + PWA Flask-сервер с threaded=True +
+        # фоновые worker'ы через core.create_thread). Обнаружение циклических
+        # зависимостей — по своей природе состояние ОДНОЙ цепочки вызовов
+        # одного потока, а не общий на процесс стек: с обычным list двух
+        # потоков, одновременно конструирующих разные классы через
+        # _create_instance(), push/pop переплетаются и портят стек друг
+        # друга — поток A может по ошибке вытолкнуть кадр потока B (или
+        # наоборот), давая ложный CircularDependencyError либо, наоборот,
+        # пропуская реальный цикл (workflow-найденный баг).
+        self._resolution_local = threading.local()
         self._scopes: list[dict[type, Any]] = []
+
+    @property
+    def _resolution_stack(self) -> list[type]:
+        stack = getattr(self._resolution_local, "stack", None)
+        if stack is None:
+            stack = self._resolution_local.stack = []
+        return stack
 
     def register_singleton(
         self,
