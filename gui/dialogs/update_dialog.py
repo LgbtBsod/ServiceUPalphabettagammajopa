@@ -120,12 +120,15 @@ class UpdateDialog(ctk.CTkToplevel):
             )
             notes_label.pack(anchor="w", pady=(15, 5))
 
-            # Текст заметок с прокруткой если длинный
+            # Текст заметок с прокруткой если длинный. Создаём БЕЗ
+            # state="disabled" — Tk молча игнорирует .insert() на уже
+            # отключённом Text-виджете (workflow-найденный баг: заметки
+            # никогда не отображались), отключаем только ПОСЛЕ вставки —
+            # тот же порядок, что и в gui/dialogs/act_preview.py.
             notes_text = ctk.CTkTextbox(
                 main_frame,
                 height=100,
                 wrap="word",
-                state="disabled",
             )
             notes_text.pack(fill="x", pady=5)
             notes_text.insert("0.0", self.release_notes[:500])  # Ограничиваем длину

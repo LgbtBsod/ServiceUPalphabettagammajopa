@@ -46,6 +46,41 @@ def _sample_device(**overrides) -> dict:
     return data
 
 
+class TestGetOrCreateClientRace:
+    """Регрессия workflow-найденного бага: get_or_create_client() делает
+    check-then-insert без защиты от гонки — раньше конкурентный дубль-инсерт
+    на UNIQUE Client.phone падал IntegrityError'ом, попадал в общий except
+    и возвращал None, как будто клиента вообще не удалось получить, вместо
+    id уже существующего клиента-победителя гонки."""
+
+    def test_concurrent_calls_same_phone_both_get_a_valid_id(self, db):
+        import threading
+
+        results: list[int | None] = [None, None]
+        barrier = threading.Barrier(2)
+
+        def _create(idx: int) -> None:
+            barrier.wait()
+            results[idx] = db.get_or_create_client("Иван Иванов", "+79991234567")
+
+        t1 = threading.Thread(target=_create, args=(0,))
+        t2 = threading.Thread(target=_create, args=(1,))
+        t1.start()
+        t2.start()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+
+        assert results[0] is not None, "гонка вернула None вместо id клиента"
+        assert results[1] is not None, "гонка вернула None вместо id клиента"
+        assert results[0] == results[1], "оба вызова должны получить id ОДНОГО клиента"
+
+    def test_sequential_calls_same_phone_return_same_id(self, db):
+        first = db.get_or_create_client("Иван Иванов", "+79991234567")
+        second = db.get_or_create_client("Иван Иванов", "+79991234567")
+        assert first is not None
+        assert first == second
+
+
 class TestClientDatabaseManager:
     def test_add_repair_creates_client_and_history(self, db, client_db):
         ok = client_db.add_repair_to_client_history(

@@ -49,12 +49,18 @@ def format_phone(phone):
     if not phone:
         return ""
     digits = normalize_phone_digits(phone)
+    # Та же 8->7 нормализация, что и normalize_phone() — без неё сырой
+    # (сохранённый в обход normalize_phone: легаси/импортированные записи)
+    # номер, начинающийся с 8, отображался бы с невалидным кодом страны
+    # "+8" вместо "+7" (workflow-найденный баг).
+    if len(digits) == 11 and digits[0] in ("7", "8"):
+        digits = "7" + digits[1:]
+    elif len(digits) == 10:
+        digits = "7" + digits
     if len(digits) == 11:
         return (
             f"+{digits[0]} ({digits[1:4]}) {digits[4:7]}-{digits[7:9]}-{digits[9:11]}"
         )
-    if len(digits) == 10:
-        return f"+7 ({digits[0:3]}) {digits[3:6]}-{digits[6:8]}-{digits[8:10]}"
     return str(phone)
 
 
@@ -64,6 +70,16 @@ def format_price(price):
         return "0 ₽"
     try:
         price_str = re.sub(r"[^\d,.]", "", str(price)).replace(",", ".")
+        # Та же схлопка лишних точек, что и в parse_price_to_float() ниже —
+        # без неё "1.234.567" (или любой другой ввод с >1 точкой) падает
+        # float()'ом и format_price() возвращает сырую нечитаемую строку
+        # вместо отформатированного значения, хотя parse_price_to_float()
+        # на том же самом входе успешно разбирает число (workflow-найденный
+        # баг — расхождение между "той же парой" утилит форматирования/
+        # парсинга).
+        if price_str.count(".") > 1:
+            parts = price_str.split(".")
+            price_str = parts[0] + "." + "".join(parts[1:])
         price_val = float(price_str)
         # Используем NBSP (\u00a0) как разделитель тысяч — единый формат
         # во всём приложении, чтобы сортировка/парсинг были согласованы.
@@ -194,6 +210,10 @@ def row_matches_search(
                 q_variants.add("7" + phone_digits[1:])
             if phone_digits.startswith("7") and len(phone_digits) == 11:
                 q_variants.add("8" + phone_digits[1:])
+            if len(phone_digits) == 10:
+                # Запрос — "голый" 10-значный номер без кода страны.
+                q_variants.add("7" + phone_digits)
+                q_variants.add("8" + phone_digits)
             # Варианты записи: как есть, с заменой 8->7 / 7->8, и без кода страны
             row_variants = {row_phone_digits}
             if row_phone_digits.startswith("8") and len(row_phone_digits) == 11:
@@ -202,6 +222,14 @@ def row_matches_search(
                 row_variants.add("8" + row_phone_digits[1:])
                 # И 10-значный вид без кода страны
                 row_variants.add(row_phone_digits[1:])
+            if len(row_phone_digits) == 10:
+                # Запись хранит "голый" 10-значный номер без кода страны
+                # (легаси/импортированные данные, не прошедшие
+                # normalize_phone) — ни одна из веток выше не срабатывает на
+                # 10-значном значении, поэтому 11-значный поисковый запрос
+                # никогда не находил такую запись (workflow-найденный баг).
+                row_variants.add("7" + row_phone_digits)
+                row_variants.add("8" + row_phone_digits)
             # Ищем вхождение любого варианта запроса в любой вариант записи
             for q in q_variants:
                 for rv in row_variants:

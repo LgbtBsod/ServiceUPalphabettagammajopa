@@ -79,10 +79,18 @@ class AsyncLoadMixin:
                 # см. AUDIT_REPORT_v25.md, Task O verify-пасс).
                 with contextlib.suppress(Exception):
                     self._core.stop_thread(thread_name, timeout=0.1)
+                if gens.get(key) != gen:
+                    # Устарело — пришёл более новый запрос той же key.
+                    # Проверяем ДО busy_indicator.stop(): если сделать
+                    # наоборот (как было раньше), устаревший callback гасит
+                    # ОБЩИЙ индикатор загрузки, пока более новый запрос той
+                    # же key всё ещё выполняется — пользователь видит "готово"
+                    # раньше времени (workflow-найденный баг). Индикатором
+                    # владеет актуальный запрос — его собственный _apply()
+                    # остановит индикатор сам, когда придёт его очередь.
+                    return
                 if busy_indicator is not None:
                     busy_indicator.stop(error=error is not None)
-                if gens.get(key) != gen:
-                    return  # устарело — пришёл более новый запрос той же key
                 if error is not None:
                     logger.error(
                         f"Фоновая загрузка [{key}] завершилась ошибкой: {error}",
@@ -106,17 +114,34 @@ class AsyncLoadMixin:
                     f"Фоновая загрузка [{key}] вернулась после закрытия окна — результат отброшен"
                 )
 
+        start_error: Exception | None = None
+        started = False
         try:
             self._core.create_thread(thread_name, _worker, daemon=True)
-            self._core.start_thread(thread_name)
+            started = self._core.start_thread(thread_name)
         except Exception as e:
-            # create_thread() падает ValueError на дубле имени, start_thread()
-            # тихо возвращает False при внутренней ошибке — в обоих случаях
-            # _worker никогда не запустится, и без этой ветки busy_indicator
-            # остался бы навсегда "висеть" в состоянии загрузки (найдено
-            # адверсарной проверкой, см. AUDIT_REPORT_v25.md, Task O).
-            logger.error(f"Не удалось запустить фоновую загрузку [{key}]: {e}", exc_info=True)
+            # create_thread() падает ValueError на дубле имени; start_thread()
+            # само по себе НЕ бросает — оно тихо возвращает False при
+            # внутренней ошибке (см. ветку ниже), но create_thread() может.
+            start_error = e
+
+        if not started:
+            # Раньше start_thread(...)'s bool-результат ни на что не влиял
+            # (вызывался только ради побочного эффекта) — комментарий здесь
+            # утверждал, что False-путь ловится тем же except, но False —
+            # не исключение, except его не перехватывал: _worker никогда не
+            # запускался, а busy_indicator, уже включённый выше, оставался
+            # "висеть" в состоянии загрузки навсегда, ни on_error, ни лог не
+            # срабатывали (workflow-найденный баг).
+            if start_error is None:
+                start_error = RuntimeError(
+                    f"start_thread('{thread_name}') вернул False без исключения"
+                )
+            logger.error(
+                f"Не удалось запустить фоновую загрузку [{key}]: {start_error}",
+                exc_info=start_error,
+            )
             if busy_indicator is not None:
                 busy_indicator.stop(error=True)
             if on_error is not None:
-                on_error(e)
+                on_error(start_error)

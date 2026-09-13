@@ -128,48 +128,6 @@ class AppSettings(BaseSettings):
         return v.upper()
 
 
-class LicenseSettings(BaseSettings):
-    """License configuration settings"""
-
-    model_config = SettingsConfigDict(
-        env_prefix="LIC_", env_file=".env", extra="ignore"
-    )
-
-    key_file: str = Field(default="license.key", description="License key file path")
-    hmac_secret: str = Field(
-        default="change_this_secret_key_in_production",
-        description="HMAC secret for license validation",
-    )
-    trial_days: int = Field(default=14, description="Trial period in days")
-
-
-class NotificationSettings(BaseSettings):
-    """Notification service settings"""
-
-    model_config = SettingsConfigDict(
-        env_prefix="NOTIF_", env_file=".env", extra="ignore"
-    )
-
-    sms_enabled: bool = Field(default=False, description="Enable SMS notifications")
-    email_enabled: bool = Field(default=False, description="Enable email notifications")
-    telegram_enabled: bool = Field(
-        default=False, description="Enable Telegram notifications"
-    )
-    push_enabled: bool = Field(default=False, description="Enable push notifications")
-
-    # SMTP settings
-    smtp_host: str | None = Field(default=None, description="SMTP server host")
-    smtp_port: int = Field(default=587, description="SMTP server port")
-    smtp_user: str | None = Field(default=None, description="SMTP username")
-    smtp_password: str | None = Field(default=None, description="SMTP password")
-
-    # Telegram settings
-    telegram_bot_token: str | None = Field(
-        default=None, description="Telegram bot token"
-    )
-    telegram_chat_id: str | None = Field(default=None, description="Telegram chat ID")
-
-
 class Settings(BaseSettings):
     """Main Settings class - SSOT for all application configuration
     Combines all sub-settings into one unified interface
@@ -182,8 +140,6 @@ class Settings(BaseSettings):
     # Nested settings
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     app: AppSettings = Field(default_factory=AppSettings)
-    license: LicenseSettings = Field(default_factory=LicenseSettings)
-    notification: NotificationSettings = Field(default_factory=NotificationSettings)
 
     # Direct access shortcuts for common settings
     debug: bool = Field(default=False)
@@ -393,8 +349,6 @@ __all__ = [
     "THUMBNAILS_DIR",
     "AppSettings",
     "DatabaseSettings",
-    "LicenseSettings",
-    "NotificationSettings",
     # Core settings classes
     "Settings",
     "ensure_directories",

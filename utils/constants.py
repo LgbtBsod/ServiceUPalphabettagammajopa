@@ -6,22 +6,23 @@
 PRIORITIES и т.д.) из domain.constants "для обратной совместимости", но
 все живые потребители уже импортируют их напрямую из domain.constants —
 см. AUDIT_REPORT_v21.md. Единственное, что здесь остаётся не дублировано
-нигде больше — сборка DEFAULT_SETTINGS (объединяет domain-константы и
-config.settings в словарь, совместимый с managers.settings.SettingsManager).
-"""
+нигде больше — сборка DEFAULT_SETTINGS в словарь, совместимый с
+managers.settings.SettingsManager.
+
+Раньше "notify_on_ready" здесь читался из config.settings.NotificationSettings
+(pydantic-settings, env-конфигурируемый) — но ни один живой код нигде не
+читал settings.notification.* (кроме этого единственного места), UI для этой
+настройки нет и никогда не было; сама NotificationSettings-модель удалена
+как мёртвая (workflow-найденная находка), значение просто False по умолчанию,
+как и было фактически всегда."""
 
 from __future__ import annotations
 
-from config.settings import get_settings
 from domain.constants import DEFAULT_PRIORITY, DEFAULT_STATUS
 
 
 def _get_default_settings() -> dict:
-    """Get default settings from pydantic-settings config.
-
-    Returns a dict compatible with legacy DEFAULT_SETTINGS usage.
-    """
-    settings = get_settings()
+    """Собирает DEFAULT_SETTINGS — совместимый с legacy словарь настроек."""
     return {
         "theme": "light",
         "accent_color": "#0078d4",
@@ -40,7 +41,7 @@ def _get_default_settings() -> dict:
         # дополнительный, необязательный UX-слой поверх неё.
         "pessimistic_locking_enabled": False,
         "lock_ttl_seconds": 300,
-        "notify_on_ready": settings.notification.push_enabled,
+        "notify_on_ready": False,
         # Уведомление клиента о готовности заказа (managers/integrations.py::
         # notify_order_ready(), вызывается gui/dialogs/device_form.py при
         # переходе статуса в "Готов к выдаче"). Раньше эти ключи читались

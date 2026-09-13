@@ -26,8 +26,6 @@ from .settings import (
     THUMBNAILS_DIR,
     AppSettings,
     DatabaseSettings,
-    LicenseSettings,
-    NotificationSettings,
     Settings,
     ensure_directories,
     get_app_name,
@@ -68,8 +66,6 @@ __all__ = [
     "THUMBNAILS_DIR",
     "AppSettings",
     "DatabaseSettings",
-    "LicenseSettings",
-    "NotificationSettings",
     # Core settings classes
     "Settings",
     "ensure_directories",

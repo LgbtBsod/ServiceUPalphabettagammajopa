@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import case, func, select
+from sqlalchemy.exc import IntegrityError
 
 from database.facade.shared import logger
 from database.sqlalchemy_models import Client, RepairHistoryMain
@@ -37,7 +38,23 @@ class ClientsMixin:
                     first_order_date=now, last_order_date=now,
                 )
                 s.add(client)
-                s.commit()
+                try:
+                    s.commit()
+                except IntegrityError:
+                    # Гонка: другой параллельный вызов уже создал клиента с
+                    # этим телефоном между нашим SELECT и INSERT
+                    # (UNIQUE на Client.phone решает гонку на уровне БД, не
+                    # в питоновском коде) — не наша ошибка. Тот же паттерн,
+                    # что и в locks_mixin.py::acquire_lock() — отдаём id уже
+                    # существующего клиента вместо None (workflow-найденный
+                    # баг: раньше эта ветка проваливалась в общий except
+                    # ниже и возвращала None, как будто клиента вообще не
+                    # удалось получить).
+                    s.rollback()
+                    existing = s.execute(
+                        select(Client).where(Client.phone == phone)
+                    ).scalar_one_or_none()
+                    return existing.id if existing else None
                 return client.id
         except Exception as e:
             logger.error(f"Ошибка get_or_create_client: {e}", exc_info=True)
@@ -105,6 +122,17 @@ class ClientsMixin:
             phone_digits = normalize_phone_digits(client_phone)
             if len(phone_digits) >= 10:
                 last10 = phone_digits[-10:]
+                # Полная загрузка clients (не фильтр в SQL) — намеренно:
+                # Client.phone хранится в форматированном виде ("+7 (XXX)
+                # XXX-XX-XX"), суффиксное сравнение делается по ОЧИЩЕННЫМ
+                # от разделителей цифрам (normalize_phone_digits), а не по
+                # сырой строке — LIKE '%1234' по хранимому значению не
+                # находит цифры, разбитые дефисом ("...45-67" не matches
+                # LIKE '%4567'). Не оптимизируем это в SQL без миграции на
+                # отдельную колонку с очищенными цифрами — риск тихо терять
+                # реальные совпадения выше, чем цена full-scan на таблице
+                # клиентов (см. workflow-найденный вопрос об N+1 — сознательно
+                # оставлено как есть).
                 clients = s.execute(select(Client)).scalars().all()
                 matching_ids = [
                     c.id for c in clients

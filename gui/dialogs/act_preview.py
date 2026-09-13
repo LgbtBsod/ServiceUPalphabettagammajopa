@@ -446,8 +446,17 @@ class ActPreviewWindow(ctk.CTkToplevel):
                     text=f"📄 PDF сохранён: {os.path.basename(file_path)}",
                     text_color=self.colors["success"],
                 )
-                # Открываем в просмотрщике (файл удалится через 2 мин)
-                open_act_pdf(file_path, delete_after=True, delay_sec=120)
+                # delete_after=False: это ЭКСПОРТ (см. докстринг метода и
+                # текст статуса выше — "автосохранение в exports/",
+                # "PDF сохранён") — file_path уже лежит в exports/
+                # (create_temp_act_pdf(), несмотря на имя, строит путь
+                # именно там). delete_after=True здесь стирало бы "сохранённый"
+                # файл через 2 минуты, противореча и докстрингу, и тому, что
+                # видит пользователь в статусе/messagebox (workflow-найденный
+                # баг). Автоудаление уместно для печати/предпросмотра
+                # (см. print_act_pdf ниже и в print_receipt_from_form и т.п.),
+                # не для явного "Экспорт".
+                open_act_pdf(file_path, delete_after=False)
             else:
                 messagebox.showerror("Ошибка", "Не удалось создать PDF")
         except ImportError:
@@ -479,7 +488,11 @@ class ActPreviewWindow(ctk.CTkToplevel):
                     text="📋 2 акта на A4 — печать...",
                     text_color=self.colors["success"],
                 )
-                print_act_pdf(file_path, delete_after=True, delay_sec=60)
+                # delete_after=False — тот же баг и то же обоснование, что
+                # и в export_pdf() выше: это экспорт (docstring "автосохранение
+                # + печать"), сохранённый в exports/ файл не должен исчезать
+                # через минуту после того, как пользователь его "сохранил".
+                print_act_pdf(file_path, delete_after=False)
             else:
                 messagebox.showerror("Ошибка", "Не удалось создать PDF")
         except Exception as e:

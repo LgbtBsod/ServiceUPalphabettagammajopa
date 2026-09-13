@@ -118,14 +118,30 @@ class DeviceLockingMixin:
                     # состояние "заблокировано другим", что и при открытии.
                     self._holding_lock = False
                     result = self._try_acquire_lock()
-                    if result is not None and not result.ok:
+                    if result is None:
+                        # _try_acquire_lock() сам поймал исключение и
+                        # вернул None — не смогли даже ОПРЕДЕЛИТЬ, свободна
+                        # ли блокировка. Fail-CLOSED (тот же принцип, что и
+                        # managers/locking.py::try_acquire's собственная
+                        # защита от сбоя): раньше эта ветка не показывала
+                        # баннер и не отключала виджеты, оставляя диалог
+                        # полностью редактируемым без ЛЮБОЙ дальнейшей
+                        # проверки блокировки до конца жизни окна —
+                        # пользователь не видел вообще никакого сигнала о
+                        # проблеме (workflow-найденный баг).
+                        from managers.locking import LockResult
+
+                        result = LockResult(ok=False, holder_label=Msg.LOCK_CHECK_FAILED)
+                    if not result.ok:
                         self._render_lock_banner(result)
                         self._set_widgets_enabled(self.tabview, False)
                         with contextlib.suppress(Exception):
                             self.save_btn.configure(state="disabled")
                     return  # не переустанавливаем tick — _try_acquire_lock
                     # сам запустит новый heartbeat, если блокировку удалось
-                    # тут же перезахватить (result.ok=True)
+                    # тут же перезахватить (result.ok=True); иначе у
+                    # пользователя есть кнопка "Обновить" в баннере
+                    # (_retry_lock_acquire) для ручного повтора.
             self._heartbeat_job = self.after(LOCK_HEARTBEAT_MS, _tick)
 
         self._heartbeat_job = self.after(LOCK_HEARTBEAT_MS, _tick)

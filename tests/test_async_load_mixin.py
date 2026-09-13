@@ -44,22 +44,34 @@ class _SyncCore:
     fail_on_start позволяют смоделировать сбой запуска фонового потока
     (ValueError на дубле имени / внутренняя ошибка ThreadManager)."""
 
-    def __init__(self, *, fail_on_create: bool = False, fail_on_start: bool = False):
+    def __init__(
+        self,
+        *,
+        fail_on_create: bool = False,
+        fail_on_start: bool = False,
+        start_returns_false: bool = False,
+    ):
         self.fail_on_create = fail_on_create
         self.fail_on_start = fail_on_start
+        self.start_returns_false = start_returns_false
         self.stopped_thread_ids: list = []
 
     def create_thread(self, name, target, args=(), kwargs=None, daemon=False):
         if self.fail_on_create:
             raise ValueError(f"Thread '{name}' already exists")
-        if not self.fail_on_start:
+        if not self.fail_on_start and not self.start_returns_false:
             target(*(args or ()), **(kwargs or {}))
         return name
 
     def start_thread(self, thread_id):
         if self.fail_on_start:
             raise RuntimeError("start_thread failed")
-        return True
+        # Реальный ThreadManager.start_thread() именно так себя ведёт при
+        # внутренней ошибке — НЕ бросает, тихо возвращает False (см.
+        # core/threading/manager.py). fail_on_start=True (raise) выше —
+        # другой, более редкий путь; start_returns_false — про основной,
+        # документированный самим кодом failure mode.
+        return not self.start_returns_false
 
     def stop_thread(self, thread_id, timeout=5.0):
         self.stopped_thread_ids.append(thread_id)
@@ -177,6 +189,27 @@ class TestStaleGenerationGuard:
         assert table_results == ["orders"]
         assert finance_results == ["finances"]
 
+    def test_stale_result_does_not_stop_shared_busy_indicator(self, host):
+        """Регрессия workflow-найденного бага: busy_indicator.stop()
+        раньше вызывался ДО проверки на устаревание — устаревший (#1)
+        callback гасил ОБЩИЙ индикатор загрузки, пока более новый запрос
+        (#2) той же key всё ещё выполнялся, показывая пользователю
+        "готово" раньше времени. Индикатором должен управлять только
+        актуальный (последний) запрос."""
+        busy = _FakeBusyIndicator()
+        host._run_async(
+            "devices_table", lambda: "stale-data", lambda _r: None, busy_indicator=busy
+        )
+        host._run_async(
+            "devices_table", lambda: "fresh-data", lambda _r: None, busy_indicator=busy
+        )
+        host.root.run_pending()
+
+        stop_events = [e for e in busy.events if e[0] == "stop"]
+        assert stop_events == [("stop", False)], (
+            f"ожидался ровно один stop (от актуального запроса), получено: {busy.events}"
+        )
+
     def test_repeated_calls_same_key_each_apply_independently_when_sequential(self, host):
         """Если ответы приходят и применяются строго по очереди (не гонка) —
         каждый результат обязан примениться, а не только последний."""
@@ -259,6 +292,25 @@ class TestThreadStartFailure:
     def test_create_thread_failure_without_on_error_does_not_raise(self):
         host = _Host(core=_SyncCore(fail_on_create=True))
         host._run_async("devices_table", lambda: "unreached", lambda _r: None)  # не должно бросить
+
+    def test_start_thread_silent_false_stops_busy_indicator_and_routes_to_on_error(self):
+        """Регрессия workflow-найденного бага: start_thread() возвращал
+        False БЕЗ исключения (реальное поведение ThreadManager при
+        внутренней ошибке) — раньше этот bool-результат просто отбрасывался,
+        _worker никогда не запускался, busy_indicator оставался "висеть" в
+        состоянии загрузки навсегда, ни on_error, ни лог не срабатывали."""
+        host = _Host(core=_SyncCore(start_returns_false=True))
+        busy = _FakeBusyIndicator()
+        successes, errors = [], []
+
+        host._run_async(
+            "devices_table", lambda: "unreached", successes.append,
+            on_error=errors.append, busy_indicator=busy,
+        )
+
+        assert successes == []
+        assert len(errors) == 1 and isinstance(errors[0], RuntimeError)
+        assert busy.events == [("start", "Загрузка..."), ("stop", True)]
 
 
 class TestShutdownRace:
