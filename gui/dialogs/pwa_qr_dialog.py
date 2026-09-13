@@ -31,17 +31,12 @@ class PWAQRDialog(ctk.CTkToplevel):
         self.transient(parent)
         self.grab_set()
 
-        # Адаптивная геометрия
-        try:
-            sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        except Exception:
-            sw, sh = 1280, 720
-        w, h = 420, 600
-        x = (sw - w) // 2
-        y = max(0, (sh - h) // 2 - 20)
-        self.geometry(f"{w}x{h}+{x}+{y}")
-        self.minsize(380, 520)
-
+        # Геометрия: restore_window_geometry() сама центрирует при первом
+        # запуске (см. её докстринг) — раньше здесь ЕЩЁ ДО неё вручную
+        # вычислялась и применялась центрированная геометрия, которую
+        # restore_window_geometry() тут же перезаписывала при наличии
+        # settings — типичный случай, мёртвая повторная работа. Ручной
+        # расчёт нужен только как fallback, когда settings вообще нет.
         if settings:
             from utils.window_state import restore_window_geometry
 
@@ -54,6 +49,16 @@ class PWAQRDialog(ctk.CTkToplevel):
                 min_w=380,
                 min_h=520,
             )
+        else:
+            try:
+                sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+            except Exception:
+                sw, sh = 1280, 720
+            w, h = 420, 600
+            x = (sw - w) // 2
+            y = max(0, (sh - h) // 2 - 20)
+            self.geometry(f"{w}x{h}+{x}+{y}")
+            self.minsize(380, 520)
 
         self._qr_image = None  # удержание PhotoImage
         self.create_widgets()
@@ -189,12 +194,11 @@ class PWAQRDialog(ctk.CTkToplevel):
         self._close()
 
     def _close(self):
-        """Закрывает окно (без остановки сервера)."""
-        try:
-            if self.settings:
-                from utils.window_state import save_window_geometry
+        """Закрывает окно (без остановки сервера) — общая реализация
+        close_dialog_with_geometry() вместо независимо продублированного
+        save+destroy (та же логика, что уже вынесена туда именно из-за
+        восьмикратного дублирования по другим диалогам, см.
+        AUDIT_REPORT_v21.md; этот диалог тогда остался не переведён)."""
+        from utils.window_state import close_dialog_with_geometry
 
-                save_window_geometry(self.settings, "pwa_qr", self)
-        except Exception:
-            pass
-        self.destroy()
+        close_dialog_with_geometry(self, self.settings, "pwa_qr")
