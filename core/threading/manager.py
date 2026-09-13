@@ -118,8 +118,20 @@ class ThreadManager:
                 finally:
                     with self._lock:
                         if name in self._threads:
-                            self._threads[name].status = ThreadStatus.STOPPED
-                            self._threads[name].stopped_at = datetime.now()
+                            info = self._threads[name]
+                            # НЕ затирать ERROR, который except-блок выше
+                            # только что выставил — finally выполняется
+                            # ВСЕГДА следом за except, и раньше безусловно
+                            # перезаписывал status в STOPPED, так что ни
+                            # один вызывающий get_thread_status()/
+                            # get_all_statuses() никогда не мог увидеть
+                            # ERROR — только "тихо остановился" неотличимо
+                            # от нормального завершения (workflow-найденный
+                            # баг; .error при этом сохранялся корректно,
+                            # только status врал).
+                            if info.status != ThreadStatus.ERROR:
+                                info.status = ThreadStatus.STOPPED
+                            info.stopped_at = datetime.now()
 
             thread = threading.Thread(
                 target=wrapped_target,
