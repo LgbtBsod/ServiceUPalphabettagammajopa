@@ -252,34 +252,9 @@ class BluetoothCallError(BluetoothError):
         )
 
 
-# Legacy aliases for backward compatibility
-AppException = BaseAppError
-CoreException = CoreError
-NotFoundError = NotFoundError
-EntityNotFoundException = NotFoundError
-ApplicationException = ServiceError
-ServiceUnavailableError = ServiceError
-CommandExecutionError = ServiceError
-QueryExecutionError = ServiceError
-InfrastructureException = InfrastructureError
-RepositoryError = DatabaseError
-FileOperationError = AppFileNotFoundError
-TemplateNotFoundError = AppFileNotFoundError
-QRCodeGenerationError = PDFGenerationError
-MobileConnectionError = BluetoothConnectionError
-WebSocketError = ExternalServiceError
-PresentationException = ServiceError
-UIComponentError = ServiceError
-DataBindingError = ServiceError
-DIContainerError = CoreError
-ServiceNotRegisteredError = CoreError
-
-
 __all__ = [
     "AnalyticsError",
-    "AppException",  # Legacy alias
     "AppFileNotFoundError",
-    "ApplicationException",  # Legacy alias
     "AuthenticationError",
     # Base
     "BaseAppError",
@@ -288,37 +263,20 @@ __all__ = [
     # Bluetooth
     "BluetoothError",
     "BusinessRuleViolation",
-    "CommandExecutionError",  # Legacy alias
     "ConfigurationError",
     # Core
     "CoreError",
-    # DI (Legacy aliases)
-    "DIContainerError",
-    "DataBindingError",
     "DatabaseError",
     # Domain
     "DomainException",
-    "EntityNotFoundException",  # Legacy alias
     "ExternalServiceError",
-    "FileOperationError",  # Legacy alias
     # Infrastructure
     "InfrastructureError",
-    "MobileConnectionError",  # Legacy alias
     "NotFoundError",
     "NotificationError",
     "PDFGenerationError",
     "PermissionError",
-    # Presentation (Legacy aliases)
-    "PresentationException",
-    "QRCodeGenerationError",  # Legacy alias
-    "QueryExecutionError",  # Legacy alias
-    "RepositoryError",  # Legacy alias
     # Application/Service
     "ServiceError",
-    "ServiceNotRegisteredError",
-    "ServiceUnavailableError",  # Legacy alias
-    "TemplateNotFoundError",  # Legacy alias
-    "UIComponentError",
     "ValidationError",
-    "WebSocketError",  # Legacy alias
 ]

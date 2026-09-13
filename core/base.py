@@ -111,7 +111,7 @@ class ExceptionHandlingMixin:
             Result of func or default value on error
 
         Raises:
-            CoreException: Re-raised as is (domain exceptions)
+            BaseAppError: Re-raised as is (domain exceptions)
             Exception: If no default provided
         """
         try:

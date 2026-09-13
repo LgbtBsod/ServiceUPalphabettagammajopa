@@ -4,7 +4,6 @@
 
 from .client_db import ClientDatabaseManager
 from .db_config import DatabaseConfig, DatabaseType, get_db_config
-from .db_manager import Database as LegacyDatabase
 from .models import Device, WorkItem, WorkItemsManager
 from .sqlalchemy_database import Database
 from .sqlalchemy_models import Base, Client, Settings, WorkTemplate
@@ -14,7 +13,13 @@ from .sqlalchemy_models import Device as DeviceModel
 # зарегистрированный в Kernel facade). Раньше здесь экспортировался
 # db_manager.Database (сырой sqlite3) под тем же именем — GUI-диалоги
 # типизировались на неверный класс без .conn (см. AUDIT_REPORT_v21.md).
-# Явный доступ к legacy-классу — через LegacyDatabase.
+# Легаси-класс (database.db_manager.Database) больше не реэкспортируется
+# отсюда как LegacyDatabase — оба его реальных потребителя
+# (database/facade/clients_mixin.py::migrate_client_dbs,
+# tools/migrate_to_sqlalchemy.py) уже делают собственный прямой
+# `from database.db_manager import Database as _LegacyDatabase`, ни один
+# не импортировал через этот пакетный реэкспорт (workflow-найденная
+# мёртвая точка входа).
 #
 # database/repositories/ (Repository/UnitOfWork/DatabaseFactory) удалены:
 # несмотря на импорт при каждом старте приложения (через этот файл),
@@ -35,8 +40,6 @@ __all__ = [
     "DatabaseType",
     "Device",
     "DeviceModel",
-    # Legacy raw-sqlite3 API (не использовать напрямую в новом коде)
-    "LegacyDatabase",
     "Settings",
     "WorkItem",
     "WorkItemsManager",
