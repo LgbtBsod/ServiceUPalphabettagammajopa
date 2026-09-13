@@ -22,7 +22,8 @@ CRM для сервисного центра по ремонту техники:
   (`reports/act_importer.py`).
 - **Плагины** — `plugins/clients`, `plugins/employees`, `plugins/orders` — модули со
   своей таблицей БД, подключаемые через ядро (`core/kernel.py`) и заменяемые
-  реализацией репозитория (см. `PLUGINS_ARCHITECTURE.md`).
+  реализацией репозитория (интерфейс `I*Repository` + `SqlAlchemy*Repository`,
+  регистрация через `core.plugin_system.PluginManager.discover()`).
 - **PWA** — Flask-сервер (`pwa/server.py`) отдаёт мобильный веб-интерфейс в локальной
   сети: тот же Database facade, что и десктоп, изменения видны в реальном времени.
 - **Самообновление** — `utils/update_manager.py` проверяет GitHub Releases
@@ -89,15 +90,13 @@ ruff check .
 - `database/` — SQLAlchemy ORM (`sqlalchemy_database.py` + `facade/*_mixin.py`) поверх
   инфраструктурного слоя (`db_core.py`: соединение, сессии, кэш запросов). Легаси
   raw-sqlite3 класс (`db_manager.py`) сохранён только для миграции старых клиентских БД.
-- `plugins/` — модули, владеющие своей таблицей, за интерфейсом репозитория
-  (см. `PLUGINS_ARCHITECTURE.md`).
+- `plugins/` — модули, владеющие своей таблицей, за интерфейсом репозитория.
 - `gui/` / `gui_flet/` — два независимых фронта поверх одного и того же ядра.
 - `reports/` — генерация PDF-актов (`report_renderer.py`) и их визуальный редактор
   шаблонов (`report_editor.py`, `act_importer.py`).
 - `pwa/` — мобильный REST API + статика PWA.
-
-Подробности отдельных этапов рефакторинга — в `ARCHITECTURE_*.md`/`*_REPORT.md` в
-корне репозитория (исторические заметки, не свежая документация).
+- `TODO_RBAC_ROADMAP.md` — единственный сохранённый в корне заметочный файл: план
+  ролевой модели/авторизации сотрудников (пока не реализована).
 
 ## Лицензия
 
