@@ -6,6 +6,7 @@ Provides a thread pool for executing tasks concurrently.
 import logging
 import queue
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -223,26 +224,44 @@ class WorkerPool:
 
     def get_task_result(self, task_id: str, timeout: float | None = None) -> Any:
         """
-        Get result of a completed task.
+        Get result of a completed task, waiting up to `timeout` seconds for
+        it to finish if it hasn't yet.
 
         Args:
             task_id: ID of task
-            timeout: Maximum time to wait for completion
+            timeout: Maximum time to wait for completion. None waits
+                indefinitely (same convention as concurrent.futures.Future.
+                result()); 0 checks once without waiting.
 
         Returns:
-            Task result or None if not completed
+            Task result, or None if the task doesn't exist or the timeout
+            elapsed before it completed (still pending/running).
+
+        Raises:
+            Whatever exception the task itself raised, if it failed.
         """
-        with self._lock:
-            if task_id not in self._tasks:
+        # Раньше timeout полностью игнорировался: функция проверяла статус
+        # РОВНО ОДИН раз и, если задача ещё не COMPLETED/FAILED, сразу
+        # возвращала None — неотличимо от "задача выполнилась и вернула
+        # None". Вызывающий с timeout=5.0, ожидающий блокировки на до 5
+        # секунд, получал None мгновенно (workflow-найденный баг; сейчас
+        # без единого вызывающего в кодовой базе, но контракт метода лгал
+        # любому будущему потребителю).
+        deadline = None if timeout is None else time.monotonic() + timeout
+        poll_interval = 0.05
+        while True:
+            with self._lock:
+                task = self._tasks.get(task_id)
+                if task is None:
+                    return None
+                if task.status == TaskStatus.COMPLETED:
+                    return task.result
+                if task.status == TaskStatus.FAILED:
+                    raise task.error or RuntimeError("Task failed with unknown error")
+
+            if deadline is not None and time.monotonic() >= deadline:
                 return None
-            task = self._tasks[task_id]
-
-        if task.status == TaskStatus.COMPLETED:
-            return task.result
-        elif task.status == TaskStatus.FAILED:
-            raise task.error or RuntimeError("Task failed with unknown error")
-
-        return None
+            time.sleep(poll_interval)
 
     def cancel_task(self, task_id: str) -> bool:
         """
