@@ -358,11 +358,25 @@ class ClientHistoryWindow(ctk.CTkToplevel):
         menu_frame = ModernCard(self.history_context_menu, self.colors, corner_radius=6)
         menu_frame.pack(fill="both", expand=True)
 
+        # Обёртка: сначала скрываем меню, потом вызываем команду. Без этого
+        # меню (CTkToplevel overrideredirect) остаётся поверх окна истории
+        # клиента навсегда (workflow-найденный баг) — тот же паттерн, что
+        # уже применён в gui/main_window_parts/widgets_mixin.py::create_context_menu()
+        # для аналогичного меню в основной таблице заказов; здесь при
+        # переносе меню в отдельное окно обёртку забыли скопировать.
+        def _make_wrapper(cmd):
+            def _wrapper(*args, **kwargs):
+                with contextlib.suppress(Exception):
+                    self.history_context_menu.withdraw()
+                return cmd(*args, **kwargs)
+
+            return _wrapper
+
         # Кнопки в контекстном меню
         edit_btn = ctk.CTkButton(
             menu_frame,
             text="✏️ Редактировать заказ",
-            command=self.edit_order_from_history,
+            command=_make_wrapper(self.edit_order_from_history),
             fg_color="transparent",
             text_color=self.colors["text_primary"],
             hover_color=self.colors["bg_hover"],
@@ -376,7 +390,7 @@ class ClientHistoryWindow(ctk.CTkToplevel):
         print_btn = ctk.CTkButton(
             menu_frame,
             text="🖨️ Печать акта",
-            command=self.print_act_from_history,
+            command=_make_wrapper(self.print_act_from_history),
             fg_color="transparent",
             text_color=self.colors["text_primary"],
             hover_color=self.colors["bg_hover"],
