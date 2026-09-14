@@ -86,6 +86,11 @@ class Database(
         # отсюда наружу без изменений — конструирование DatabaseCore
         # происходит синхронно внутри этого __init__.
         self.core = DatabaseCore(db_engine)
+        # Засевает domain.constants.DICTIONARY_TYPES в пустые справочники —
+        # на свежей БД engine.create_tables() создаёт таблицу `dictionaries`
+        # пустой (легаси db_manager.py, который раньше это делал, на живом
+        # пути приложения больше не вызывается), см. docstring метода.
+        self.seed_default_dictionaries()
 
     @property
     def engine(self) -> IDatabaseEngine:

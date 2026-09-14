@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 
 from database.facade.shared import logger
 from database.sqlalchemy_models import DictionaryItem
+from domain.constants import DICTIONARY_TYPES
 
 _DICT_CACHE_KEY_PATTERN = "dict_values:*"
 
@@ -28,6 +29,58 @@ def _dict_cache_key(dict_type: str) -> str:
 class DictionariesMixin:
     """Требует self._session() и self.core.query_cache (DatabaseCore, см.
     database/db_core.py) от финального класса Database."""
+
+    def seed_default_dictionaries(self) -> None:
+        """Засевает domain.constants.DICTIONARY_TYPES.default_values в пустые
+        справочники — по одному dict_type, только если для него ещё вообще
+        нет строк (та же проверка, что и в легаси
+        database/db_manager.py::create_tables()).
+
+        Раньше этот сев жил ТОЛЬКО в легаси db_manager.py (сырой sqlite3),
+        который сейчас не вызывается на живом пути приложения (см.
+        database/__init__.py — единственные потребители db_manager.Database
+        это migrate_client_dbs() и tools/migrate_to_sqlalchemy.py, оба
+        одноразовые миграционные инструменты). На свежей БД, созданной
+        текущим SQLAlchemy-движком (SQLiteEngine.create_tables()), таблица
+        `dictionaries` создаётся пустой — ни бренды, ни типы устройств, ни
+        инженеры никогда не засеивались, так что у любой НОВОЙ установки
+        (не унаследовавшей уже заполненный файл вроде текущего
+        data/serviceup.db) все выпадающие списки справочников пустые в
+        обоих GUI и в PWA (эмпирически подтверждено: get_dict_values()
+        на только что созданной БД возвращает [] для каждого dict_type).
+        Вызывается один раз при конструировании Database() — как и
+        engine.create_tables(), дешёвая проверка COUNT на dict_type, не
+        перезаписывает то, что пользователь уже сам заполнил/очистил."""
+        try:
+            seeded_types: list[str] = []
+            with self._session() as s:
+                for dict_type, config in DICTIONARY_TYPES.items():
+                    exists = s.execute(
+                        select(func.count()).select_from(DictionaryItem).where(
+                            DictionaryItem.dict_type == dict_type
+                        )
+                    ).scalar()
+                    if exists:
+                        continue
+                    for i, value in enumerate(config.get("default_values", [])):
+                        s.add(
+                            DictionaryItem(
+                                dict_type=dict_type, value=value, sort_order=i
+                            )
+                        )
+                    seeded_types.append(dict_type)
+                s.commit()
+            # Обычно вызывается один раз при __init__, до первого
+            # get_dict_values() — кэш ещё пуст, инвалидация не нужна. Но
+            # если seed_default_dictionaries() вызвать повторно на уже
+            # живом Database() (например, после ручной очистки категории
+            # до нуля строк), не инвалидировав кэш, get_dict_values()
+            # молча вернул бы устаревшее закэшированное значение (обычно
+            # []) вместо только что вставленных строк.
+            for dict_type in seeded_types:
+                self._invalidate_dict_cache(dict_type)
+        except Exception as e:
+            logger.error(f"Ошибка сева справочников по умолчанию: {e}", exc_info=True)
 
     def get_dict_values(self, dict_type: str) -> list[str]:
         cache_key = _dict_cache_key(dict_type)

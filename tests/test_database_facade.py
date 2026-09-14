@@ -366,55 +366,112 @@ class TestDeviceToRowEagerLoading:
         assert stmt_count <= 3, f"Похоже на N+1: выполнено {stmt_count} SQL-запросов"
 
 
+class TestDictionarySeeding:
+    """Regression — found while building the Flet dictionaries manager:
+    domain.constants.DICTIONARY_TYPES has rich default_values (brands,
+    device types, engineers, ...), but the code that seeded them into a
+    fresh `dictionaries` table lived ONLY in the legacy
+    database/db_manager.py (raw sqlite3), which is no longer called on the
+    live application path (see database/__init__.py — its only two
+    consumers are migrate_client_dbs() and tools/migrate_to_sqlalchemy.py,
+    both one-time migration tools). A database created by the current
+    SQLAlchemy engine (SQLiteEngine.create_tables()) therefore got an
+    EMPTY `dictionaries` table — confirmed empirically: get_dict_values()
+    returned [] for every dict_type on a brand-new install, so device
+    type/brand/engineer dropdowns would be empty in both GUIs and the PWA
+    for anyone NOT inheriting an already-populated legacy database file."""
+
+    def test_fresh_database_has_seeded_dictionary_defaults(self, db):
+        from domain.constants import DICTIONARY_TYPES
+
+        for dict_type, config in DICTIONARY_TYPES.items():
+            expected = config.get("default_values", [])
+            if not expected:
+                continue
+            assert db.get_dict_values(dict_type) == expected, (
+                f"dict_type={dict_type!r} was not seeded on a fresh database"
+            )
+
+    def test_seeding_is_idempotent_and_does_not_duplicate(self, db):
+        before = db.get_dict_values("brands")
+
+        db.seed_default_dictionaries()
+
+        assert db.get_dict_values("brands") == before
+
+    def test_seeding_repopulates_a_dict_type_the_user_emptied_out_to_zero(self, db):
+        """Documents a known, inherited quirk, not a new regression: a
+        dict_type with zero rows is indistinguishable from "never seeded"
+        (same COUNT(*) == 0 check the legacy db_manager.py used), so a
+        category a user deletes down to nothing comes back with its
+        defaults on the next restart. Matches the pre-existing legacy
+        behavior this seeding replaces — not something introduced here."""
+        for item in db.get_all_dict_items("brands"):
+            db.delete_dict_value(item["id"])
+        assert db.get_dict_values("brands") == []
+
+        db.seed_default_dictionaries()
+
+        from domain.constants import DICTIONARY_TYPES
+
+        assert db.get_dict_values("brands") == DICTIONARY_TYPES["brands"]["default_values"]
+
+
 class TestDictionaryQueryCache:
     """Регрессия AUDIT_v25/Task W: get_dict_values() раньше кэшировался в
     ad-hoc self._dict_cache (dict, без TTL) прямо на facade-классе — теперь
     идёт через DatabaseCore.query_cache (core.module_manager.ModuleCache,
-    TTL ~1 час, см. database/db_core.py::QUERY_CACHE_TTL_SECONDS)."""
+    TTL ~1 час, см. database/db_core.py::QUERY_CACHE_TTL_SECONDS).
+
+    Использует dict_type'ы, отсутствующие в domain.constants.DICTIONARY_TYPES
+    (не "brands"/"device_types" — те теперь засеяны реальными значениями по
+    умолчанию при конструировании Database(), см.
+    DictionariesMixin.seed_default_dictionaries(); тест, проверяющий точный
+    список ["Apple"]/[], иначе видел бы ещё десяток реальных брендов)."""
 
     def test_second_call_is_served_from_cache(self, db):
-        db.add_dict_value("brands", "Apple")
-        db.get_dict_values("brands")  # первый вызов — MISS, населяет кэш
+        db.add_dict_value("test_brand_cache", "Apple")
+        db.get_dict_values("test_brand_cache")  # первый вызов — MISS, населяет кэш
         stats_before = db.core.query_cache.get_stats()
 
-        db.get_dict_values("brands")  # второй — обязан быть HIT
+        db.get_dict_values("test_brand_cache")  # второй — обязан быть HIT
 
         stats_after = db.core.query_cache.get_stats()
         assert stats_after["hits"] == stats_before["hits"] + 1
 
     def test_add_dict_value_invalidates_cache_for_that_type(self, db):
-        db.add_dict_value("brands", "Apple")
-        db.get_dict_values("brands")  # населяет кэш ["Apple"]
+        db.add_dict_value("test_brand_cache", "Apple")
+        db.get_dict_values("test_brand_cache")  # населяет кэш ["Apple"]
 
-        db.add_dict_value("brands", "Samsung")
-        values = db.get_dict_values("brands")
+        db.add_dict_value("test_brand_cache", "Samsung")
+        values = db.get_dict_values("test_brand_cache")
 
         assert set(values) == {"Apple", "Samsung"}
 
     def test_update_dict_value_invalidates_cache(self, db):
-        db.add_dict_value("brands", "Appel")  # опечатка нарочно
-        [item] = db.get_all_dict_items("brands")
-        db.get_dict_values("brands")  # населяет кэш со старым значением
+        db.add_dict_value("test_brand_cache", "Appel")  # опечатка нарочно
+        [item] = db.get_all_dict_items("test_brand_cache")
+        db.get_dict_values("test_brand_cache")  # населяет кэш со старым значением
 
         db.update_dict_value(item["id"], "Apple")
 
-        assert db.get_dict_values("brands") == ["Apple"]
+        assert db.get_dict_values("test_brand_cache") == ["Apple"]
 
     def test_delete_dict_value_invalidates_cache(self, db):
-        db.add_dict_value("brands", "Apple")
-        [item] = db.get_all_dict_items("brands")
-        db.get_dict_values("brands")  # населяет кэш
+        db.add_dict_value("test_brand_cache", "Apple")
+        [item] = db.get_all_dict_items("test_brand_cache")
+        db.get_dict_values("test_brand_cache")  # населяет кэш
 
         db.delete_dict_value(item["id"])
 
-        assert db.get_dict_values("brands") == []
+        assert db.get_dict_values("test_brand_cache") == []
 
     def test_different_dict_types_do_not_share_cache_key(self, db):
-        db.add_dict_value("brands", "Apple")
-        db.add_dict_value("device_types", "Ноутбук")
+        db.add_dict_value("test_brand_cache", "Apple")
+        db.add_dict_value("test_device_cache", "Ноутбук")
 
-        assert db.get_dict_values("brands") == ["Apple"]
-        assert db.get_dict_values("device_types") == ["Ноутбук"]
+        assert db.get_dict_values("test_brand_cache") == ["Apple"]
+        assert db.get_dict_values("test_device_cache") == ["Ноутбук"]
 
     def test_query_cache_ttl_configured_to_roughly_an_hour(self, db):
         """Не проверяет реальное истечение (не хотим тест на минуты) —
@@ -425,18 +482,18 @@ class TestDictionaryQueryCache:
         assert db.core.query_cache.get_stats()["default_ttl_seconds"] == 3600
 
     def test_refresh_query_cache_clears_everything_and_returns_count(self, db):
-        db.add_dict_value("brands", "Apple")
-        db.add_dict_value("device_types", "Ноутбук")
-        db.get_dict_values("brands")
-        db.get_dict_values("device_types")
-        assert db.core.query_cache.get_stats()["size"] == 2
+        db.add_dict_value("test_brand_cache", "Apple")
+        db.add_dict_value("test_device_cache", "Ноутбук")
+        db.get_dict_values("test_brand_cache")
+        db.get_dict_values("test_device_cache")
+        size_before = db.core.query_cache.get_stats()["size"]
 
         cleared = db.refresh_query_cache()
 
-        assert cleared == 2
+        assert cleared == size_before
         assert db.core.query_cache.get_stats()["size"] == 0
         # Данные по-прежнему доступны — просто перечитаны из БД заново.
-        assert db.get_dict_values("brands") == ["Apple"]
+        assert db.get_dict_values("test_brand_cache") == ["Apple"]
 
 
 class TestClients:
