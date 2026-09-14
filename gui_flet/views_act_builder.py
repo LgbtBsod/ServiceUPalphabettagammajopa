@@ -59,6 +59,13 @@ MIN_WIDTH_MM = 15.0
 # попадает на body соседнего поля вместо ручки; 22px даёт запас.
 HANDLE_PX = 22
 
+# Сетка выравнивания — то же значение и та же идея, что и в classic-GUI
+# билдере (reports/act_canvas_builder.py::GRID_MM): свободное позиционирование
+# "в пиксель" удобно для точной подгонки, но неудобно для быстрой раскладки
+# (пользовательский фидбек: "крутой, но слегка непривычный"). Координаты/
+# ширина при перетаскивании округляются к ближайшей линии сетки.
+GRID_MM = 5.0
+
 _ACT_TYPES = [("receipt", "Акт приёма"), ("completion", "Акт выполненных работ")]
 
 _DEMO_DEVICE = {
@@ -98,6 +105,10 @@ def _palette_keys(act_type: str) -> list[str]:
 
 def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(value, hi))
+
+
+def _snap(value_mm: float, step_mm: float = GRID_MM) -> float:
+    return round(value_mm / step_mm) * step_mm
 
 
 class ActBuilderView:
@@ -217,6 +228,23 @@ class ActBuilderView:
 
     # ── канвас (страница A5 + перетаскиваемые боксы) ────────
 
+    def _build_grid_lines(self) -> list[ft.Control]:
+        """Лёгкая сетка выравнивания (GRID_MM) под полями — тонкие
+        Container'ы вместо настоящих линий (в этой версии Flet нет
+        ft.canvas), тот же приём, что и в classic-GUI билдере."""
+        page_w_px = PAGE_W_MM * PX_PER_MM
+        page_h_px = PAGE_H_MM * PX_PER_MM
+        lines: list[ft.Control] = []
+        n_cols = int(PAGE_W_MM / GRID_MM) + 1
+        n_rows = int(PAGE_H_MM / GRID_MM) + 1
+        for i in range(n_cols):
+            x = i * GRID_MM * PX_PER_MM
+            lines.append(ft.Container(left=x, top=0, width=1, height=page_h_px, bgcolor="#EDEDED"))
+        for j in range(n_rows):
+            y = j * GRID_MM * PX_PER_MM
+            lines.append(ft.Container(left=0, top=y, width=page_w_px, height=1, bgcolor="#EDEDED"))
+        return lines
+
     def _build_canvas(self) -> ft.Control:
         c = self.app.colors
         page_w_px = PAGE_W_MM * PX_PER_MM
@@ -229,6 +257,7 @@ class ActBuilderView:
             # это её реальный печатный вид.
             ft.Container(width=page_w_px, height=page_h_px, bgcolor="#FFFFFF",
                          border=theme.card_border(c["border"])),
+            *self._build_grid_lines(),
         ]
         for key, cfg in self._fields().items():
             body, handle = self._build_field_controls(key, cfg)
@@ -309,8 +338,12 @@ class ActBuilderView:
         h = self._box_height_mm(key) * PX_PER_MM
         page_w_px = PAGE_W_MM * PX_PER_MM
         page_h_px = PAGE_H_MM * PX_PER_MM
-        new_left = _clamp(self._drag["left"] + dx, 0, page_w_px - w)
-        new_top = _clamp(self._drag["top"] + dy, 0, page_h_px - h)
+        # Снап к сетке уже во время перетаскивания (не только на отпускании) —
+        # тот же live-фидбек, что и в classic-GUI билдере.
+        snapped_left = _snap((self._drag["left"] + dx) / PX_PER_MM) * PX_PER_MM
+        snapped_top = _snap((self._drag["top"] + dy) / PX_PER_MM) * PX_PER_MM
+        new_left = _clamp(snapped_left, 0, page_w_px - w)
+        new_top = _clamp(snapped_top, 0, page_h_px - h)
         body = self._body_ctrls[key]
         body.left, body.top = new_left, new_top
         handle = self._handle_ctrls[key]
@@ -338,7 +371,8 @@ class ActBuilderView:
         dx = e.global_delta.x if e.global_delta else 0
         cfg = self._fields()[key]
         max_w_mm = PAGE_W_MM - cfg.get("x_mm", 0.0)
-        new_w_mm = _clamp(self._drag["w_mm"] + dx / PX_PER_MM, MIN_WIDTH_MM, max_w_mm)
+        raw_w_mm = self._drag["w_mm"] + dx / PX_PER_MM
+        new_w_mm = _clamp(_snap(raw_w_mm), MIN_WIDTH_MM, max_w_mm)
         new_w_px = new_w_mm * PX_PER_MM
         body = self._body_ctrls[key]
         body.content.width = new_w_px

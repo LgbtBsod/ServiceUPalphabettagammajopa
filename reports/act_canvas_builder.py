@@ -42,6 +42,17 @@ SIMPLE_FIELD_HEIGHT_MM = 8.0
 MIN_WIDTH_MM = 15.0
 HANDLE_PX = 8
 
+# Сетка выравнивания — свободное позиционирование "в пиксель" удобно для
+# точной подгонки, но неудобно для быстрой раскладки (пользовательский
+# фидбек: "крутой, но слегка непривычный"). Координаты/ширина при
+# перетаскивании округляются к ближайшей линии сетки — двигать и особенно
+# выравнивать несколько полей друг под другом становится предсказуемо.
+GRID_MM = 5.0
+
+
+def _snap(value_mm: float, step_mm: float = GRID_MM) -> float:
+    return round(value_mm / step_mm) * step_mm
+
 
 def _label_for(key: str) -> str:
     if key in CANVAS_COMPOSITE_FIELDS:
@@ -223,9 +234,28 @@ class ActCanvasEditor(ctk.CTkFrame):
         show_label = cfg.get("show_label", True)
         return f"{label}: [значение]" if show_label else "[значение]"
 
+    def _draw_grid(self):
+        """Лёгкая сетка выравнивания (GRID_MM) под полями — только
+        визуальный ориентир, сам snap считается независимо в _on_drag()."""
+        page_w_px = PAGE_W_MM * PX_PER_MM
+        page_h_px = PAGE_H_MM * PX_PER_MM
+        n_cols = int(PAGE_W_MM / GRID_MM) + 1
+        n_rows = int(PAGE_H_MM / GRID_MM) + 1
+        for i in range(n_cols):
+            x = i * GRID_MM * PX_PER_MM
+            self.canvas.create_line(
+                x, 0, x, page_h_px, fill="#EDEDED", tags="grid"
+            )
+        for j in range(n_rows):
+            y = j * GRID_MM * PX_PER_MM
+            self.canvas.create_line(
+                0, y, page_w_px, y, fill="#EDEDED", tags="grid"
+            )
+
     def _redraw_all(self):
         self.canvas.delete("all")
         self._item_of_key.clear()
+        self._draw_grid()
         for key, cfg in self.fields.items():
             self._draw_field(key, cfg)
         if self.selected_key and self.selected_key not in self.fields:
@@ -344,14 +374,14 @@ class ActCanvasEditor(ctk.CTkFrame):
         dx_mm = (event.x - self._drag["start_x"]) / PX_PER_MM
         dy_mm = (event.y - self._drag["start_y"]) / PX_PER_MM
         if self._drag["mode"] == "move":
-            new_x = self._drag["orig_x_mm"] + dx_mm
-            new_y = self._drag["orig_y_mm"] + dy_mm
+            new_x = _snap(self._drag["orig_x_mm"] + dx_mm)
+            new_y = _snap(self._drag["orig_y_mm"] + dy_mm)
             w = cfg.get("w_mm", 60.0)
             h = self._box_height_mm(key)
             cfg["x_mm"] = max(0.0, min(new_x, PAGE_W_MM - w))
             cfg["y_mm"] = max(0.0, min(new_y, PAGE_H_MM - h))
         else:
-            new_w = self._drag["orig_w_mm"] + dx_mm
+            new_w = _snap(self._drag["orig_w_mm"] + dx_mm)
             max_w = PAGE_W_MM - cfg.get("x_mm", 0.0)
             cfg["w_mm"] = max(MIN_WIDTH_MM, min(new_w, max_w))
         self._redraw_field(key)

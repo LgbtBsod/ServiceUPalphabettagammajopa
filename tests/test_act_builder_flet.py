@@ -178,6 +178,23 @@ class TestMoveDrag:
 
         assert view._body_ctrls["b"].left == 20.0 * PX_PER_MM
 
+    def test_move_snaps_imprecise_position_to_grid(self, view):
+        """GRID_MM=5 — курсор при драге никогда не бывает пиксель-точным;
+        итоговая позиция должна округляться к ближайшей линии сетки."""
+        view._fields()["client_name"] = {"x_mm": 10.0, "y_mm": 10.0, "w_mm": 60.0}
+        view._build_canvas()
+
+        view._on_move_start(None, "client_name")
+        # +23мм — заведомо не кратно GRID_MM (5) — ожидаем округление до 35.
+        view._on_move_update(_drag_event(dx=23 * PX_PER_MM, dy=0), "client_name")
+        view._on_move_end(None, "client_name")
+
+        from gui_flet.views_act_builder import GRID_MM
+
+        cfg = view._fields()["client_name"]
+        assert cfg["x_mm"] % GRID_MM == 0
+        assert cfg["x_mm"] == pytest.approx(35.0, abs=0.01)
+
 
 class TestResizeDrag:
     def test_resize_changes_width_not_position(self, view):
@@ -191,6 +208,21 @@ class TestResizeDrag:
         cfg = view._fields()["client_name"]
         assert cfg["w_mm"] == pytest.approx(80.0, abs=0.5)
         assert cfg["x_mm"] == 10.0
+
+    def test_resize_snaps_width_to_grid(self, view):
+        view._fields()["client_name"] = {"x_mm": 10.0, "y_mm": 10.0, "w_mm": 60.0}
+        view._build_canvas()
+
+        view._on_resize_start(None, "client_name")
+        # +17мм — не кратно 5 — ожидаем округление до 60+15=75.
+        view._on_resize_update(_drag_event(dx=17 * PX_PER_MM, dy=0), "client_name")
+        view._on_resize_end(None, "client_name")
+
+        from gui_flet.views_act_builder import GRID_MM
+
+        cfg = view._fields()["client_name"]
+        assert cfg["w_mm"] % GRID_MM == 0
+        assert cfg["w_mm"] == pytest.approx(75.0, abs=0.01)
 
     def test_resize_never_below_minimum_width(self, view):
         view._fields()["client_name"] = {"x_mm": 10.0, "y_mm": 10.0, "w_mm": 60.0}

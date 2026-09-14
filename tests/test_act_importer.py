@@ -128,6 +128,22 @@ class TestSuggestCanvasLayout:
             assert cfg["x_mm"] >= 0
             assert cfg["w_mm"] > 0
 
+    def test_all_positions_are_snapped_to_the_builder_grid(self):
+        """Билдеры (reports/act_canvas_builder.py, gui_flet/views_act_builder.py)
+        используют GRID_MM=5 при перетаскивании — импортированные позиции
+        (включая "грязный" результат стекинга: margin 6мм + высоты блоков)
+        должны попадать на ту же сетку сразу, а не только после первого
+        перетаскивания руками."""
+        from reports.act_importer import _GRID_MM
+
+        text = "Телефон: +7 999\nНомер заказа: 42\nФИО клиента: Иванов"
+        layout = suggest_canvas_layout("act.docx", text, _KNOWN_FIELDS)
+        assert layout
+        for cfg in layout.values():
+            assert cfg["x_mm"] % _GRID_MM == 0
+            assert cfg["y_mm"] % _GRID_MM == 0
+            assert cfg["w_mm"] % _GRID_MM == 0
+
     def test_pdf_with_real_text_layer_finds_actual_label_positions(self, tmp_path):
         """Генерируем настоящий акт нашим же рендерером (кириллица через
         зарегистрированный TTF-шрифт — см. report_renderer._register_act_font),

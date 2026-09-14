@@ -30,8 +30,36 @@ SUPPORTED_EXTENSIONS = {".pdf", ".xlsx", ".xlsm", ".docx"}
 # нашлось реальных координат — держим в согласии со стартовыми полями
 # ActPDFGenerator (page_margin_mm по умолчанию = 6, см. report_renderer.py).
 _PAGE_W_MM = 148.0
+_PAGE_H_MM = 210.0
 _MARGIN_MM = 6.0
 _MAX_BOX_W_MM = 80.0
+
+# Та же сетка выравнивания, что и в билдерах (reports/act_canvas_builder.py
+# и gui_flet/views_act_builder.py::GRID_MM) — координаты, найденные поиском
+# в PDF, пиксель-точные и "грязные" (36.77мм и т.п.); округление к сетке
+# сразу на импорте даёт аккуратно выровненный стартовый макет, а не только
+# после первого перетаскивания руками.
+_GRID_MM = 5.0
+
+
+def _clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(value, hi))
+
+
+def _snap_to_grid(value_mm: float, step_mm: float = _GRID_MM) -> float:
+    return round(value_mm / step_mm) * step_mm
+
+
+def _snap_positions_to_grid(
+    positions: dict[str, dict[str, float]],
+) -> dict[str, dict[str, float]]:
+    snapped: dict[str, dict[str, float]] = {}
+    for key, cfg in positions.items():
+        x = _clamp(_snap_to_grid(cfg["x_mm"]), 0.0, _PAGE_W_MM - _GRID_MM)
+        y = _clamp(_snap_to_grid(cfg["y_mm"]), 0.0, _PAGE_H_MM - _GRID_MM)
+        w = _clamp(_snap_to_grid(cfg["w_mm"]), _GRID_MM, _PAGE_W_MM - x)
+        snapped[key] = {**cfg, "x_mm": x, "y_mm": y, "w_mm": w}
+    return snapped
 
 # Синонимы для сопоставления с report_editor.FIELD_LABELS — реальные акты
 # называют одно и то же поле по-разному ("ФИО клиента" / "Клиент" / "Заказчик").
@@ -283,7 +311,7 @@ def suggest_canvas_layout(
             start_y = max(p["y_mm"] + 12 for p in positions.values())
         positions.update(_stack_positions(missing, start_y_mm=start_y))
 
-    return positions
+    return _snap_positions_to_grid(positions)
 
 
 __all__ = [

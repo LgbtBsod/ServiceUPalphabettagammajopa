@@ -146,6 +146,55 @@ class TestActCanvasEditorDragAndResize:
         assert cfg["w_mm"] == pytest.approx(80.0, abs=1.0)
         assert cfg["x_mm"] == 10.0
 
+    def test_move_drag_snaps_imprecise_position_to_grid(self, tk_root):
+        """GRID_MM=5 — драг курсором никогда не бывает пиксель-точным;
+        итоговая позиция должна округляться к ближайшей линии сетки, а не
+        оставаться "грязным" числом вроде 32.7мм."""
+        editor = ActCanvasEditor(
+            tk_root,
+            _COLORS,
+            "receipt",
+            {"client_name": {"x_mm": 10.0, "y_mm": 10.0, "w_mm": 60.0}},
+            on_change=lambda: None,
+        )
+        from reports.act_canvas_builder import GRID_MM, PX_PER_MM
+
+        start_x = int(10.0 * PX_PER_MM)
+        start_y = int(10.0 * PX_PER_MM)
+        editor._on_press(_event(start_x, start_y))
+        # +23мм — заведомо НЕ кратно GRID_MM (5) — ожидаем округление до 35.
+        editor._on_drag(_event(start_x + int(23 * PX_PER_MM), start_y))
+        editor._on_release(_event(0, 0))
+
+        cfg = editor.get_canvas_fields()["client_name"]
+        assert cfg["x_mm"] % GRID_MM == 0
+        assert cfg["x_mm"] == pytest.approx(35.0, abs=0.01)
+
+    def test_resize_drag_snaps_width_to_grid(self, tk_root):
+        editor = ActCanvasEditor(
+            tk_root,
+            _COLORS,
+            "receipt",
+            {"client_name": {"x_mm": 10.0, "y_mm": 10.0, "w_mm": 60.0}},
+            on_change=lambda: None,
+        )
+        from reports.act_canvas_builder import (
+            GRID_MM,
+            PX_PER_MM,
+            SIMPLE_FIELD_HEIGHT_MM,
+        )
+
+        x1 = int((10.0 + 60.0) * PX_PER_MM)
+        y1 = int((10.0 + SIMPLE_FIELD_HEIGHT_MM) * PX_PER_MM)
+        editor._on_press(_event(x1 - 2, y1 - 2))
+        # +17мм — не кратно 5 — ожидаем округление до 60+15=75.
+        editor._on_drag(_event(x1 - 2 + int(17 * PX_PER_MM), y1 - 2))
+        editor._on_release(_event(0, 0))
+
+        cfg = editor.get_canvas_fields()["client_name"]
+        assert cfg["w_mm"] % GRID_MM == 0
+        assert cfg["w_mm"] == pytest.approx(75.0, abs=0.01)
+
     def test_resize_never_goes_below_minimum_width(self, tk_root):
         editor = ActCanvasEditor(
             tk_root,
