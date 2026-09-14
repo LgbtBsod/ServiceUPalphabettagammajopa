@@ -50,6 +50,46 @@ def temp_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _create_tk_root():
+    """Создаёт tk.Tk() с несколькими попытками.
+
+    В полном прогоне (`pytest -q` по всему tests/), а НЕ при запуске
+    тестового файла изолированно, tk.Tk() изредка (замечено ~1 раз на 4
+    прогона) кидает TclError — похоже на кратковременную нехватку
+    GDI/USER-хендлов Windows при частом создании/уничтожении top-level окон
+    соседними тестами. Настоящей нехватки X-дисплея (CI ubuntu-latest)
+    ретраем не лечим — там TclError будет на каждой попытке одинаково, и
+    через 3 попытки тест корректно пропустится через tk_root, а не зависнет.
+    """
+    import time
+    import tkinter as tk
+
+    last_err = None
+    for _attempt in range(3):
+        try:
+            return tk.Tk()
+        except tk.TclError as e:
+            last_err = e
+            time.sleep(0.2)
+    raise last_err
+
+
+@pytest.fixture
+def tk_root():
+    """Скрытый (withdraw()) реальный Tk root для тестов classic-GUI виджетов
+    (customtkinter/tkinter.Canvas) — не стаб, настоящий Tk. Пропускается,
+    если поднять Tk вообще не удалось (например, CI-раннер без X-дисплея)."""
+    import tkinter as tk
+
+    try:
+        root = _create_tk_root()
+    except tk.TclError:
+        pytest.skip("Нет доступного X-дисплея для Tk (например, CI ubuntu-latest)")
+    root.withdraw()
+    yield root
+    root.destroy()
+
+
 @pytest.fixture
 def sample_device_data() -> dict:
     """Пример данных устройства для тестов."""

@@ -15,8 +15,6 @@ Windows CI-раннер с недоступным дисплеем — тоже 
 
 from __future__ import annotations
 
-import time
-import tkinter as tk
 import types
 
 import pytest
@@ -24,6 +22,10 @@ import pytest
 pytest.importorskip("customtkinter")
 
 from reports.act_canvas_builder import ActCanvasEditor
+
+# tk_root fixture — см. tests/conftest.py (общая для всех classic-GUI
+# виджет-тестов: реальный, но скрытый Tk root, с ретраями и skip, если
+# X-дисплей недоступен).
 
 _COLORS = {
     "accent": "#0078d4",
@@ -34,37 +36,6 @@ _COLORS = {
     "border": "#d2d2d7",
     "error": "#ff3b30",
 }
-
-
-def _create_tk_root():
-    """Создаёт tk.Tk() с несколькими попытками.
-
-    В полном прогоне (`pytest -q`, весь tests/), а НЕ при запуске этого
-    файла изолированно, tk.Tk() изредка (замечено ~1 раз на 4 прогона)
-    кидает TclError — похоже на кратковременную нехватку GDI/USER-хендлов
-    Windows при частом создании/уничтожении top-level окон соседними
-    тестами. Настоящей нехватки X-дисплея (CI ubuntu-latest) ретраем не
-    лечим — там TclError будет на каждой попытке одинаково, и через 3
-    попытки тест корректно пропустится, а не зависнет."""
-    last_err = None
-    for _attempt in range(3):
-        try:
-            return tk.Tk()
-        except tk.TclError as e:
-            last_err = e
-            time.sleep(0.2)
-    raise last_err
-
-
-@pytest.fixture
-def tk_root():
-    try:
-        root = _create_tk_root()
-    except tk.TclError:
-        pytest.skip("Нет доступного X-дисплея для Tk (например, CI ubuntu-latest)")
-    root.withdraw()
-    yield root
-    root.destroy()
 
 
 def _event(x, y):

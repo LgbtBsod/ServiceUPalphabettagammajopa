@@ -1092,14 +1092,20 @@ class ActPanel:
         self.logo_size_label.configure(text=f"{int(value)}pt")
         self._schedule_preview_update()
 
-    def apply_imported_suggestion(self, suggestion: dict) -> None:
+    def apply_imported_suggestion(
+        self, suggestion: dict, canvas_layout: dict | None = None
+    ) -> None:
         """Применяет результат act_importer.suggest_template_from_text():
         подменяет список полей (в порядке из документа) и подставляет
         обнаруженный заголовок, затем перестраивает UI и предпросмотр.
 
-        Вызывается только когда suggestion["match_count"] > 0 — при нулевом
-        совпадении ReportEditor.import_act_from_file() сразу предлагает
-        собрать шаблон вручную, сюда не доходит."""
+        canvas_layout — результат act_importer.suggest_canvas_layout(), если
+        он непустой: переключает шаблон в режим «Свободный макет» и
+        расставляет найденные поля по их (приблизительным) позициям из
+        исходного документа — воссоздаёт макет акта, а не только список
+        полей. Вызывается только когда suggestion["match_count"] > 0 — при
+        нулевом совпадении ReportEditor.import_act_from_file() сразу
+        предлагает собрать шаблон вручную, сюда не доходит."""
         header_guess = suggestion.get("header_text_guess", "")
         if header_guess:
             self.template_data["header_text"] = header_guess
@@ -1108,7 +1114,17 @@ class ActPanel:
 
         self._rebuild_field_list(suggestion["suggested_fields"])
         self._update_add_field_combo()
-        self.update_preview()
+
+        if canvas_layout:
+            self.template_data["layout_mode"] = "canvas"
+            self.template_data["canvas_fields"] = canvas_layout
+            self.layout_mode_toggle.set("🖼 Свободный макет")
+            self.fields_card_canvas_hint.pack(
+                anchor="w", padx=12, pady=(0, 4), fill="x"
+            )
+            self._refresh_preview_mode()
+        else:
+            self.update_preview()
 
     def reset_to_defaults(self):
         """Сбрасывает настройки текущего акта к стандартным."""
@@ -1726,10 +1742,19 @@ class ReportEditor(ctk.CTkToplevel):
             return
 
         try:
-            from reports.act_importer import extract_text, suggest_template_from_text
+            from reports.act_importer import (
+                extract_text,
+                suggest_canvas_layout,
+                suggest_template_from_text,
+            )
 
             text = extract_text(file_path)
             suggestion = suggest_template_from_text(text, FIELD_LABELS)
+            canvas_layout = (
+                suggest_canvas_layout(file_path, text, FIELD_LABELS)
+                if suggestion["match_count"] > 0
+                else {}
+            )
         except ValueError as e:
             messagebox.showerror("Импорт акта", str(e))
             return
@@ -1749,18 +1774,26 @@ class ReportEditor(ctk.CTkToplevel):
             return
 
         panel = self.active_panel()
+        layout_note = (
+            "\n\nПоля будут расставлены на «Свободном макете» по их "
+            "положению в исходном файле (для PDF — по реальным "
+            "координатам, для остальных форматов — сверху вниз)."
+            if canvas_layout
+            else ""
+        )
         proceed = messagebox.askyesno(
             "Импорт акта",
             f"Распознано {suggestion['match_count']} из {suggestion['known_count']} "
             f"известных полей.\nПредполагаемый заголовок: "
             f"«{suggestion['header_text_guess']}»\n\n"
             f"Применить к шаблону «{panel.act_type}»? Текущий список полей "
-            f"будет заменён (настройки оформления не затронуты).",
+            f"будет заменён (настройки оформления не затронуты)."
+            f"{layout_note}",
         )
         if not proceed:
             return
 
-        panel.apply_imported_suggestion(suggestion)
+        panel.apply_imported_suggestion(suggestion, canvas_layout)
         messagebox.showinfo("Импорт акта", "Макет обновлён по данным файла. Проверьте и при необходимости скорректируйте поля.")
 
     def apply_preset(self, preset_name: str):

@@ -16,11 +16,22 @@ DOCX, XLSX). Отсканированный акт-картинка текста
 
 from __future__ import annotations
 
+import contextlib
+import logging
 import re
 from pathlib import Path
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 SUPPORTED_EXTENSIONS = {".pdf", ".xlsx", ".xlsm", ".docx"}
+
+# Стартовая ширина/поля страницы (мм) для раскладки полей, для которых не
+# нашлось реальных координат — держим в согласии со стартовыми полями
+# ActPDFGenerator (page_margin_mm по умолчанию = 6, см. report_renderer.py).
+_PAGE_W_MM = 148.0
+_MARGIN_MM = 6.0
+_MAX_BOX_W_MM = 80.0
 
 # Синонимы для сопоставления с report_editor.FIELD_LABELS — реальные акты
 # называют одно и то же поле по-разному ("ФИО клиента" / "Клиент" / "Заказчик").
@@ -156,8 +167,128 @@ def suggest_template_from_text(text: str, known_fields: dict[str, str]) -> dict[
     }
 
 
+def _stack_positions(
+    ordered_keys: list[str], start_y_mm: float = _MARGIN_MM
+) -> dict[str, dict[str, float]]:
+    """Раскладывает поля друг под другом сверху вниз, в заданном порядке —
+    используется для DOCX/XLSX (в них нет координат вообще) и для полей
+    PDF, чью метку не удалось найти в текстовом слое отдельным поиском."""
+    from reports.report_renderer import CANVAS_DEFAULT_HEIGHTS_MM
+
+    box_w = min(_MAX_BOX_W_MM, _PAGE_W_MM - 2 * _MARGIN_MM)
+    y = start_y_mm
+    positions: dict[str, dict[str, float]] = {}
+    for key in ordered_keys:
+        positions[key] = {"x_mm": _MARGIN_MM, "y_mm": y, "w_mm": box_w}
+        y += CANVAS_DEFAULT_HEIGHTS_MM.get(key, 8.0) + 3
+    return positions
+
+
+def _suggest_positions_from_pdf(
+    path: str | Path, candidates_by_field: dict[str, tuple[str, ...]]
+) -> dict[str, dict[str, float]]:
+    """Ищет реальные координаты меток полей в текстовом слое ПЕРВОЙ страницы
+    PDF (см. функцию pypdfium2 PdfTextPage.search/get_rect) и переводит их в
+    систему координат canvas_fields (мм от левого верхнего угла страницы,
+    как читает ActPDFGenerator._draw_canvas_act()).
+
+    Best-effort: ищем ТОЛЬКО метку поля ("Телефон клиента"), а не пару
+    "метка: значение" — реальное значение из документа не используется
+    (рендерится своё, из текущего заказа), поэтому бокс расширяется вправо
+    от найденной метки на разумную ширину, а не подгоняется под длину
+    исходного текста построчно.
+
+    Многостраничные документы: смотрим только страницу 0 — билдер
+    воссоздаёт макет ОДНОЙ A5-страницы, что соответствует области
+    применения (акт приёма/выполненных работ, не многостраничный отчёт).
+    """
+    import pypdfium2 as pdfium
+
+    from reports.report_renderer import MM_TO_PT
+
+    positions: dict[str, dict[str, float]] = {}
+    pdf = pdfium.PdfDocument(str(path))
+    try:
+        if len(pdf) == 0:
+            return positions
+        page = pdf[0]
+        page_h_pt = page.get_size()[1]
+        textpage = page.get_textpage()
+        try:
+            for field_key, candidates in candidates_by_field.items():
+                rect = None
+                for candidate in candidates:
+                    if not candidate.strip():
+                        continue
+                    try:
+                        searcher = textpage.search(candidate, match_case=False)
+                        match = searcher.get_next()
+                        if match:
+                            idx, count = match
+                            if textpage.count_rects(idx, count) > 0:
+                                rect = textpage.get_rect(0)
+                    except Exception as e:
+                        logger.debug(
+                            f"Поиск позиции '{candidate}' для поля "
+                            f"'{field_key}' не удался: {e}"
+                        )
+                    if rect is not None:
+                        break
+                if rect is None:
+                    continue
+                left, _bottom, _right, top = rect
+                x_mm = max(0.0, left / MM_TO_PT)
+                y_mm = max(0.0, (page_h_pt - top) / MM_TO_PT)
+                w_mm = min(_MAX_BOX_W_MM, _PAGE_W_MM - _MARGIN_MM - x_mm)
+                if w_mm < 15.0:
+                    continue
+                positions[field_key] = {"x_mm": x_mm, "y_mm": y_mm, "w_mm": w_mm}
+        finally:
+            textpage.close()
+    finally:
+        pdf.close()
+    return positions
+
+
+def suggest_canvas_layout(
+    path: str | Path, text: str, known_fields: dict[str, str]
+) -> dict[str, dict[str, float]]:
+    """Позиционно-осведомлённое предложение раскладки для свободного
+    макета (canvas layout_mode, см. reports/act_canvas_builder.py).
+
+    Для PDF пытается найти РЕАЛЬНЫЕ координаты меток полей в тексте
+    документа; поля, для которых это не удалось (или файл не PDF — DOCX/
+    XLSX координат вообще не хранят), раскладываются друг под другом
+    сверху вниз, в порядке появления в тексте — так билдер открывается с
+    уже расставленным (пусть не идеально, но осмысленно) макетом вместо
+    пустой страницы, и пользователю остаётся поправить, а не строить с нуля.
+    """
+    suggestion = suggest_template_from_text(text, known_fields)
+    ordered = suggestion["suggested_fields"]
+    if not ordered:
+        return {}
+
+    positions: dict[str, dict[str, float]] = {}
+    if Path(path).suffix.lower() == ".pdf":
+        candidates_by_field = {
+            key: (known_fields[key], *_FIELD_SYNONYMS.get(key, ())) for key in ordered
+        }
+        with contextlib.suppress(Exception):
+            positions = _suggest_positions_from_pdf(path, candidates_by_field)
+
+    missing = [k for k in ordered if k not in positions]
+    if missing:
+        start_y = _MARGIN_MM
+        if positions:
+            start_y = max(p["y_mm"] + 12 for p in positions.values())
+        positions.update(_stack_positions(missing, start_y_mm=start_y))
+
+    return positions
+
+
 __all__ = [
     "SUPPORTED_EXTENSIONS",
     "extract_text",
+    "suggest_canvas_layout",
     "suggest_template_from_text",
 ]
