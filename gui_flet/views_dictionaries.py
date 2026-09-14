@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import flet as ft
 
-from domain.constants import DICTIONARY_TYPES
+from domain.constants import DICTIONARY_TYPES, models_dict_type
 
 from . import theme
 
@@ -22,15 +22,24 @@ class DictionariesView:
         self.app = app
         self.current_type: str = next(iter(DICTIONARY_TYPES))
         self.selected_item_id: int | None = None
+        # Только для категорий с config["scoped_by"] == "brands" (сейчас —
+        # "models"): какой бренд сейчас просматриваем/редактируем. Модели
+        # хранятся отдельно на каждый бренд (domain.constants.models_dict_type)
+        # — иначе один общий список моделей всех брендов сразу стал бы
+        # нечитаемо длинным ("список на 10 листов A1", прямая просьба
+        # пользователя).
+        self.scope_value: str | None = None
 
     def render(self) -> ft.Control:
         c = self.app.colors
         db = self.app.db
         config = DICTIONARY_TYPES[self.current_type]
+        scoped_by = config.get("scoped_by")
 
         def on_type_change(e: ft.ControlEvent) -> None:
             self.current_type = e.control.value
             self.selected_item_id = None
+            self.scope_value = None
             self.app.rerender()
 
         type_selector = ft.Dropdown(
@@ -42,7 +51,61 @@ class DictionariesView:
             on_select=on_type_change,
         )
 
-        items = db.get_all_dict_items(self.current_type)
+        scope_selector = None
+        effective_dict_type = self.current_type
+        if scoped_by:
+            scope_options = db.get_dict_values(scoped_by)
+            if self.scope_value not in scope_options:
+                self.scope_value = scope_options[0] if scope_options else None
+            if not scope_options:
+                # Нечем скоупить (например, ни одного бренда ещё не
+                # заведено) — сообщаем явно вместо пустого списка без
+                # объяснения причины.
+                return ft.Column(
+                    [
+                        ft.Row(
+                            [
+                                ft.Text(
+                                    "Справочники", size=24, weight=ft.FontWeight.BOLD,
+                                    color=c["text_primary"],
+                                ),
+                                ft.Container(expand=True),
+                                type_selector,
+                            ],
+                        ),
+                        ft.Container(height=16),
+                        ft.Container(
+                            ft.Text(
+                                f"Сначала добавьте хотя бы один элемент в "
+                                f"справочник «{DICTIONARY_TYPES[scoped_by]['name']}» — "
+                                f"«{config['name']}» ведётся отдельно на каждое "
+                                f"его значение.",
+                                size=13, color=c["text_secondary"],
+                            ),
+                            bgcolor=c["bg_card"], border_radius=12, padding=20,
+                            border=theme.card_border(c["border"]),
+                        ),
+                    ],
+                    spacing=0,
+                )
+
+            def on_scope_change(e: ft.ControlEvent) -> None:
+                self.scope_value = e.control.value
+                self.selected_item_id = None
+                self.app.rerender()
+
+            scope_selector = ft.Dropdown(
+                label=config.get("scope_label", DICTIONARY_TYPES[scoped_by]["name"]),
+                value=self.scope_value, width=220, dense=True,
+                options=[ft.dropdown.Option(key=v, text=v) for v in scope_options],
+                on_select=on_scope_change,
+            )
+            # Единственный реальный "scoped_by" сегодня — модели по бренду;
+            # models_dict_type() — SSOT для формата ключа (используется и
+            # формой заказа, см. gui_flet/views_orders.py).
+            effective_dict_type = models_dict_type(self.scope_value)
+
+        items = db.get_all_dict_items(effective_dict_type)
         selected_item = next(
             (i for i in items if i["id"] == self.selected_item_id), None
         )
@@ -73,7 +136,7 @@ class DictionariesView:
                 ok = db.update_dict_value(self.selected_item_id, value, info)
                 message = "Значение обновлено" if ok else "Не удалось обновить значение"
             else:
-                ok = db.add_dict_value(self.current_type, value, info)
+                ok = db.add_dict_value(effective_dict_type, value, info)
                 message = "Значение добавлено" if ok else "Такое значение уже существует"
             self.app.show_snackbar(message, error=not ok)
             if ok:
@@ -139,11 +202,15 @@ class DictionariesView:
                 )
             ]
 
+        list_title = f"{config['icon']} {config['name']}"
+        if scoped_by:
+            list_title += f" — {self.scope_value}"
+
         list_card = ft.Container(
             ft.Column(
                 [
                     ft.Text(
-                        f"{config['icon']} {config['name']}", size=14,
+                        list_title, size=14,
                         weight=ft.FontWeight.W_600, color=c["text_primary"],
                     ),
                     ft.Container(height=8),
@@ -194,6 +261,7 @@ class DictionariesView:
                             color=c["text_primary"],
                         ),
                         ft.Container(expand=True),
+                        *([scope_selector] if scope_selector else []),
                         type_selector,
                     ],
                 ),

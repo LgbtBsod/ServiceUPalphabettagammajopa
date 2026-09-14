@@ -42,7 +42,7 @@ class DeviceSaveMixin:
                 if hasattr(self, "device_type_combo")
                 else ""
             )
-            model = self.model_entry.get().strip() if hasattr(self, "model_entry") else ""
+            model = self.model_combo.get().strip() if hasattr(self, "model_combo") else ""
             defect = (
                 self.defect_text.get("1.0", "end-1c").strip()
                 if hasattr(self, "defect_text")
@@ -124,8 +124,8 @@ class DeviceSaveMixin:
                 "brand": self.brand_combo.get().strip()
                 if hasattr(self, "brand_combo")
                 else "",
-                "model": self.model_entry.get().strip()
-                if hasattr(self, "model_entry")
+                "model": self.model_combo.get().strip()
+                if hasattr(self, "model_combo")
                 else "",
                 "serial_number": self.serial_entry.get().strip()
                 if hasattr(self, "serial_entry")
@@ -196,7 +196,7 @@ class DeviceSaveMixin:
             # Сбор данных
             device_type = self.device_type_combo.get().strip()
             brand = self.brand_combo.get().strip()
-            model = self.model_entry.get().strip()
+            model = self.model_combo.get().strip()
             serial_number = self.serial_entry.get().strip()
             defect = self.defect_text.get("1.0", "end-1c").strip()
             appearance = self.appearance_combo.get().strip()

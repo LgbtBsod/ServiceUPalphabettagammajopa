@@ -247,7 +247,7 @@ class DeviceLockingMixin:
         setters = {
             "device_type": self.device_type_combo.set,
             "brand": self.brand_combo.set,
-            "model": lambda v: _set_entry(self.model_entry, v),
+            "model": self.model_combo.set,
             "serial_number": lambda v: _set_entry(self.serial_entry, v),
             "defect": lambda v: _set_textbox(self.defect_text, v),
             "appearance": self.appearance_combo.set,

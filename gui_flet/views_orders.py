@@ -10,7 +10,13 @@ from __future__ import annotations
 import flet as ft
 
 from database.sqlalchemy_database import OptimisticLockError
-from domain.constants import PRIORITIES, STATUS_ISSUED, STATUSES, WARRANTIES
+from domain.constants import (
+    PRIORITIES,
+    STATUS_ISSUED,
+    STATUSES,
+    WARRANTIES,
+    models_dict_type,
+)
 
 from . import theme
 from .theme import PRIORITY_COLORS, STATUS_COLORS
@@ -146,6 +152,28 @@ def _dropdown_options_with_fallback(
     if current_value and current_value not in known_values:
         opts.insert(0, _opt(current_value, label=f"{current_value} ({legacy_label})"))
     return opts
+
+
+def _editable_dropdown_value(field: ft.Dropdown, legacy_label: str) -> str:
+    """Читает текущее значение editable=True Dropdown (см. f_model) —
+    свободно напечатанный текст, а НЕ обязательно то, что выбрано из
+    списка. field.value — ключ ПОСЛЕДНЕГО выбранного option (обновляется
+    только через on_select) — если пользователь напечатал текст, которого
+    нет ни в одном option, ничего не выбирается, on_select не срабатывает,
+    и .value молча остаётся тем, чем было ДО печати (пустая строка у
+    нового заказа, старое значение при редактировании) — форма тихо
+    сохраняла бы ПУСТУЮ/СТАРУЮ модель вместо только что введённой
+    (workflow-найденный баг, живо воспроизведён). field.text — то, что
+    реально показано в текстовом поле, всегда актуально независимо от
+    источника (печать или выбор) — кроме случая выбора спец-опции
+    "легаси"-значения (_dropdown_options_with_fallback выше), чей текст
+    содержит поясняющий суффикс " (legacy_label)", не входящий в само
+    значение — отрезаем его."""
+    text = (field.text or "").strip()
+    suffix = f" ({legacy_label})"
+    if text.endswith(suffix):
+        return text[: -len(suffix)]
+    return text or (field.value or "")
 
 
 def _status_options(current_value: str) -> list[ft.dropdown.Option]:
@@ -397,13 +425,38 @@ class OrdersView:
                 device_type_value, db.get_dict_values("device_types"), "нет в справочнике"
             ),
         )
+        model_value = (existing or {}).get("model", "")
+        # editable=True — в отличие от f_device_type/f_brand (закрытый
+        # список), "Модель" должна поддерживать и выбор из справочника, и
+        # свободный ввод (моделей у каждого бренда тысячи, справочник
+        # заведомо неполон и растёт по мере ввода реальных заказов — явный
+        # запрос пользователя "не убираем ручной ввод"). enable_filter
+        # заодно даёт автодополнение по мере печати.
+        f_model = ft.Dropdown(
+            label="Модель", value=model_value, editable=True, enable_filter=True,
+            options=_dropdown_options_with_fallback(
+                model_value, db.get_dict_values(models_dict_type(brand_value)), "нет в справочнике"
+            ),
+        )
+
+        def on_brand_change(e: ft.ControlEvent) -> None:
+            # Модели — справочник ОТДЕЛЬНО НА КАЖДЫЙ БРЕНД (см.
+            # domain.constants.models_dict_type) — при смене бренда переcчитываем список
+            # подсказок модели, не трогая уже введённый пользователем текст.
+            new_brand = e.control.value
+            f_model.options = _dropdown_options_with_fallback(
+                f_model.text or f_model.value,
+                db.get_dict_values(models_dict_type(new_brand)),
+                "нет в справочнике",
+            )
+            self.app.page.update()
+
         f_brand = ft.Dropdown(
-            label="Бренд", value=brand_value,
+            label="Бренд", value=brand_value, on_select=on_brand_change,
             options=_dropdown_options_with_fallback(
                 brand_value, db.get_dict_values("brands"), "нет в справочнике"
             ),
         )
-        f_model = ft.TextField(label="Модель", value=(existing or {}).get("model", ""))
         f_serial = ft.TextField(label="Серийный номер", value=(existing or {}).get("serial_number", ""))
         # min_lines/max_lines: multiline=True одной строкой рисуется как
         # обычное однострочное поле (высота не растёт под текст) — то же
@@ -471,7 +524,7 @@ class OrdersView:
                 "order_number": order_preview,
                 "device_type": f_device_type.value,
                 "brand": f_brand.value,
-                "model": f_model.value,
+                "model": _editable_dropdown_value(f_model, "нет в справочнике"),
                 "serial_number": f_serial.value,
                 "defect": f_defect.value,
                 "client_name": f_client_name.value,

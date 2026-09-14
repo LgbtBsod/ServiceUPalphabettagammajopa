@@ -24,6 +24,7 @@ from domain.constants import (
     STATUS_READY,
     STATUSES,
     WARRANTIES,
+    models_dict_type,
 )
 from gui.dialogs.client_history import ClientHistoryWindow
 from gui.widgets.modern import ModernCard
@@ -366,7 +367,20 @@ class DeviceWidgetsMixin:
                 row=i, column=0, sticky="w", pady=3
             )
 
-            if field_key in ("device_type", "brand", "appearance", "completeness"):
+            if field_key == "model":
+                # Модели — справочник ОТДЕЛЬНО НА КАЖДЫЙ БРЕНД
+                # (domain.constants.models_dict_type), не один общий
+                # плоский список — иначе список моделей всех брендов сразу
+                # стал бы нечитаемо длинным ("список на 10 листов A1",
+                # прямая просьба пользователя). self.brand_combo уже
+                # существует — "Бренд" идёт в labels ДО "Модель".
+                current_brand = self.brand_combo.get() if hasattr(self, "brand_combo") else ""
+                values = self.db.get_dict_values(models_dict_type(current_brand)) if self.db else []
+                combo = ctk.CTkComboBox(dev_frame, values=values, width=200, height=30)
+                combo.set(device_data.get(field_key, "") if device_data else "")
+                combo.grid(row=i, column=1, sticky="ew", padx=(8, 0), pady=3)
+                setattr(self, f"{field_key}_combo", combo)
+            elif field_key in ("device_type", "brand", "appearance", "completeness"):
                 dict_key = {
                     "device_type": "device_types",
                     "brand": "brands",
@@ -377,6 +391,18 @@ class DeviceWidgetsMixin:
                 combo = ctk.CTkComboBox(dev_frame, values=values, width=200, height=30)
                 combo.set(device_data.get(field_key, "") if device_data else "")
                 combo.grid(row=i, column=1, sticky="ew", padx=(8, 0), pady=3)
+                if field_key == "brand":
+                    def _on_brand_change(_choice=None, _self=self) -> None:
+                        # Пересчитываем ТОЛЬКО список подсказок — не трогаем
+                        # уже введённый пользователем текст модели.
+                        if not hasattr(_self, "model_combo") or not _self.db:
+                            return
+                        new_brand = _self.brand_combo.get()
+                        _self.model_combo.configure(
+                            values=_self.db.get_dict_values(models_dict_type(new_brand))
+                        )
+
+                    combo.configure(command=_on_brand_change)
                 setattr(self, f"{field_key}_combo", combo)
             elif field_key == "warranty":
                 combo = ctk.CTkComboBox(

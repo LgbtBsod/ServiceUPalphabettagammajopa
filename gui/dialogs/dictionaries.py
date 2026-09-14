@@ -6,7 +6,7 @@ from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
-from domain.constants import DICTIONARY_TYPES
+from domain.constants import DICTIONARY_TYPES, models_dict_type
 from gui.widgets.premium import PremiumCard
 
 
@@ -23,6 +23,14 @@ class DictionariesManagerWindow(ctk.CTkToplevel):
         self.current_item_id = None
         self.trees: dict[str, ttk.Treeview] = {}
         self.entries: dict[str, dict] = {}
+        # Текущий выбранный "скоуп" (сейчас — бренд) на dict_type с
+        # config["scoped_by"] (сейчас единственный такой — "models"):
+        # модели хранятся ОТДЕЛЬНО НА КАЖДЫЙ БРЕНД
+        # (domain.constants.models_dict_type), а не одним плоским списком
+        # — иначе список моделей всех брендов сразу стал бы нечитаемо
+        # длинным (прямая просьба пользователя: "список на 10 листов A1").
+        self.scope_values: dict[str, str] = {}
+        self.scope_combos: dict[str, ctk.CTkComboBox] = {}
 
         self.title("Управление словарями")
         from utils.window_state import restore_window_geometry
@@ -44,6 +52,15 @@ class DictionariesManagerWindow(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self._close_with_geometry)
 
         self.create_widgets()
+
+    def _effective_dict_type(self, dict_type: str) -> str:
+        """dict_type, реально используемый для чтения/записи в БД —
+        совпадает с dict_type для обычных категорий, но для
+        scoped_by-категорий подставляет models_dict_type(текущий_скоуп)."""
+        config = DICTIONARY_TYPES[dict_type]
+        if config.get("scoped_by"):
+            return models_dict_type(self.scope_values.get(dict_type, ""))
+        return dict_type
 
     def _close_with_geometry(self):
         """Сохраняет геометрию окна в config и закрывает его."""
@@ -123,6 +140,30 @@ class DictionariesManagerWindow(ctk.CTkToplevel):
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=self.colors["accent"],
         ).pack(anchor="w", padx=12, pady=(12, 8))
+
+        scoped_by = config.get("scoped_by")
+        if scoped_by:
+            # Модели (и любая будущая scoped_by-категория) ведутся ОТДЕЛЬНО
+            # НА КАЖДОЕ значение scoped_by-справочника (сейчас — на каждый
+            # бренд) — иначе один общий список стал бы нечитаемо длинным.
+            scope_options = self.db.get_dict_values(scoped_by) if self.db else []
+            if scope_options and dict_type not in self.scope_values:
+                self.scope_values[dict_type] = scope_options[0]
+
+            scope_frame = ctk.CTkFrame(left_card, fg_color="transparent")
+            scope_frame.pack(fill="x", padx=12, pady=(0, 8))
+            ctk.CTkLabel(
+                scope_frame, text=f"{config.get('scope_label', 'Скоуп')}:",
+                font=ctk.CTkFont(size=12),
+            ).pack(side="left", padx=(0, 8))
+            scope_combo = ctk.CTkComboBox(
+                scope_frame, values=scope_options, width=180, height=28,
+                command=lambda choice, dt=dict_type: self._on_scope_change(dt, choice),
+            )
+            if dict_type in self.scope_values:
+                scope_combo.set(self.scope_values[dict_type])
+            scope_combo.pack(side="left")
+            self.scope_combos[dict_type] = scope_combo
 
         # Таблица для списка
         tree_frame = ctk.CTkFrame(left_card, fg_color="transparent")
@@ -284,6 +325,17 @@ class DictionariesManagerWindow(ctk.CTkToplevel):
         # Загружаем данные
         self.load_dict_data(dict_type)
 
+    def _on_scope_change(self, dict_type: str, choice: str) -> None:
+        """Смена скоупа (сейчас — бренда) для scoped_by-категории —
+        перезагружает список значений и сбрасывает форму редактирования
+        (выбранный элемент принадлежал ПРЕЖНЕМУ скоупу)."""
+        self.scope_values[dict_type] = choice
+        self.current_item_id = None
+        entry = self.entries.get(dict_type)
+        if entry:
+            self.clear_form(entry["value"], entry["info"])
+        self.load_dict_data(dict_type)
+
     def load_dict_data(self, dict_type: str):
         """Загрузка данных словаря в таблицу"""
         tree = self.trees.get(dict_type)
@@ -295,7 +347,7 @@ class DictionariesManagerWindow(ctk.CTkToplevel):
             tree.delete(item)
 
         # Получаем данные из БД
-        items = self.db.get_all_dict_items(dict_type)
+        items = self.db.get_all_dict_items(self._effective_dict_type(dict_type))
 
         # Заполняем таблицу
         for item in items:
@@ -369,7 +421,7 @@ class DictionariesManagerWindow(ctk.CTkToplevel):
             messagebox.showerror("Ошибка", "Введите значение!")
             return
 
-        if self.db.add_dict_value(dict_type, value, info):
+        if self.db.add_dict_value(self._effective_dict_type(dict_type), value, info):
             messagebox.showinfo("Успех", "✅ Значение добавлено")
             self.load_dict_data(dict_type)
             self.clear_form(value_entry, info_entry)
