@@ -8,8 +8,9 @@ Database через core.get_db_access(), как у gui/main_window.py.
 Сознательно НЕ полный паритет с customtkinter-интерфейсом с первого дня:
 покрыты Баланс/Дашборд, Заказы (список, создание, редактирование, смена
 статуса, поиск, фильтр по статусу, печать актов), Макет акта (свободный
-canvas-билдер + импорт из файла — views_act_builder.py) и Настройки (тема,
-апдейтер). Фото к заказам, справочники и сотрудники — пока только в
+canvas-билдер + импорт из файла — views_act_builder.py), Справочники
+(бренды/типы устройств/модели/инженеры и т.д. — views_dictionaries.py) и
+Настройки (тема, апдейтер). Фото к заказам и сотрудники — пока только в
 классическом интерфейсе (gui/); использовать его для этих задач.
 """
 
@@ -21,6 +22,7 @@ import flet as ft
 
 from . import theme
 from .views_act_builder import ActBuilderView
+from .views_dictionaries import DictionariesView
 from .views_orders import OrdersView
 from .views_settings import DashboardView, SettingsView
 
@@ -30,6 +32,7 @@ _NAV: list[tuple[str, str, object, object]] = [
     ("dashboard", "Дашборд", ft.Icons.DASHBOARD_OUTLINED, ft.Icons.DASHBOARD),
     ("orders", "Заказы", ft.Icons.RECEIPT_LONG_OUTLINED, ft.Icons.RECEIPT_LONG),
     ("act_builder", "Макет акта", ft.Icons.DESIGN_SERVICES_OUTLINED, ft.Icons.DESIGN_SERVICES),
+    ("dictionaries", "Справочники", ft.Icons.MENU_BOOK_OUTLINED, ft.Icons.MENU_BOOK),
     ("settings", "Настройки", ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS),
 ]
 
@@ -66,6 +69,7 @@ class ServiceApp:
             "dashboard": DashboardView(self),
             "orders": OrdersView(self),
             "act_builder": ActBuilderView(self),
+            "dictionaries": DictionariesView(self),
             "settings": SettingsView(self),
         }
 
