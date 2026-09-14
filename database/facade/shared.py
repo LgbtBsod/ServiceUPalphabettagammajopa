@@ -152,8 +152,14 @@ def device_to_row(device: DeviceModel) -> dict[str, Any]:
         "phone": device.phone,
         "total_price": fmt_money(device.total_price),
         "prepayment": fmt_money(device.prepayment),
-        "total_price_num": device.total_price or 0.0,
-        "prepayment_num": device.prepayment or 0.0,
+        # parse_price_to_float(), не голое `or 0.0` — device.total_price/
+        # .prepayment могут прийти строкой из legacy-БД (см. комментарий в
+        # devices_mixin.py::update_device_status()), а суффикс "_num" в
+        # этих ключах — контракт "гарантированно float" для потребителей
+        # (например gui_flet/views_orders.py's f_price/f_prepay читают
+        # именно *_num, ожидая число).
+        "total_price_num": parse_price_to_float(device.total_price),
+        "prepayment_num": parse_price_to_float(device.prepayment),
         "expense_num": parse_price_to_float(device.expense or "0"),
         "status": device.status,
         "priority": device.priority,

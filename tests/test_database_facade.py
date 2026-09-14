@@ -8,6 +8,7 @@
 """
 
 import os
+import sqlite3
 import tempfile
 
 import pytest
@@ -28,6 +29,78 @@ def db():
     os.close(fd)
     engine = SQLiteEngine(DatabaseConfig(database=path))
     database = Database(engine)  # __init__ сам вызывает engine.create_tables()
+    yield database
+    engine.dispose()
+    if os.path.exists(path):
+        os.remove(path)
+
+
+# Точная копия схемы `devices` из реального data/serviceup.db (унаследована
+# от database/db_manager.py, до перехода на SQLAlchemy) — total_price/
+# prepayment здесь TEXT, а не REAL, как в текущей ORM-модели
+# (Device.total_price: Mapped[float]). SQLite хранит значения по affinity
+# ФИЗИЧЕСКОЙ колонки, а не по тому, что думает ORM: TEXT affinity
+# конвертирует даже числовые значения в текстовое представление при
+# записи, так что device.total_price, прочитанный через ORM, реально
+# приходит как str. create_tables() ниже — CREATE TABLE IF NOT EXISTS,
+# так что уже существующая (созданная этим фикстуром) таблица не
+# трогается, а только донасыщается отсутствующими колонками.
+_LEGACY_DEVICES_TABLE_SQL = """
+CREATE TABLE devices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_number TEXT UNIQUE,
+    receipt_date TEXT,
+    completion_date TEXT,
+    device_type TEXT,
+    brand TEXT,
+    model TEXT,
+    serial_number TEXT,
+    defect TEXT,
+    appearance TEXT,
+    completeness TEXT,
+    work_items TEXT,
+    client_name TEXT,
+    client_status TEXT DEFAULT 'Новый',
+    phone TEXT,
+    total_price TEXT,
+    prepayment TEXT,
+    status TEXT DEFAULT 'Диагностика',
+    priority TEXT DEFAULT 'Обычный',
+    engineer TEXT,
+    warranty TEXT,
+    notes TEXT,
+    photos TEXT,
+    expense TEXT DEFAULT '0',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    total_price_num REAL DEFAULT 0,
+    prepayment_num REAL DEFAULT 0,
+    expense_num REAL DEFAULT 0,
+    client_id INTEGER,
+    ready_date TEXT,
+    diagnostic_cost TEXT,
+    repair_cost TEXT,
+    updated_at TIMESTAMP,
+    created_by_id INTEGER,
+    updated_by_id INTEGER,
+    version_id INTEGER
+)
+"""
+
+
+@pytest.fixture
+def legacy_db():
+    """Facade поверх БД с legacy-схемой `devices` (total_price/prepayment
+    TEXT) — воспроизводит реальный data/serviceup.db, а не "чистую" схему,
+    которую create_tables() рисует с нуля на пустом файле."""
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    conn = sqlite3.connect(path)
+    conn.execute(_LEGACY_DEVICES_TABLE_SQL)
+    conn.commit()
+    conn.close()
+
+    engine = SQLiteEngine(DatabaseConfig(database=path))
+    database = Database(engine)
     yield database
     engine.dispose()
     if os.path.exists(path):
@@ -147,6 +220,46 @@ class TestUpdateDeviceStatus:
 
         finances = [f for f in db.get_finances() if f["order_number"] == "00001"]
         assert len(finances) == 1
+
+
+class TestUpdateDeviceStatusWithLegacyTextTotalPrice:
+    """Regression — found via a live run of the app (create an order in the
+    Flet GUI, print the completion act, confirm "Выдан клиенту"): real
+    databases created before the SQLAlchemy migration (see
+    database/db_manager.py) declare devices.total_price/prepayment as TEXT,
+    not REAL — the current ORM model maps them as Float, but SQLite stores
+    by the PHYSICAL column's type affinity, not what the ORM believes.
+    device.total_price therefore comes back as a plain str on such
+    databases, and update_device_status()'s `income = device.total_price or
+    0.0` (no parse_price_to_float, unlike the very next line for expense)
+    crashed with `TypeError: unsupported operand type(s) for -: 'str' and
+    'float'` in _upsert_finance_record()'s `income - expense` — silently
+    caught and logged by update_device_status()'s own except-clause, so the
+    UI just showed "Не удалось изменить статус" with no indication why.
+    This is NOT a synthetic edge case — it reproduces on every legacy-shaped
+    devices table, e.g. the tracked dev data/serviceup.db itself."""
+
+    def test_issuing_a_device_with_legacy_text_total_price_does_not_crash(
+        self, legacy_db
+    ):
+        device_id = legacy_db.add_device(
+            _sample_device(total_price="1500", expense="300")
+        )
+
+        ok = legacy_db.update_device_status(device_id, "Выдан клиенту")
+
+        assert ok is True, (
+            "update_device_status() must succeed even when the legacy "
+            "total_price column stores numbers as TEXT"
+        )
+        finances = legacy_db.get_finances()
+        record = next(
+            (f for f in finances if f["order_number"] == "00001"), None
+        )
+        assert record is not None
+        assert record["income"] == 1500.0
+        assert record["expense"] == 300.0
+        assert record["profit"] == 1200.0
 
 
 class TestCalculate:

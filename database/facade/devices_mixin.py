@@ -257,7 +257,22 @@ class DevicesMixin:
                         "%Y-%m-%d %H:%M:%S"
                     )
                     if not was_issued and device.order_number:
-                        income = device.total_price or 0.0
+                        # device.total_price типизирован в ORM как Float, но
+                        # физическая колонка `devices.total_price` в БД,
+                        # созданной до перехода на SQLAlchemy, объявлена как
+                        # TEXT (унаследованный legacy-столбец, см.
+                        # database/db_manager.py) — SQLite с TEXT-affinity
+                        # хранит даже числовые значения как строки, так что
+                        # ORM здесь реально может вернуть str, а не float.
+                        # Без parse_price_to_float() `income - expense_val`
+                        # ниже падает TypeError на КАЖДОЙ попытке отметить
+                        # заказ выданным (живо воспроизведено: создание
+                        # заказа через Flet -> печать акта выполненных
+                        # работ -> подтверждение "Выдан клиенту" -> падает
+                        # с "unsupported operand type(s) for -: 'str' and
+                        # 'float'", update_device_status() глотает
+                        # исключение и молча возвращает False).
+                        income = parse_price_to_float(device.total_price)
                         expense_val = parse_price_to_float(device.expense or "0")
                         self._upsert_finance_record(
                             s,
