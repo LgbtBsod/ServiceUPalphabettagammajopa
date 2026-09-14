@@ -81,3 +81,62 @@ class TestResolutionStackIsPerThread:
                 container._create_instance(_NoDeps)
         finally:
             container._resolution_stack.pop()
+
+
+class _SlowSingletonService:
+    """Медленный __init__ + счётчик конструирований на классе — расширяет
+    окно гонки check-then-act в resolve() и делает двойное конструирование
+    (если оно случится) наблюдаемым."""
+
+    construct_count = 0
+    _count_lock = threading.Lock()
+
+    def __init__(self):
+        with self._count_lock:
+            type(self).construct_count += 1
+        time.sleep(0.05)
+
+
+class TestResolveSingletonCacheIsThreadSafe:
+    """Workflow-найденный баг: resolve() читал/писал descriptor.instance без
+    блокировки — check (`instance is not None`), затем (на миссе) построение
+    через _resolve_service()/_create_instance(), затем запись `instance =
+    ...` — три раздельных шага без синхронизации между ними. Два потока,
+    одновременно резолвящие один и тот же ещё не построенный SINGLETON,
+    могли оба увидеть instance is None и оба сконструировать его заново
+    (двойной вызов конструктора и его побочных эффектов), после чего
+    последняя запись молча "побеждала", а другой поток держал ссылку на
+    осиротевший дубликат — нарушение самого контракта singleton."""
+
+    def test_concurrent_resolve_of_same_singleton_constructs_exactly_once(self):
+        container = DIContainer()
+        container.register_singleton(_SlowSingletonService)
+        _SlowSingletonService.construct_count = 0
+
+        results: list[object] = []
+        errors: list[Exception] = []
+        barrier = threading.Barrier(2)
+
+        def _worker():
+            barrier.wait()
+            try:
+                results.append(container.resolve(_SlowSingletonService))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=_worker) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+
+        assert errors == []
+        assert len(results) == 2
+        assert _SlowSingletonService.construct_count == 1, (
+            f"singleton constructor ran {_SlowSingletonService.construct_count} "
+            f"times — two threads resolving the same singleton concurrently "
+            f"must not both construct it"
+        )
+        assert results[0] is results[1], (
+            "both threads must receive the exact same singleton instance"
+        )

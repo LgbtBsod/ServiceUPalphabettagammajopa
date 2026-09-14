@@ -101,6 +101,19 @@ class DIContainer(LoggableMixin):
         # пропуская реальный цикл (workflow-найденный баг).
         self._resolution_local = threading.local()
         self._scopes: list[dict[type, Any]] = []
+        # RLock (не Lock) — обязательно реентерабельный: _create_instance()
+        # разрешает зависимости конструктора, рекурсивно вызывая self.resolve()
+        # НА ТОМ ЖЕ потоке, пока resolve() ниже удерживает эту блокировку.
+        # Защищает check-then-act на descriptor.instance (строки ~211-222,
+        # см. resolve()) — раньше это было чтение-без-лока/запись-без-лока:
+        # два потока могли одновременно увидеть instance is None и оба
+        # сконструировать singleton заново (двойной вызов конструктора и
+        # его побочных эффектов), после чего последняя запись молча
+        # "побеждала", а другой поток оставался с осиротевшим дубликатом
+        # (workflow-найденный баг; process-wide контейнер — см.
+        # get_container() — реально используется из GUI, threaded=True
+        # Flask-сервера PWA и фоновых worker'ов).
+        self._lock = threading.RLock()
 
     @property
     def _resolution_stack(self) -> list[type]:
@@ -191,37 +204,38 @@ class DIContainer(LoggableMixin):
             ServiceNotFoundError: Сервис не найден
             CircularDependencyError: Обнаружена циклическая зависимость
         """
-        # Разрешаем алиас
-        if isinstance(service_type, str):
-            if service_type not in self._aliases:
-                raise ServiceNotFoundError(f"Alias '{service_type}' not found")
-            service_type = self._aliases[service_type]
+        with self._lock:
+            # Разрешаем алиас
+            if isinstance(service_type, str):
+                if service_type not in self._aliases:
+                    raise ServiceNotFoundError(f"Alias '{service_type}' not found")
+                service_type = self._aliases[service_type]
 
-        # Проверяем наличие сервиса
-        if service_type not in self._services:
-            # Пытаемся авто-создать
-            if inspect.isclass(service_type):
-                self.logger.debug(f"Auto-registering {service_type.__name__}")
-                return self._create_instance(service_type)
-            raise ServiceNotFoundError(f"Service {service_type} not registered")
+            # Проверяем наличие сервиса
+            if service_type not in self._services:
+                # Пытаемся авто-создать
+                if inspect.isclass(service_type):
+                    self.logger.debug(f"Auto-registering {service_type.__name__}")
+                    return self._create_instance(service_type)
+                raise ServiceNotFoundError(f"Service {service_type} not registered")
 
-        descriptor = self._services[service_type]
+            descriptor = self._services[service_type]
 
-        # Возвращаем существующий экземпляр для singleton
-        if (
-            descriptor.lifetime == ServiceLifetime.SINGLETON
-            and descriptor.instance is not None
-        ):
-            return descriptor.instance
+            # Возвращаем существующий экземпляр для singleton
+            if (
+                descriptor.lifetime == ServiceLifetime.SINGLETON
+                and descriptor.instance is not None
+            ):
+                return descriptor.instance
 
-        # Создаем новый экземпляр
-        instance = self._resolve_service(descriptor)
+            # Создаем новый экземпляр
+            instance = self._resolve_service(descriptor)
 
-        # Сохраняем для singleton
-        if descriptor.lifetime == ServiceLifetime.SINGLETON:
-            descriptor.instance = instance
+            # Сохраняем для singleton
+            if descriptor.lifetime == ServiceLifetime.SINGLETON:
+                descriptor.instance = instance
 
-        return instance
+            return instance
 
     def resolve_all(self, service_type: type[T]) -> list[T]:
         """Разрешает все реализации интерфейса."""
