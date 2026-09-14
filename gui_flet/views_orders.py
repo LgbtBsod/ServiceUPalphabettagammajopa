@@ -306,10 +306,36 @@ class OrdersView:
                     ft.Container(width=4, bgcolor=status_color, border_radius=4, height=54),
                     ft.Column(
                         [
-                            ft.Text(title, size=14, weight=ft.FontWeight.W_600, color=c["text_primary"]),
-                            ft.Text(subtitle, size=12, color=c["text_secondary"]),
+                            # max_lines=1 + overflow=ELLIPSIS: без них, когда
+                            # окно достаточно узкое (в сумме фиксированных
+                            # элементов строки — бейджа, суммы, dropdown'а
+                            # шириной 190, 4 IconButton — легко набегает
+                            # больше 900px), Flutter сжимает expand=True
+                            # столбец до нулевой ширины, и Text без явного
+                            # ограничения переносит КАЖДЫЙ символ на свою
+                            # строку — карточка заказа раздувается на весь
+                            # экран (живой прогон: обычное окно 900px,
+                            # список заказов становится нечитаемым).
+                            #
+                            # Фикс в два шага: (1) max_lines/overflow сами
+                            # по себе только меняют "как рвётся текст" — при
+                            # width=0 текст просто исчезает, а не рвётся, что
+                            # немногим лучше; (2) поэтому здесь ФИКСИРОВАННАЯ
+                            # ширина вместо expand=True, а весь Row ниже —
+                            # scroll=ft.ScrollMode.AUTO, так что на узких
+                            # окнах карточка скроллится по горизонтали
+                            # целиком, а не сжимает текст до нуля.
+                            ft.Text(
+                                title, size=14, weight=ft.FontWeight.W_600,
+                                color=c["text_primary"], max_lines=1,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                            ft.Text(
+                                subtitle, size=12, color=c["text_secondary"],
+                                max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
                         ],
-                        spacing=2, expand=True,
+                        spacing=2, width=240,
                     ),
                     ft.Container(
                         ft.Text(row["priority"], size=11, color="white"),
@@ -337,6 +363,7 @@ class OrdersView:
                     ),
                 ],
                 spacing=14, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                scroll=ft.ScrollMode.AUTO,
             ),
             bgcolor=c["bg_card"], border_radius=10, padding=ft.Padding(14, 10, 14, 10),
             border=theme.card_border(c["border"]),
@@ -372,7 +399,15 @@ class OrdersView:
         )
         f_model = ft.TextField(label="Модель", value=(existing or {}).get("model", ""))
         f_serial = ft.TextField(label="Серийный номер", value=(existing or {}).get("serial_number", ""))
-        f_defect = ft.TextField(label="Неисправность", value=(existing or {}).get("defect", ""), multiline=True)
+        # min_lines/max_lines: multiline=True одной строкой рисуется как
+        # обычное однострочное поле (высота не растёт под текст) — то же
+        # для f_notes ниже. classic-GUI даёт под эти поля CTkTextbox(60px)/
+        # (50px) под неисправность/заметки; здесь эквивалент — несколько
+        # видимых строк, а не одна.
+        f_defect = ft.TextField(
+            label="Неисправность", value=(existing or {}).get("defect", ""),
+            multiline=True, min_lines=3, max_lines=6,
+        )
         f_client_name = ft.TextField(label="Имя клиента", value=(existing or {}).get("client_name", ""))
         f_phone = ft.TextField(label="Телефон", value=(existing or {}).get("phone", ""))
         f_price = ft.TextField(
@@ -409,7 +444,10 @@ class OrdersView:
                 (existing or {}).get("warranty") or "", WARRANTIES, "нет в списке"
             ),
         )
-        f_notes = ft.TextField(label="Заметки", value=(existing or {}).get("notes", ""), multiline=True)
+        f_notes = ft.TextField(
+            label="Заметки", value=(existing or {}).get("notes", ""),
+            multiline=True, min_lines=2, max_lines=5,
+        )
 
         error_text = ft.Text("", color=c["error"], size=12)
 

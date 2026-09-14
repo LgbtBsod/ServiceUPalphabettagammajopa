@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "serviceup-flet",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["main.py", "--ui=flet", "--no-update"],
+      "port": 8421
+    }
+  ]
+}

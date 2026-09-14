@@ -13,6 +13,7 @@ import json
 import os
 import tempfile
 
+import flet as ft
 import pytest
 
 import gui  # noqa: F401 — обход циклического импорта managers/__init__.py
@@ -289,6 +290,73 @@ class TestDeleteOrder:
         cancel_btn.on_click(None)
 
         assert db.get_device(device_id) is not None
+
+
+class TestOrderCardLayoutIsRobustToNarrowWidths:
+    """Regression: a live run at a perfectly ordinary desktop window width
+    (900px) showed the order card's title/subtitle Text exploding into one
+    character per line, ballooning the card to fill the whole screen. The
+    info Column used expand=True with no overflow protection on its Text
+    controls — the row's other, fixed-width chrome (status color bar,
+    priority badge, price, a 190px status Dropdown, four IconButtons) adds
+    up to more than 900px on its own, so Flutter squeezed the expand=True
+    column to (near-)zero width, and Text with no max_lines/overflow set
+    wraps at effectively 0 characters per line in that situation. Fixed by
+    giving the info Column a fixed width (so it can never be squeezed to
+    zero) with max_lines=1 + overflow=ELLIPSIS on both Text controls (so a
+    still-too-long value truncates instead of wrapping), and adding
+    scroll=ft.ScrollMode.AUTO to the outer Row so the whole card scrolls
+    horizontally on narrow viewports instead of any element collapsing."""
+
+    def test_title_and_subtitle_are_single_line_with_ellipsis_overflow(self, db):
+        db.add_device({
+            "order_number": "1", "client_name": "Иван", "phone": "+79990000000",
+        })
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        rows = view._fetch_rows()
+
+        card = view._order_card(rows[0])
+        row = card.content
+        info_column = row.controls[1]
+        title_text, subtitle_text = info_column.controls
+
+        assert title_text.max_lines == 1
+        assert title_text.overflow == ft.TextOverflow.ELLIPSIS
+        assert subtitle_text.max_lines == 1
+        assert subtitle_text.overflow == ft.TextOverflow.ELLIPSIS
+
+    def test_info_column_has_a_fixed_width_not_unbounded_expand(self, db):
+        db.add_device({
+            "order_number": "1", "client_name": "Иван", "phone": "+79990000000",
+        })
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        rows = view._fetch_rows()
+
+        card = view._order_card(rows[0])
+        info_column = card.content.controls[1]
+
+        assert info_column.width is not None and info_column.width > 0, (
+            "the info Column must have a fixed width — expand=True with no "
+            "floor lets it be squeezed to zero on narrow viewports"
+        )
+
+    def test_card_row_scrolls_horizontally_instead_of_collapsing(self, db):
+        db.add_device({
+            "order_number": "1", "client_name": "Иван", "phone": "+79990000000",
+        })
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        rows = view._fetch_rows()
+
+        card = view._order_card(rows[0])
+
+        assert card.content.scroll == ft.ScrollMode.AUTO, (
+            "the card's Row must scroll horizontally so its fixed-width "
+            "controls stay visible (via scroll) instead of being squeezed "
+            "off narrow viewports"
+        )
 
 
 class TestPrintCompletionActPromptsMarkIssued:
