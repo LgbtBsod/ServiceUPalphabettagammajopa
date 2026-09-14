@@ -90,7 +90,11 @@ class DeleteClientCommand:
     """Command to delete a client."""
 
     client_id: int
-    hard_delete: bool = False  # Soft delete by default
+    # Схема не поддерживает soft-delete (нет is_active на Client) — False
+    # заставляет delete_client() отказать, а не молча выполнить каскадное
+    # полное удаление (см. SqlAlchemyClientRepository.delete()). True —
+    # осознанное полное удаление вместе с историей ремонтов клиента.
+    hard_delete: bool = False
 
 
 # =============================================================================
@@ -165,7 +169,9 @@ class IClientRepository(BaseRepository[ClientEntity]):
 
     @abstractmethod
     def delete(self, client_id: int, hard: bool = False) -> bool:
-        """Delete client (soft or hard)."""
+        """Delete client. hard=True performs a real delete (cascades to
+        repair history); hard=False refuses — soft-delete isn't supported
+        by the current schema (no is_active flag on Client)."""
 
     @abstractmethod
     def search(
@@ -291,7 +297,19 @@ class ClientService(BaseService):
                 client.notes = command.notes
 
             if command.is_active is not None:
-                client.is_active = command.is_active
+                # Client (в отличие от Employee) не имеет колонки is_active
+                # в схеме — SqlAlchemyClientRepository.save() ничего для
+                # неё не пишет, так что это присваивание раньше молча
+                # меняло только in-memory ClientEntity и терялось на первом
+                # же save() без единого предупреждения (найдено при
+                # разборе соседнего бага в delete()/hard_delete — то же
+                # "у Client нет is_active", другое проявление). Явно
+                # предупреждаем вызывающего вместо тихого no-op.
+                self.logger.warning(
+                    f"UpdateClientCommand.is_active={command.is_active} для "
+                    f"клиента {command.client_id} проигнорирован: Client не "
+                    f"поддерживает is_active в текущей схеме БД."
+                )
 
             client.updated_at = datetime.now()
 
@@ -302,7 +320,10 @@ class ClientService(BaseService):
             return False
 
     def delete_client(self, command: DeleteClientCommand) -> bool:
-        """Delete client (soft by default)."""
+        """Delete client. Refuses (returns False, logs why) unless
+        command.hard_delete=True — see DeleteClientCommand/
+        SqlAlchemyClientRepository.delete() for why soft-delete isn't
+        supported by the current schema."""
         try:
             return self.safe_execute(
                 self._client_repo.delete,

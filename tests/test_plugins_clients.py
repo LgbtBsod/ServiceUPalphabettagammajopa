@@ -18,6 +18,8 @@ from database.sqlalchemy_models import Base
 from plugins.clients import (
     ClientService,
     CreateClientCommand,
+    DeleteClientCommand,
+    GetClientByIdQuery,
     GetClientByPhoneQuery,
     IClientRepository,
     UpdateClientCommand,
@@ -76,13 +78,45 @@ class TestSqlAlchemyClientRepository:
         assert found is not None
         assert found.full_name == "Пётр Петров"
 
-    def test_delete(self, repository):
+    def test_hard_delete_removes_the_client(self, repository):
         from plugins.clients import ClientEntity
 
         client = ClientEntity(id=0, full_name="Удаляемый", phone="+79990000000")
         repository.save(client)
-        assert repository.delete(client.id) is True
+        assert repository.delete(client.id, hard=True) is True
         assert repository.get_by_id(client.id) is None
+
+    def test_soft_delete_refuses_instead_of_silently_hard_deleting(self, repository):
+        """Workflow-найденный баг: delete(hard=False) — предположительно
+        безопасный путь по умолчанию (DeleteClientCommand.hard_delete
+        default) — раньше тихо выполнял ПОЛНОЕ удаление (схема не
+        поддерживает soft-delete), каскадно стирая всю историю ремонтов
+        клиента. Теперь явно отказывает вместо того, чтобы сделать
+        противоположное запрошенному."""
+        from core.logging.exceptions import BusinessRuleViolation
+        from plugins.clients import ClientEntity
+
+        client = ClientEntity(id=0, full_name="Не должен удалиться", phone="+79990000001")
+        repository.save(client)
+
+        with pytest.raises(BusinessRuleViolation):
+            repository.delete(client.id, hard=False)
+
+        assert repository.get_by_id(client.id) is not None
+
+    def test_delete_default_argument_also_refuses(self, repository):
+        """hard по умолчанию False — вызов без аргумента не должен молча
+        удалять клиента."""
+        from core.logging.exceptions import BusinessRuleViolation
+        from plugins.clients import ClientEntity
+
+        client = ClientEntity(id=0, full_name="Дефолтный вызов", phone="+79990000002")
+        repository.save(client)
+
+        with pytest.raises(BusinessRuleViolation):
+            repository.delete(client.id)
+
+        assert repository.get_by_id(client.id) is not None
 
     def test_search(self, repository):
         from plugins.clients import ClientEntity
@@ -135,6 +169,43 @@ class TestClientService:
             UpdateClientCommand(client_id=created.id, email="not-an-email")
         )
         assert ok is False
+
+    def test_update_client_is_active_is_a_logged_no_op_not_a_crash(self, service, caplog):
+        """Client не имеет колонки is_active в схеме (в отличие от
+        Employee) — раньше UpdateClientCommand.is_active тихо менял только
+        in-memory ClientEntity и терялся на save() без единого следа.
+        Теперь как минимум логируется явное предупреждение, а сам update
+        остальных полей продолжает работать."""
+        created = service.create_client(
+            CreateClientCommand(full_name="Тест is_active", phone="+79998887799")
+        )
+        ok = service.update_client(
+            UpdateClientCommand(client_id=created.id, notes="реальное поле", is_active=False)
+        )
+        assert ok is True
+        assert "is_active" in caplog.text
+
+    def test_delete_client_refuses_by_default_and_preserves_the_client(self, service):
+        """Workflow-найденный баг: DeleteClientCommand.hard_delete=False
+        (умолчание, задокументированное как 'safe/soft') раньше приводило к
+        ПОЛНОМУ каскадному удалению. Сервисный уровень должен вернуть False
+        и оставить клиента на месте, а не молча всё стереть."""
+        created = service.create_client(
+            CreateClientCommand(full_name="Не должен удалиться", phone="+79998887711")
+        )
+        ok = service.delete_client(DeleteClientCommand(client_id=created.id))
+        assert ok is False
+        assert service.get_client(GetClientByIdQuery(client_id=created.id)) is not None
+
+    def test_delete_client_with_explicit_hard_true_actually_deletes(self, service):
+        created = service.create_client(
+            CreateClientCommand(full_name="Осознанное удаление", phone="+79998887722")
+        )
+        ok = service.delete_client(
+            DeleteClientCommand(client_id=created.id, hard_delete=True)
+        )
+        assert ok is True
+        assert service.get_client(GetClientByIdQuery(client_id=created.id)) is None
 
 
 class TestPluginDiscoveryIntegration:

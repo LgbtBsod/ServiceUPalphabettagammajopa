@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import or_, select
 
+from core.logging.exceptions import BusinessRuleViolation
 from database.sqlalchemy_models import Client
 from plugins.clients import ClientEntity, IClientRepository
 
@@ -87,8 +88,30 @@ class SqlAlchemyClientRepository(IClientRepository):
             return False
 
     def delete(self, client_id: int, hard: bool = False) -> bool:
-        """Soft-delete не поддерживается схемой (нет флага is_active на Client) —
-        выполняется полное удаление независимо от hard."""
+        """Удаляет клиента. hard=True — полное удаление; hard=False (по
+        умолчанию) отказывает.
+
+        Схема НЕ поддерживает soft-delete (у Client нет флага is_active),
+        а RepairHistoryMain.client_id объявлен с ON DELETE CASCADE — раньше
+        это означало, что "безопасный" по умолчанию путь (hard=False)
+        молча выполнял САМОЕ разрушительное действие: полное удаление
+        клиента вместе с каскадным стиранием всей истории его ремонтов, в
+        точности противоположное тому, что подразумевает контракт
+        IClientRepository.delete()/DeleteClientCommand ("Soft delete by
+        default") (workflow-найденный баг). Пока в схеме нет is_active
+        (требует миграции), честнее громко отказать на hard=False, чем
+        втихую делать не то, что попросили — вызывающий код должен
+        осознанно передать hard=True, принимая каскадную потерю истории.
+        """
+        if not hard:
+            raise BusinessRuleViolation(
+                "client_soft_delete_not_supported",
+                "Soft-delete клиента не поддерживается текущей схемой БД "
+                "(нет флага is_active на Client). Вызовите "
+                "delete(client_id, hard=True), если действительно требуется "
+                "полное удаление — оно каскадно сотрёт и всю историю "
+                "ремонтов этого клиента (RepairHistoryMain).",
+            )
         try:
             with self._engine.get_session() as s:
                 row = s.get(Client, client_id)
