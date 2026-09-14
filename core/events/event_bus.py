@@ -5,6 +5,7 @@
 
 import asyncio
 import inspect
+import threading
 import typing
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -112,6 +113,24 @@ class EventBus(LoggableMixin):
         self._event_history: list[Event] = []
         self._max_history_size = 1000
         self._is_running = False
+        # RLock (не Lock) — обработчик, вызванный из publish(), может сам
+        # обратиться к subscribe()/publish() этой же шины на том же потоке
+        # (например, опубликовать следующее событие в цепочке). Раньше
+        # _subscriptions/_event_history/_dead_letter_queue были обычными
+        # dict/list БЕЗ какой-либо блокировки — в отличие от всех соседних
+        # общих классов в этом слое (ModuleCache/ModuleRegistrySingleton в
+        # core/module_manager.py, ThreadManager/WorkerPool/TaskScheduler в
+        # core/threading/*), которые оборачивают своё состояние в RLock
+        # именно потому что доступны из нескольких потоков. subscribe()
+        # делал classic check-then-act ("if event_type not in
+        # _subscriptions: _subscriptions[event_type] = []" отдельными
+        # строками от .append()/.sort()) — два потока, впервые подписывающиеся
+        # на один и тот же НОВЫЙ event_type одновременно, могли оба увидеть
+        # ключ отсутствующим и затереть список друг друга, молча теряя
+        # подписку (workflow-найденный баг, эмпирически воспроизведено:
+        # не только потеря подписок, но и ValueError "list modified during
+        # sort" при гонке .append()/.sort() с конкурентным subscribe()).
+        self._lock = threading.RLock()
 
     def subscribe(
         self,
@@ -140,12 +159,15 @@ class EventBus(LoggableMixin):
             filter=event_filter,
         )
 
-        if event_type_str not in self._subscriptions:
-            self._subscriptions[event_type_str] = []
+        with self._lock:
+            if event_type_str not in self._subscriptions:
+                self._subscriptions[event_type_str] = []
 
-        self._subscriptions[event_type_str].append(subscription)
-        # Сортируем по приоритету (убывание)
-        self._subscriptions[event_type_str].sort(key=lambda s: s.priority, reverse=True)
+            self._subscriptions[event_type_str].append(subscription)
+            # Сортируем по приоритету (убывание)
+            self._subscriptions[event_type_str].sort(
+                key=lambda s: s.priority, reverse=True
+            )
 
         self.logger.debug(
             f"Subscribed handler {handler.__name__} to event {event_type_str}"
@@ -161,15 +183,16 @@ class EventBus(LoggableMixin):
             event_type if isinstance(event_type, str) else event_type.__name__
         )
 
-        if event_type_str not in self._subscriptions:
-            return False
+        with self._lock:
+            if event_type_str not in self._subscriptions:
+                return False
 
-        initial_count = len(self._subscriptions[event_type_str])
-        self._subscriptions[event_type_str] = [
-            s for s in self._subscriptions[event_type_str] if s.handler != handler
-        ]
+            initial_count = len(self._subscriptions[event_type_str])
+            self._subscriptions[event_type_str] = [
+                s for s in self._subscriptions[event_type_str] if s.handler != handler
+            ]
 
-        return len(self._subscriptions[event_type_str]) < initial_count
+            return len(self._subscriptions[event_type_str]) < initial_count
 
     def publish(self, event: Event) -> None:
         """Публикует событие всем подписчикам.
@@ -179,13 +202,18 @@ class EventBus(LoggableMixin):
         """
         self.logger.debug(f"Publishing event: {event.event_type}")
 
-        # Сохраняем в историю
-        self._event_history.append(event)
-        if len(self._event_history) > self._max_history_size:
-            self._event_history.pop(0)
+        with self._lock:
+            # Сохраняем в историю
+            self._event_history.append(event)
+            if len(self._event_history) > self._max_history_size:
+                self._event_history.pop(0)
 
-        # Получаем всех подписчиков
-        subscribers = self._get_subscribers(event)
+            # Получаем всех подписчиков — снимок текущего списка, взятый
+            # под блокировкой; сам вызов обработчиков ниже НЕ держит лок
+            # (обработчик может быть медленным/заблокировать, и может сам
+            # вызвать subscribe()/publish() — RLock это переживёт, но
+            # удерживать лок вокруг чужого кода — плохая практика).
+            subscribers = self._get_subscribers(event)
 
         # Вызываем обработчики
         for subscription in subscribers:
@@ -212,11 +240,12 @@ class EventBus(LoggableMixin):
         """Асинхронная публикация события."""
         self.logger.debug(f"Publishing event (async): {event.event_type}")
 
-        self._event_history.append(event)
-        if len(self._event_history) > self._max_history_size:
-            self._event_history.pop(0)
+        with self._lock:
+            self._event_history.append(event)
+            if len(self._event_history) > self._max_history_size:
+                self._event_history.pop(0)
 
-        subscribers = self._get_subscribers(event)
+            subscribers = self._get_subscribers(event)
 
         tasks = []
         for subscription in subscribers:
@@ -272,28 +301,31 @@ class EventBus(LoggableMixin):
         error: Exception,
     ) -> None:
         """Добавляет событие в Dead Letter Queue."""
-        self._dead_letter_queue.append(
-            {
-                "event": event,
-                "subscription": subscription,
-                "error": str(error),
-                "timestamp": datetime.now(),
-            }
-        )
+        with self._lock:
+            self._dead_letter_queue.append(
+                {
+                    "event": event,
+                    "subscription": subscription,
+                    "error": str(error),
+                    "timestamp": datetime.now(),
+                }
+            )
 
-        # Ограничиваем размер DLQ
-        if len(self._dead_letter_queue) > 100:
-            self._dead_letter_queue.pop(0)
+            # Ограничиваем размер DLQ
+            if len(self._dead_letter_queue) > 100:
+                self._dead_letter_queue.pop(0)
 
         self.logger.warning(f"Event {event.event_type} moved to DLQ: {error}")
 
     def get_dead_letter_queue(self) -> list[dict[str, Any]]:
         """Возвращает Dead Letter Queue."""
-        return self._dead_letter_queue.copy()
+        with self._lock:
+            return self._dead_letter_queue.copy()
 
     def clear_dead_letter_queue(self) -> None:
         """Очищает Dead Letter Queue."""
-        self._dead_letter_queue.clear()
+        with self._lock:
+            self._dead_letter_queue.clear()
 
     def get_event_history(
         self,
@@ -301,35 +333,51 @@ class EventBus(LoggableMixin):
         limit: int = 100,
     ) -> list[Event]:
         """Возвращает историю событий."""
-        if event_type:
-            filtered = [e for e in self._event_history if e.event_type == event_type]
-            return filtered[-limit:]
-        return self._event_history[-limit:]
+        with self._lock:
+            if event_type:
+                filtered = [
+                    e for e in self._event_history if e.event_type == event_type
+                ]
+                return filtered[-limit:]
+            return self._event_history[-limit:]
 
     def clear_history(self) -> None:
         """Очищает историю событий."""
-        self._event_history.clear()
+        with self._lock:
+            self._event_history.clear()
 
     @property
     def subscription_count(self) -> int:
         """Возвращает количество подписок."""
-        return sum(len(subs) for subs in self._subscriptions.values())
+        with self._lock:
+            return sum(len(subs) for subs in self._subscriptions.values())
 
     @property
     def event_types(self) -> set[str]:
         """Возвращает типы событий с подписчиками."""
-        return set(self._subscriptions.keys())
+        with self._lock:
+            return set(self._subscriptions.keys())
 
 
 # Глобальный экземпляр шины событий
 _global_event_bus: EventBus | None = None
+_global_event_bus_lock = threading.Lock()
 
 
 def get_event_bus() -> EventBus:
-    """Получает глобальную шину событий."""
+    """Получает глобальную шину событий.
+
+    Тот же check-then-act race, что чинит EventBus._lock внутри самого
+    класса — только для создания process-wide ЭКЗЕМПЛЯРА: два потока, оба
+    увидевшие _global_event_bus is None одновременно, могли создать ДВА
+    независимых EventBus, из которых молча "побеждал" только один, а
+    подписки, сделанные через другой, оказывались на осиротевшей шине,
+    которую никто больше не публикует."""
     global _global_event_bus
     if _global_event_bus is None:
-        _global_event_bus = EventBus()
+        with _global_event_bus_lock:
+            if _global_event_bus is None:  # double-checked locking
+                _global_event_bus = EventBus()
     return _global_event_bus
 
 

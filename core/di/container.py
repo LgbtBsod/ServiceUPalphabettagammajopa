@@ -401,13 +401,25 @@ class DIScope:
 
 # Глобальный контейнер
 _global_container: DIContainer | None = None
+_global_container_lock = threading.Lock()
 
 
 def get_container() -> DIContainer:
-    """Получает глобальный DI контейнер."""
+    """Получает глобальный DI контейнер.
+
+    Тот же check-then-act race, что был в DIContainer.resolve() (см. её
+    комментарий и коммит про singleton cache) — только для самого
+    process-wide экземпляра контейнера: два потока, оба увидевшие
+    _global_container is None при первом обращении, могли создать ДВА
+    независимых DIContainer, один из которых молча становился "глобальным"
+    для всех последующих вызовов, а другой — осиротевшим (и любые
+    singleton'ы, уже зарезолвленные через него, никогда не совпадали бы с
+    тем, что видит остальное приложение)."""
     global _global_container
     if _global_container is None:
-        _global_container = DIContainer()
+        with _global_container_lock:
+            if _global_container is None:  # double-checked locking
+                _global_container = DIContainer()
     return _global_container
 
 

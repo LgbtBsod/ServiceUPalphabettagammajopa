@@ -16,7 +16,12 @@ from __future__ import annotations
 import threading
 import time
 
-from core.di.container import CircularDependencyError, DIContainer
+from core.di.container import (
+    CircularDependencyError,
+    DIContainer,
+    get_container,
+    reset_container,
+)
 
 
 class _SlowConstruct:
@@ -140,3 +145,32 @@ class TestResolveSingletonCacheIsThreadSafe:
         assert results[0] is results[1], (
             "both threads must receive the exact same singleton instance"
         )
+
+
+class TestGetContainerSingletonIsThreadSafe:
+    """Тот же check-then-act race, что resolve() чинит блокировкой внутри
+    самого класса — только для создания process-wide ЭКЗЕМПЛЯРА контейнера
+    (get_container())."""
+
+    def test_concurrent_first_access_returns_the_same_instance(self):
+        reset_container()
+        try:
+            results: list[DIContainer] = []
+            barrier = threading.Barrier(10)
+
+            def _worker():
+                barrier.wait()
+                results.append(get_container())
+
+            threads = [threading.Thread(target=_worker) for _ in range(10)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=5)
+
+            assert len({id(r) for r in results}) == 1, (
+                "concurrent first-time get_container() calls must all "
+                "return the exact same DIContainer instance"
+            )
+        finally:
+            reset_container()
