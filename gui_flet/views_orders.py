@@ -265,8 +265,20 @@ class OrdersView:
 
         order_preview = existing["order_number"] if existing else str(db.peek_next_order_number())
 
-        f_device_type = ft.TextField(label="Тип устройства", value=(existing or {}).get("device_type", ""))
-        f_brand = ft.TextField(label="Бренд", value=(existing or {}).get("brand", ""))
+        device_type_value = (existing or {}).get("device_type", "")
+        brand_value = (existing or {}).get("brand", "")
+        f_device_type = ft.Dropdown(
+            label="Тип устройства", value=device_type_value,
+            options=_dropdown_options_with_fallback(
+                device_type_value, db.get_dict_values("device_types"), "нет в справочнике"
+            ),
+        )
+        f_brand = ft.Dropdown(
+            label="Бренд", value=brand_value,
+            options=_dropdown_options_with_fallback(
+                brand_value, db.get_dict_values("brands"), "нет в справочнике"
+            ),
+        )
         f_model = ft.TextField(label="Модель", value=(existing or {}).get("model", ""))
         f_serial = ft.TextField(label="Серийный номер", value=(existing or {}).get("serial_number", ""))
         f_defect = ft.TextField(label="Неисправность", value=(existing or {}).get("defect", ""), multiline=True)
