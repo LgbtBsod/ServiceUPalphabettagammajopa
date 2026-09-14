@@ -7,8 +7,9 @@ Database через core.get_db_access(), как у gui/main_window.py.
 
 Сознательно НЕ полный паритет с customtkinter-интерфейсом с первого дня:
 покрыты Баланс/Дашборд, Заказы (список, создание, редактирование, смена
-статуса, поиск, фильтр по статусу) и Настройки (тема, апдейтер). Фото к
-заказам, печать актов, справочники и сотрудники — пока только в
+статуса, поиск, фильтр по статусу, печать актов), Макет акта (свободный
+canvas-билдер + импорт из файла — views_act_builder.py) и Настройки (тема,
+апдейтер). Фото к заказам, справочники и сотрудники — пока только в
 классическом интерфейсе (gui/); использовать его для этих задач.
 """
 
@@ -19,6 +20,7 @@ import logging
 import flet as ft
 
 from . import theme
+from .views_act_builder import ActBuilderView
 from .views_orders import OrdersView
 from .views_settings import DashboardView, SettingsView
 
@@ -27,6 +29,7 @@ log = logging.getLogger(__name__)
 _NAV: list[tuple[str, str, object, object]] = [
     ("dashboard", "Дашборд", ft.Icons.DASHBOARD_OUTLINED, ft.Icons.DASHBOARD),
     ("orders", "Заказы", ft.Icons.RECEIPT_LONG_OUTLINED, ft.Icons.RECEIPT_LONG),
+    ("act_builder", "Макет акта", ft.Icons.DESIGN_SERVICES_OUTLINED, ft.Icons.DESIGN_SERVICES),
     ("settings", "Настройки", ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS),
 ]
 
@@ -58,6 +61,7 @@ class ServiceApp:
         self._views = {
             "dashboard": DashboardView(self),
             "orders": OrdersView(self),
+            "act_builder": ActBuilderView(self),
             "settings": SettingsView(self),
         }
 
