@@ -12,6 +12,7 @@ Principles:
 
 from __future__ import annotations
 
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -162,118 +163,144 @@ class PluginManager(LoggableMixin):
     def __init__(self):
         self._plugins: dict[str, IPlugin] = {}
         self._states: dict[str, PluginState] = {}
+        # RLock (не Lock) — enable()/disable() вызывают load()/unload() того
+        # же менеджера на том же потоке, а discover() вызывает load() в
+        # цикле. Раньше здесь не было ВООБЩЕ никакой блокировки — в отличие
+        # от ModuleRegistrySingleton в соседнем core/module_manager.py,
+        # который оборачивает буквально каждое обращение к своим реестрам в
+        # `with self._lock:` именно по этой причине (тот же "process-wide
+        # реестр синглтон-подобных объектов", что и здесь). register()/
+        # unregister() пишут в _plugins И _states двумя раздельными
+        # операциями без атомарности между ними, а list_plugins()/
+        # health_check_all() итерируют self._plugins.items() через
+        # comprehension без блокировки — классический CPython "dictionary
+        # changed size during iteration", если в этот момент конкурентно
+        # выполняется register()/unregister() (workflow-найденный баг).
+        self._lock = threading.RLock()
 
     def register(self, plugin: IPlugin) -> None:
         """Register a plugin instance."""
-        name = plugin.metadata.name
+        with self._lock:
+            name = plugin.metadata.name
 
-        if name in self._plugins:
-            self.logger.warning(f"Plugin {name} already registered, replacing")
+            if name in self._plugins:
+                self.logger.warning(f"Plugin {name} already registered, replacing")
 
-        self._plugins[name] = plugin
-        self._states[name] = PluginState.UNLOADED
-        # Set state reference on plugin for health_check
-        plugin._state = PluginState.UNLOADED
-        self.logger.info(f"Plugin '{name}' v{plugin.metadata.version} registered")
+            self._plugins[name] = plugin
+            self._states[name] = PluginState.UNLOADED
+            # Set state reference on plugin for health_check
+            plugin._state = PluginState.UNLOADED
+            self.logger.info(f"Plugin '{name}' v{plugin.metadata.version} registered")
 
     def unregister(self, plugin_name: str) -> None:
         """Unregister a plugin (must be unloaded first)."""
-        if plugin_name not in self._plugins:
-            raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
+        with self._lock:
+            if plugin_name not in self._plugins:
+                raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
 
-        if self._states[plugin_name] != PluginState.UNLOADED:
-            raise PluginError(
-                f"Plugin '{plugin_name}' must be unloaded before unregistering"
-            )
+            if self._states[plugin_name] != PluginState.UNLOADED:
+                raise PluginError(
+                    f"Plugin '{plugin_name}' must be unloaded before unregistering"
+                )
 
-        del self._plugins[plugin_name]
-        del self._states[plugin_name]
+            del self._plugins[plugin_name]
+            del self._states[plugin_name]
 
-        self.logger.info(f"Plugin '{plugin_name}' unregistered")
+            self.logger.info(f"Plugin '{plugin_name}' unregistered")
 
     def load(self, plugin_name: str, context: PluginContext = None) -> bool:
         """Load a plugin (call initialize(context))."""
-        if plugin_name not in self._plugins:
-            raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
+        with self._lock:
+            if plugin_name not in self._plugins:
+                raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
 
-        plugin = self._plugins[plugin_name]
+            plugin = self._plugins[plugin_name]
 
-        # Check dependencies
-        for dep in plugin.metadata.dependencies:
-            if dep not in self._plugins or self._states.get(dep) != PluginState.ACTIVE:
-                self.logger.error(
-                    f"Plugin '{plugin_name}' requires '{dep}' which is not active"
-                )
-                self._states[plugin_name] = PluginState.ERROR
-                raise PluginDependencyError(f"Missing dependency: {dep}")
+            # Check dependencies
+            for dep in plugin.metadata.dependencies:
+                if (
+                    dep not in self._plugins
+                    or self._states.get(dep) != PluginState.ACTIVE
+                ):
+                    self.logger.error(
+                        f"Plugin '{plugin_name}' requires '{dep}' which is not active"
+                    )
+                    self._states[plugin_name] = PluginState.ERROR
+                    raise PluginDependencyError(f"Missing dependency: {dep}")
 
-        self._states[plugin_name] = PluginState.LOADING
+            self._states[plugin_name] = PluginState.LOADING
 
-        try:
-            success = plugin.initialize(context)
-            if success:
-                self._states[plugin_name] = PluginState.ACTIVE
-                plugin._state = PluginState.ACTIVE  # Update plugin's internal state
-                self.logger.info(f"Plugin '{plugin_name}' loaded successfully")
-                return True
-            else:
+            try:
+                success = plugin.initialize(context)
+                if success:
+                    self._states[plugin_name] = PluginState.ACTIVE
+                    plugin._state = PluginState.ACTIVE  # Update plugin's internal state
+                    self.logger.info(f"Plugin '{plugin_name}' loaded successfully")
+                    return True
+                else:
+                    self._states[plugin_name] = PluginState.ERROR
+                    plugin._state = PluginState.ERROR
+                    self.logger.error(f"Plugin '{plugin_name}' initialization failed")
+                    return False
+            except Exception as e:
                 self._states[plugin_name] = PluginState.ERROR
                 plugin._state = PluginState.ERROR
-                self.logger.error(f"Plugin '{plugin_name}' initialization failed")
+                self.logger.exception(f"Plugin '{plugin_name}' initialization error: {e}")
                 return False
-        except Exception as e:
-            self._states[plugin_name] = PluginState.ERROR
-            plugin._state = PluginState.ERROR
-            self.logger.exception(f"Plugin '{plugin_name}' initialization error: {e}")
-            return False
 
     def unload(self, plugin_name: str) -> None:
         """Unload a plugin (call shutdown)."""
-        if plugin_name not in self._plugins:
-            raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
+        with self._lock:
+            if plugin_name not in self._plugins:
+                raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
 
-        plugin = self._plugins[plugin_name]
-        self._states[plugin_name] = PluginState.UNLOADING
+            plugin = self._plugins[plugin_name]
+            self._states[plugin_name] = PluginState.UNLOADING
 
-        try:
-            plugin.shutdown()
-            self._states[plugin_name] = PluginState.UNLOADED
-            self.logger.info(f"Plugin '{plugin_name}' unloaded successfully")
-        except Exception as e:
-            self._states[plugin_name] = PluginState.ERROR
-            self.logger.exception(f"Plugin '{plugin_name}' shutdown error: {e}")
-            raise
+            try:
+                plugin.shutdown()
+                self._states[plugin_name] = PluginState.UNLOADED
+                self.logger.info(f"Plugin '{plugin_name}' unloaded successfully")
+            except Exception as e:
+                self._states[plugin_name] = PluginState.ERROR
+                self.logger.exception(f"Plugin '{plugin_name}' shutdown error: {e}")
+                raise
 
     def enable(self, plugin_name: str, context: PluginContext = None) -> bool:
         """Enable a loaded plugin (mark as active)."""
-        if plugin_name not in self._plugins:
-            raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
+        with self._lock:
+            if plugin_name not in self._plugins:
+                raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
 
-        if self._states[plugin_name] == PluginState.ACTIVE:
-            return True
+            if self._states[plugin_name] == PluginState.ACTIVE:
+                return True
 
-        # disable() ниже переводит плагин именно в DISABLED (не в UNLOADED)
-        # — эта проверка требовала ТОЛЬКО UNLOADED, поэтому однажды
-        # отключённый плагин нельзя было включить обратно НИКОГДА через
-        # публичный enable()/enable_plugin() (workflow-найденный баг).
-        if self._states[plugin_name] not in (PluginState.UNLOADED, PluginState.DISABLED):
-            self.logger.warning(
-                f"Plugin '{plugin_name}' is in {self._states[plugin_name]} state"
-            )
-            return False
+            # disable() ниже переводит плагин именно в DISABLED (не в UNLOADED)
+            # — эта проверка требовала ТОЛЬКО UNLOADED, поэтому однажды
+            # отключённый плагин нельзя было включить обратно НИКОГДА через
+            # публичный enable()/enable_plugin() (workflow-найденный баг).
+            if self._states[plugin_name] not in (
+                PluginState.UNLOADED,
+                PluginState.DISABLED,
+            ):
+                self.logger.warning(
+                    f"Plugin '{plugin_name}' is in {self._states[plugin_name]} state"
+                )
+                return False
 
-        return self.load(plugin_name, context)
+            return self.load(plugin_name, context)
 
     def disable(self, plugin_name: str) -> None:
         """Disable a plugin (unload and mark as disabled)."""
-        if plugin_name not in self._plugins:
-            raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
+        with self._lock:
+            if plugin_name not in self._plugins:
+                raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
 
-        if self._states[plugin_name] == PluginState.DISABLED:
-            return
+            if self._states[plugin_name] == PluginState.DISABLED:
+                return
 
-        self.unload(plugin_name)
-        self._states[plugin_name] = PluginState.DISABLED
+            self.unload(plugin_name)
+            self._states[plugin_name] = PluginState.DISABLED
         self.logger.info(f"Plugin '{plugin_name}' disabled")
 
     def discover(
@@ -326,48 +353,73 @@ class PluginManager(LoggableMixin):
 
     def get_plugin(self, plugin_name: str) -> IPlugin:
         """Get plugin instance by name."""
-        if plugin_name not in self._plugins:
-            raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
-        return self._plugins[plugin_name]
+        with self._lock:
+            if plugin_name not in self._plugins:
+                raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
+            return self._plugins[plugin_name]
 
     def get_state(self, plugin_name: str) -> PluginState:
         """Get plugin's current state."""
-        if plugin_name not in self._plugins:
-            raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
-        return self._states[plugin_name]
+        with self._lock:
+            if plugin_name not in self._plugins:
+                raise PluginNotFoundError(f"Plugin '{plugin_name}' not found")
+            return self._states[plugin_name]
 
     def list_plugins(self) -> list[dict]:
         """List all registered plugins with their states."""
-        return [
-            {
-                "name": name,
-                "version": plugin.metadata.version,
-                "description": plugin.metadata.description,
-                "state": self._states[name].value,
-                "healthy": plugin.health_check(),
-            }
-            for name, plugin in self._plugins.items()
-        ]
+        # Лок держим на всю итерацию (включая plugin.health_check()) —
+        # без этого конкурентный register()/unregister() мог изменить
+        # размер self._plugins прямо во время этой comprehension
+        # (RuntimeError: dictionary changed size during iteration,
+        # workflow-найденный баг).
+        with self._lock:
+            return [
+                {
+                    "name": name,
+                    "version": plugin.metadata.version,
+                    "description": plugin.metadata.description,
+                    "state": self._states[name].value,
+                    "healthy": plugin.health_check(),
+                }
+                for name, plugin in self._plugins.items()
+            ]
 
     def health_check_all(self) -> dict[str, bool]:
         """Check health of all active plugins."""
-        return {
-            name: plugin.health_check()
-            for name, plugin in self._plugins.items()
+        with self._lock:
+            return {
+                name: plugin.health_check()
+                for name, plugin in self._plugins.items()
             if self._states[name] == PluginState.ACTIVE
         }
 
 
 # Global plugin manager instance
 _plugin_manager: PluginManager | None = None
+_global_plugin_manager_lock = threading.Lock()
 
 
 def get_plugin_manager() -> PluginManager:
-    """Get global plugin manager instance (singleton)."""
+    """Get global plugin manager instance (singleton).
+
+    Тот же check-then-act race, что чинит PluginManager._lock внутри самого
+    класса — только для создания process-wide ЭКЗЕМПЛЯРА: два потока, оба
+    увидевшие _plugin_manager is None одновременно, могли создать ДВА
+    независимых PluginManager, из которых молча "побеждал" только один, а
+    плагины, зарегистрированные через другой, оказывались в осиротевшем
+    реестре."""
     global _plugin_manager
     if _plugin_manager is None:
-        _plugin_manager = PluginManager()
+        with _global_plugin_manager_lock:
+            if _plugin_manager is None:  # double-checked locking
+                _plugin_manager = PluginManager()
     return _plugin_manager
+
+
+def reset_plugin_manager() -> None:
+    """Сбрасывает глобальный менеджер плагинов (для тестов)."""
+    global _plugin_manager
+    _plugin_manager = None
 
 
 __all__ = [
