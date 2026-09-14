@@ -10,7 +10,7 @@ from __future__ import annotations
 import flet as ft
 
 from database.sqlalchemy_database import OptimisticLockError
-from domain.constants import PRIORITIES, STATUSES, WARRANTIES
+from domain.constants import PRIORITIES, STATUS_ISSUED, STATUSES, WARRANTIES
 
 from . import theme
 from .theme import PRIORITY_COLORS, STATUS_COLORS
@@ -32,6 +32,7 @@ def _print_act(app, device: dict, act_type: str) -> None:
     интерфейс (см. gui/main_window_parts/acts_mixin.py). Flet-шеллу нет смысла
     заводить отдельный предпросмотр — PDF открывается системным просмотрщиком,
     печать оттуда доступна как для любого другого документа."""
+    import contextlib
     import os
     import subprocess
     import sys
@@ -50,10 +51,26 @@ def _print_act(app, device: dict, act_type: str) -> None:
 
         template = load_template_data(act_type)
         gen = ActPDFGenerator(template_data=template)
+
+        # Каждый клик по печати создавал НОВЫЙ temp PDF и никогда не удалял
+        # ни один из них — репозиторий тем самым копил по одному
+        # осиротевшему файлу на каждую печать за всё время работы процесса
+        # (workflow-найденный гэп). Полный предпросмотр/редактирование, как
+        # в classic-GUI (gui/dialogs/act_preview.py), — отдельная большая
+        # фича; здесь, как первый шаг, удаляем ПРЕДЫДУЩИЙ temp-файл прямо
+        # перед созданием следующего — тот же приём, что и в
+        # act_preview.py::render_pdf_preview() (contextlib.suppress(OSError),
+        # т.к. системный просмотрщик мог ещё держать файл открытым).
+        last_path = getattr(app, "_last_act_print_path", None)
+        if last_path and os.path.exists(last_path):
+            with contextlib.suppress(OSError):
+                os.remove(last_path)
+
         fd, path = tempfile.mkstemp(
             suffix=f"_{act_type}_{device.get('order_number', '')}.pdf"
         )
         os.close(fd)
+        app._last_act_print_path = path
         ok = (
             gen.generate_completion_pdf(path, device)
             if act_type == "completion"
@@ -69,8 +86,48 @@ def _print_act(app, device: dict, act_type: str) -> None:
         else:
             subprocess.run(["xdg-open", path], check=False)
         app.show_snackbar("Акт сформирован и открыт для печати")
+
+        # Печать акта выполненных работ = выдача устройства клиенту — тот же
+        # рабочий процесс, что и в classic-GUI
+        # (gui/main_window_parts/acts_mixin.py::print_completion_act()).
+        # Flet-версия раньше вообще не трогала статус: заказы, выданные
+        # через Flet, оставались в прежнем статусе, пока сотрудник не менял
+        # его вручную — искажая дашборд/финансовые цифры, завязанные на
+        # статус (workflow-найденный гэп).
+        if act_type == "completion" and device.get("status") != STATUS_ISSUED:
+            _ask_mark_issued(app, device)
     except Exception as e:
         app.show_snackbar(f"Ошибка печати акта: {e}", error=True)
+
+
+def _ask_mark_issued(app, device: dict) -> None:
+    order_number = device.get("order_number", "")
+
+    def _confirm(_e) -> None:
+        app.page.pop_dialog()
+        ok = app.db.update_device_status(device["id"], STATUS_ISSUED)
+        if ok:
+            app.show_snackbar(f"Заказ №{order_number} отмечен как «Выдан клиенту»")
+            app.rerender()
+        else:
+            app.show_snackbar("Не удалось изменить статус", error=True)
+
+    def _cancel(_e) -> None:
+        app.page.pop_dialog()
+
+    app.page.show_dialog(
+        ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Выдача устройства"),
+            content=ft.Text(
+                f"Изменить статус заказа №{order_number} на «Выдан клиенту»?"
+            ),
+            actions=[
+                ft.TextButton("Отмена", on_click=_cancel),
+                ft.TextButton("Да", on_click=_confirm),
+            ],
+        )
+    )
 
 
 def _dropdown_options_with_fallback(
@@ -210,6 +267,36 @@ class OrdersView:
                 self.app.show_snackbar("Не удалось изменить статус", error=True)
             self.app.rerender()
 
+        def on_delete_click(_e) -> None:
+            # gui/main_window_parts/devices_table_mixin.py::_quick_delete_selected()
+            # — единственный путь удаления заказа в classic-GUI; в Flet его
+            # не было вообще (workflow-найденный гэп) — ошибочный/тестовый
+            # заказ, созданный через Flet, можно было удалить только
+            # переключившись на классический интерфейс.
+            def _confirm(_e2) -> None:
+                self.app.page.pop_dialog()
+                ok = self.app.db.delete_device(row["id"])
+                if ok:
+                    self.app.show_snackbar(f"Заказ №{row['order_number']} удалён")
+                else:
+                    self.app.show_snackbar("Не удалось удалить заказ", error=True)
+                self.app.rerender()
+
+            def _cancel(_e2) -> None:
+                self.app.page.pop_dialog()
+
+            self.app.page.show_dialog(
+                ft.AlertDialog(
+                    modal=True,
+                    title=ft.Text("Удаление заказа"),
+                    content=ft.Text(f"Удалить заказ №{row['order_number']}?"),
+                    actions=[
+                        ft.TextButton("Отмена", on_click=_cancel),
+                        ft.TextButton("Удалить", on_click=_confirm),
+                    ],
+                )
+            )
+
         title = f"№{row['order_number']}  ·  {row['device_type']} {row['brand']} {row['model']}".strip()
         subtitle = f"{row['client_name']}  ·  {row['phone']}" if row["client_name"] else row["phone"]
 
@@ -244,6 +331,10 @@ class OrdersView:
                         on_click=lambda _e, r=row: _print_act(self.app, r, "completion"),
                     ),
                     ft.IconButton(icon=ft.Icons.EDIT_OUTLINED, tooltip="Открыть", on_click=on_edit),
+                    ft.IconButton(
+                        icon=ft.Icons.DELETE_OUTLINE, tooltip="Удалить заказ",
+                        icon_color=c["error"], on_click=on_delete_click,
+                    ),
                 ],
                 spacing=14, vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),

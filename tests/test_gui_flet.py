@@ -19,12 +19,13 @@ import gui  # noqa: F401 — обход циклического импорта 
 from database.db_config import DatabaseConfig
 from database.engines.sqlite_engine import SQLiteEngine
 from database.sqlalchemy_database import Database
-from domain.constants import PRIORITIES, STATUSES, WARRANTIES
+from domain.constants import PRIORITIES, STATUS_ISSUED, STATUSES, WARRANTIES
 from gui_flet.theme import card_border, colors
 from gui_flet.views_orders import (
     OrdersView,
     _dropdown_options_with_fallback,
     _opt,
+    _print_act,
     _status_options,
 )
 
@@ -128,8 +129,18 @@ def _find_button(control, label: str):
 
 
 class _FakePage:
+    def __init__(self):
+        self.dialogs = []
+
     def update(self):
         pass
+
+    def show_dialog(self, dialog):
+        self.dialogs.append(dialog)
+
+    def pop_dialog(self):
+        if self.dialogs:
+            self.dialogs.pop()
 
 
 class _FakeApp:
@@ -216,3 +227,213 @@ class TestOrderFormSave:
         assert len(numbers) == 2, (
             f"ожидались 2 разных номера заказа, получено: {numbers}"
         )
+
+
+class TestDeleteOrder:
+    """Regression (Flet/classic parity gap): the classic GUI's only delete
+    path — gui/main_window_parts/devices_table_mixin.py::_quick_delete_selected(),
+    bound to the Delete key with an askyesno confirm — had NO equivalent
+    anywhere in gui_flet (a grep for 'delete'/'Удал' across gui_flet/
+    returned zero matches). A mistaken/duplicate/test order created via
+    the Flet GUI could only be removed by switching to the classic
+    interface."""
+
+    def _card_delete_button(self, view, db):
+        rows = view._fetch_rows()
+        card = view._order_card(rows[0])
+        return _find(card, tooltip="Удалить заказ")
+
+    def test_delete_button_opens_confirm_dialog_without_deleting_yet(self, db):
+        device_id = db.add_device(
+            {"order_number": "1", "client_name": "Иван", "phone": "+79990000000"}
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+
+        delete_btn = self._card_delete_button(view, db)
+        assert delete_btn is not None
+        delete_btn.on_click(None)
+
+        assert db.get_device(device_id) is not None, (
+            "clicking the delete icon must not delete immediately — a "
+            "confirmation dialog must appear first"
+        )
+        assert app.page.dialogs, "clicking delete must open a confirm dialog"
+
+    def test_confirming_the_dialog_deletes_the_order(self, db):
+        device_id = db.add_device(
+            {"order_number": "1", "client_name": "Иван", "phone": "+79990000000"}
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+
+        self._card_delete_button(view, db).on_click(None)
+        dialog = app.page.dialogs[-1]
+        confirm_btn = next(a for a in dialog.actions if a.content == "Удалить")
+
+        confirm_btn.on_click(None)
+
+        assert db.get_device(device_id) is None
+
+    def test_cancelling_the_dialog_keeps_the_order(self, db):
+        device_id = db.add_device(
+            {"order_number": "1", "client_name": "Иван", "phone": "+79990000000"}
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+
+        self._card_delete_button(view, db).on_click(None)
+        dialog = app.page.dialogs[-1]
+        cancel_btn = next(a for a in dialog.actions if a.content == "Отмена")
+
+        cancel_btn.on_click(None)
+
+        assert db.get_device(device_id) is not None
+
+
+class TestPrintCompletionActPromptsMarkIssued:
+    """Regression (Flet/classic parity gap): classic's
+    gui/main_window_parts/acts_mixin.py::print_completion_act() asks to
+    flip status to STATUS_ISSUED ("Выдан клиенту") right after printing —
+    printing that act = handing the device back to the client. gui_flet's
+    _print_act() for act_type='completion' only built the PDF and
+    os.startfile()d it, never touching status at all — orders printed and
+    handed over via Flet could silently stay in an earlier status,
+    skewing dashboard/finance figures that key off status."""
+
+    @pytest.fixture(autouse=True)
+    def _no_real_viewer_launch(self, monkeypatch):
+        # _print_act() imports os/subprocess locally, but that's still the
+        # same os/subprocess module object — patching here reaches it.
+        monkeypatch.setattr(os, "startfile", lambda path: None, raising=False)
+
+    def _generated_paths(self, monkeypatch):
+        paths = []
+        real_mkstemp = tempfile.mkstemp
+
+        def _tracked_mkstemp(*args, **kwargs):
+            fd, path = real_mkstemp(*args, **kwargs)
+            paths.append(path)
+            return fd, path
+
+        monkeypatch.setattr(tempfile, "mkstemp", _tracked_mkstemp)
+        return paths
+
+    def test_completion_print_prompts_to_mark_issued(self, db, monkeypatch):
+        paths = self._generated_paths(monkeypatch)
+        device_id = db.add_device({
+            "order_number": "1", "client_name": "Иван", "phone": "+79990000000",
+            "status": STATUSES[0],
+        })
+        app = _FakeApp(db)
+
+        _print_act(app, db.get_device(device_id), "completion")
+
+        assert app.page.dialogs, (
+            "printing the completion act must prompt to mark the order issued"
+        )
+        for p in paths:
+            if os.path.exists(p):
+                os.remove(p)
+
+    def test_confirming_the_prompt_updates_status(self, db, monkeypatch):
+        paths = self._generated_paths(monkeypatch)
+        device_id = db.add_device({
+            "order_number": "1", "client_name": "Иван", "phone": "+79990000000",
+            "status": STATUSES[0],
+        })
+        app = _FakeApp(db)
+
+        _print_act(app, db.get_device(device_id), "completion")
+        dialog = app.page.dialogs[-1]
+        confirm_btn = next(a for a in dialog.actions if a.content == "Да")
+        confirm_btn.on_click(None)
+
+        assert db.get_device(device_id)["status"] == STATUS_ISSUED
+        for p in paths:
+            if os.path.exists(p):
+                os.remove(p)
+
+    def test_cancelling_the_prompt_keeps_the_prior_status(self, db, monkeypatch):
+        paths = self._generated_paths(monkeypatch)
+        device_id = db.add_device({
+            "order_number": "1", "client_name": "Иван", "phone": "+79990000000",
+            "status": STATUSES[0],
+        })
+        app = _FakeApp(db)
+
+        _print_act(app, db.get_device(device_id), "completion")
+        dialog = app.page.dialogs[-1]
+        cancel_btn = next(a for a in dialog.actions if a.content == "Отмена")
+        cancel_btn.on_click(None)
+
+        assert db.get_device(device_id)["status"] == STATUSES[0]
+        for p in paths:
+            if os.path.exists(p):
+                os.remove(p)
+
+    def test_receipt_print_never_prompts(self, db, monkeypatch):
+        paths = self._generated_paths(monkeypatch)
+        device_id = db.add_device({
+            "order_number": "1", "client_name": "Иван", "phone": "+79990000000",
+        })
+        app = _FakeApp(db)
+
+        _print_act(app, db.get_device(device_id), "receipt")
+
+        assert not app.page.dialogs
+        for p in paths:
+            if os.path.exists(p):
+                os.remove(p)
+
+    def test_already_issued_device_is_not_prompted_again(self, db, monkeypatch):
+        paths = self._generated_paths(monkeypatch)
+        device_id = db.add_device({
+            "order_number": "1", "client_name": "Иван", "phone": "+79990000000",
+            "status": STATUS_ISSUED,
+        })
+        app = _FakeApp(db)
+
+        _print_act(app, db.get_device(device_id), "completion")
+
+        assert not app.page.dialogs
+        for p in paths:
+            if os.path.exists(p):
+                os.remove(p)
+
+
+class TestPrintActDoesNotLeakTempFiles:
+    """Regression: _print_act() mkstemp()'d a new temp PDF on every click
+    and never removed it — repeated printing from Flet accumulated one
+    orphaned temp file per click for the life of the process, unlike
+    gui/dialogs/act_preview.py which always cleans up the previous temp
+    file before creating the next. Fixed with the same asymmetric
+    cleanup (delete-previous-before-creating-next) via
+    app._last_act_print_path."""
+
+    @pytest.fixture(autouse=True)
+    def _no_real_viewer_launch(self, monkeypatch):
+        monkeypatch.setattr(os, "startfile", lambda path: None, raising=False)
+
+    def test_second_print_removes_the_first_temp_pdf(self, db):
+        device_id = db.add_device({
+            "order_number": "1", "client_name": "Иван", "phone": "+79990000000",
+        })
+        app = _FakeApp(db)
+
+        _print_act(app, db.get_device(device_id), "receipt")
+        first_path = app._last_act_print_path
+        assert first_path is not None
+        assert os.path.exists(first_path)
+
+        _print_act(app, db.get_device(device_id), "receipt")
+        second_path = app._last_act_print_path
+        assert second_path is not None
+        assert second_path != first_path
+        assert not os.path.exists(first_path), (
+            "the temp PDF from the first print must be removed once the "
+            "second print starts, instead of accumulating forever"
+        )
+
+        if os.path.exists(second_path):
+            os.remove(second_path)

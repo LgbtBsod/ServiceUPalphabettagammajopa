@@ -49,6 +49,10 @@ class ServiceApp:
         self._host: ft.Container | None = None
         self._scroll: ft.Column | None = None
         self._divider: ft.VerticalDivider | None = None
+        # Путь последнего temp-PDF, созданного views_orders.py::_print_act()
+        # — удаляется перед созданием следующего, чтобы печать не копила
+        # осиротевшие файлы (см. комментарий в _print_act()).
+        self._last_act_print_path: str | None = None
 
     # ── lifecycle ─────────────────────────────────────────────
 
