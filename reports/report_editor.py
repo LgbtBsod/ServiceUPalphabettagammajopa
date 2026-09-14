@@ -119,7 +119,17 @@ def _templates_dir() -> str:
 
 
 def load_template_data(act_type: str) -> dict:
-    """Загружает шаблон акта из JSON или создаёт дефолтный."""
+    """Загружает шаблон акта из JSON или создаёт дефолтный.
+
+    Если существующий файл повреждён (битый/усечённый JSON), больше НЕ
+    перезаписывает его молча дефолтным шаблоном — раньше это на ровном
+    месте уничтожало кастомизацию пользователя (лого, цвет, порядок полей,
+    условия/гарантия) без единого предупреждения в UI (workflow-найденный
+    баг; тем более вероятно после прерванной записи — см. save_template_data()
+    ниже, раньше писавшую неатомарно). Повреждённый файл переименовывается
+    в *.corrupted (для ручного восстановления), и только после этого
+    заводится дефолтный шаблон — тем же путём, что и "шаблона ещё не было".
+    """
     filename = "receipt_act.json" if act_type == "receipt" else "completion_act.json"
     path = os.path.join(_templates_dir(), filename)
     if os.path.exists(path):
@@ -127,22 +137,45 @@ def load_template_data(act_type: str) -> dict:
             with open(path, encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            logger.exception(f"Ошибка чтения шаблона {path}: {e}")
+            logger.error(
+                f"Шаблон {path} повреждён и не может быть прочитан: {e}. "
+                f"Файл сохранён как {path}.corrupted для восстановления "
+                f"вручную; будет использован шаблон по умолчанию.",
+                exc_info=True,
+            )
+            with contextlib.suppress(OSError):
+                os.replace(path, path + ".corrupted")
     data = dict(_DEFAULT_TEMPLATES[act_type])
     save_template_data(act_type, data)
     return data
 
 
 def save_template_data(act_type: str, data: dict) -> bool:
-    """Сохраняет шаблон акта в JSON."""
+    """Сохраняет шаблон акта в JSON — атомарно (временный файл + os.replace).
+
+    Раньше писала напрямую в целевой файл (open(path, "w") усекает его до
+    записи), поэтому прерванная запись (сбой приложения, выключение
+    питания, принудительное завершение процесса) оставляла битый/усечённый
+    JSON — который load_template_data() затем принимал за "повреждённый
+    шаблон" и (до фикса выше) молча затирал дефолтами. os.replace()
+    атомарен и на Windows, и на POSIX — целевой файл либо остаётся
+    прежним, либо становится ПОЛНОСТЬЮ новым, промежуточного состояния
+    не бывает."""
     filename = "receipt_act.json" if act_type == "receipt" else "completion_act.json"
-    path = os.path.join(_templates_dir(), filename)
+    tdir = _templates_dir()
+    path = os.path.join(tdir, filename)
+    tmp_path = None
     try:
-        with open(path, "w", encoding="utf-8") as f:
+        fd, tmp_path = tempfile.mkstemp(dir=tdir, prefix=f".{filename}.", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, path)
         return True
     except Exception as e:
         logger.exception(f"Ошибка сохранения шаблона {path}: {e}")
+        if tmp_path:
+            with contextlib.suppress(OSError):
+                os.remove(tmp_path)
         return False
 
 
@@ -714,11 +747,20 @@ class ActPanel:
 
             import pypdfium2 as pdfium
 
+            # pypdfium2 не освобождает файловый хендл при сборке мусора —
+            # незакрытый PdfDocument держит файл заблокированным на Windows
+            # даже после gc.collect() (workflow-найденный баг). Следующий
+            # _cleanup_preview_pdf()/update_preview() тогда молча не может
+            # удалить временный PDF (OSError гасится contextlib.suppress),
+            # и путь к залоченному файлу теряется — утечка временных файлов
+            # на весь процесс. Тот же приём, что и в act_importer.py.
             pdf = pdfium.PdfDocument(self._preview_pdf)
-            if len(pdf) == 0:
-                raise RuntimeError("PDF без страниц")
-            page = pdf[0]
-            pil_img = page.render(scale=2.0).to_pil()
+            try:
+                if len(pdf) == 0:
+                    raise RuntimeError("PDF без страниц")
+                pil_img = pdf[0].render(scale=2.0).to_pil()
+            finally:
+                pdf.close()
 
             popup = ctk.CTkToplevel(self.editor)
             popup.title("Точный PDF-предпросмотр")
@@ -1260,22 +1302,31 @@ class ActPanel:
             try:
                 import pypdfium2 as pdfium
 
+                # Незакрытый PdfDocument держит файл заблокированным на
+                # Windows даже после сборки мусора (workflow-найденный
+                # баг) — следующий вызов update_preview() тогда не может
+                # удалить этот временный PDF через _cleanup_preview_pdf(),
+                # и путь к залоченному файлу теряется навсегда (утечка
+                # временных файлов на весь процесс). try/finally гарантирует
+                # close() и на пути успеха, и на пути исключения ниже.
                 pdf = pdfium.PdfDocument(self._preview_pdf)
-                if len(pdf) == 0:
-                    raise RuntimeError("PDF без страниц")
-                page = pdf[0]
-                self.preview_container.update_idletasks()
-                avail_w = max(self.preview_container.winfo_width() - 20, 280)
-                avail_h = max(self.preview_container.winfo_height() - 20, 400)
-                # A5: 148×210 мм = 419.5×595.3 pt. Подгоняем по ОБЕИМ измерениям,
-                # чтобы вся страница была видна целиком как миниатюра.
-                pt_w = 148 * 2.83465
-                pt_h = 210 * 2.83465
-                scale_w = avail_w / pt_w
-                scale_h = avail_h / pt_h
-                # Берём меньший масштаб — страница гарантированно помещается
-                scale = max(0.8, min(scale_w, scale_h))
-                pil_img = page.render(scale=scale).to_pil()
+                try:
+                    if len(pdf) == 0:
+                        raise RuntimeError("PDF без страниц")
+                    self.preview_container.update_idletasks()
+                    avail_w = max(self.preview_container.winfo_width() - 20, 280)
+                    avail_h = max(self.preview_container.winfo_height() - 20, 400)
+                    # A5: 148×210 мм = 419.5×595.3 pt. Подгоняем по ОБЕИМ измерениям,
+                    # чтобы вся страница была видна целиком как миниатюра.
+                    pt_w = 148 * 2.83465
+                    pt_h = 210 * 2.83465
+                    scale_w = avail_w / pt_w
+                    scale_h = avail_h / pt_h
+                    # Берём меньший масштаб — страница гарантированно помещается
+                    scale = max(0.8, min(scale_w, scale_h))
+                    pil_img = pdf[0].render(scale=scale).to_pil()
+                finally:
+                    pdf.close()
 
                 ctk_img = ctk.CTkImage(
                     light_image=pil_img,

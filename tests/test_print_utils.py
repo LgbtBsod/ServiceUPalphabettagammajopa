@@ -13,6 +13,7 @@ import time
 
 import pytest
 
+from reports import print_utils
 from reports.print_utils import _wait_for_unlock_or_timeout
 
 
@@ -79,3 +80,73 @@ class TestWaitForUnlockOrTimeout:
         start = time.monotonic()
         _wait_for_unlock_or_timeout(str(path), timeout_sec=0.2, poll_interval=0.05)
         assert time.monotonic() - start < 2.0
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="Grace period only applies to the win32 lock-check branch — see "
+    "print_utils._STARTUP_GRACE_SEC docstring.",
+)
+class TestStartupGracePeriod:
+    """Workflow-found race: os.startfile() returns as soon as the app is
+    LAUNCHED, not once it has actually opened the file. Without an initial
+    grace period, the cleanup thread's first lock-probe can run before a
+    cold-starting print/viewer app has opened the PDF — finds it "free",
+    and deletes it out from under the job that was about to read it."""
+
+    def test_print_act_pdf_sleeps_a_grace_period_before_the_first_lock_check(
+        self, tmp_path, monkeypatch
+    ):
+        pdf_path = str(tmp_path / "act.pdf")
+        monkeypatch.setattr(print_utils.os, "startfile", lambda *a, **k: None)
+        monkeypatch.setattr(print_utils.os.path, "exists", lambda p: False)
+
+        call_order = []
+        monkeypatch.setattr(
+            print_utils.time, "sleep", lambda s: call_order.append(("sleep", s))
+        )
+        monkeypatch.setattr(
+            print_utils,
+            "_wait_for_unlock_or_timeout",
+            lambda *a, **k: call_order.append(("wait_for_unlock", None)),
+        )
+        captured = {}
+        monkeypatch.setattr(
+            print_utils, "_start_cleanup_thread", lambda cleanup: captured.__setitem__("cleanup", cleanup)
+        )
+
+        print_utils.print_act_pdf(pdf_path, delete_after=True, delay_sec=60)
+        captured["cleanup"]()  # выполняем захваченный колбэк синхронно, без реального потока
+
+        assert call_order[0] == ("sleep", print_utils._STARTUP_GRACE_SEC), (
+            "первым действием должен быть grace-period sleep, "
+            "ДО первой проверки блокировки файла"
+        )
+        assert call_order[1] == ("wait_for_unlock", None)
+
+    def test_open_act_pdf_sleeps_a_grace_period_before_the_first_lock_check(
+        self, tmp_path, monkeypatch
+    ):
+        pdf_path = str(tmp_path / "act.pdf")
+        monkeypatch.setattr(print_utils.os, "startfile", lambda *a, **k: None)
+        monkeypatch.setattr(print_utils.os.path, "exists", lambda p: False)
+
+        call_order = []
+        monkeypatch.setattr(
+            print_utils.time, "sleep", lambda s: call_order.append(("sleep", s))
+        )
+        monkeypatch.setattr(
+            print_utils,
+            "_wait_for_unlock_or_timeout",
+            lambda *a, **k: call_order.append(("wait_for_unlock", None)),
+        )
+        captured = {}
+        monkeypatch.setattr(
+            print_utils, "_start_cleanup_thread", lambda cleanup: captured.__setitem__("cleanup", cleanup)
+        )
+
+        print_utils.open_act_pdf(pdf_path, delete_after=True, delay_sec=60)
+        captured["cleanup"]()
+
+        assert call_order[0] == ("sleep", print_utils._STARTUP_GRACE_SEC)
+        assert call_order[1] == ("wait_for_unlock", None)

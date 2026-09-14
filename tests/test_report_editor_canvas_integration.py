@@ -13,6 +13,8 @@ _templates_dir(), чтобы гарантированно НЕ трогать о
 
 from __future__ import annotations
 
+import os
+
 import customtkinter as ctk
 import pytest
 
@@ -129,3 +131,40 @@ class TestSyncTemplateFromUiIncludesCanvasState:
 
         assert act_panel.template_data["layout_mode"] == "canvas"
         assert act_panel.template_data["canvas_fields"]["phone"]["x_mm"] == 42.0
+
+
+class TestPdfPreviewCleanup:
+    """Workflow-found bug: an unclosed pypdfium2.PdfDocument keeps its temp
+    preview PDF locked on Windows even after the function returns (and even
+    after gc.collect() — verified empirically). The NEXT update_preview()
+    call's _cleanup_preview_pdf() then silently fails to remove the
+    previous file (its OSError is swallowed by contextlib.suppress) and the
+    path is dropped — a permanent per-process leak of locked temp files
+    every time the user edits a template field."""
+
+    def test_repeated_update_preview_cleans_up_the_previous_temp_pdf(self, act_panel):
+        act_panel.update_preview()
+        first_pdf = act_panel._preview_pdf
+        assert first_pdf is not None
+        assert os.path.exists(first_pdf)
+
+        act_panel.update_preview()
+        second_pdf = act_panel._preview_pdf
+        assert second_pdf is not None
+        assert second_pdf != first_pdf
+        assert not os.path.exists(first_pdf), (
+            "previous preview PDF should have been deleted by "
+            "_cleanup_preview_pdf() — if this fails, the pdfium handle "
+            "from the first render is still locking the file"
+        )
+
+    def test_open_exact_pdf_preview_closes_its_pdfium_handle(self, act_panel, tmp_path):
+        """Same leak, different call site (open_exact_pdf_preview) — verify
+        the temp file it creates can be removed immediately afterward
+        (would fail with WinError 32 on Windows before the fix)."""
+        act_panel.open_exact_pdf_preview()
+        preview_pdf = act_panel._preview_pdf
+        assert preview_pdf is not None
+        assert os.path.exists(preview_pdf)
+
+        os.remove(preview_pdf)  # raises OSError/PermissionError if still locked

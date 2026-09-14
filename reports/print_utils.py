@@ -18,6 +18,21 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# os.startfile() "returns as soon as the associated application is launched"
+# (per its own docs) — it does NOT wait for that application to actually
+# open the file. Cold-starting a GUI PDF handler commonly takes anywhere
+# from a few hundred ms to a couple of seconds. Without this grace period,
+# the cleanup thread's very first _wait_for_unlock_or_timeout() lock-probe
+# can run before the launched app has opened the file at all — finds it
+# "free", returns immediately, and os.remove() deletes the PDF out from
+# under the print job/viewer that was about to open it (workflow-found
+# bug). Applied at the call sites below, not inside
+# _wait_for_unlock_or_timeout() itself — that function's own "returns
+# immediately when genuinely free" contract is correct and tested in
+# isolation (tests/test_print_utils.py); the race only exists here, right
+# after os.startfile().
+_STARTUP_GRACE_SEC = 1.0
+
 
 def _start_cleanup_thread(cleanup: Callable[[], None]) -> None:
     """Запускает отложенное удаление временного файла через Kernel ThreadManager
@@ -121,6 +136,7 @@ def print_act_pdf(
 
         def _cleanup():
             if sys.platform == "win32":
+                time.sleep(_STARTUP_GRACE_SEC)
                 _wait_for_unlock_or_timeout(pdf_path, timeout_sec=delay_sec)
             else:
                 time.sleep(delay_sec)
@@ -155,6 +171,7 @@ def open_act_pdf(
 
         def _cleanup():
             if sys.platform == "win32":
+                time.sleep(_STARTUP_GRACE_SEC)
                 _wait_for_unlock_or_timeout(pdf_path, timeout_sec=delay_sec)
             else:
                 time.sleep(delay_sec)
