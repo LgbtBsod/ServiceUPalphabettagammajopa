@@ -394,6 +394,18 @@ class ActPreviewWindow(ctk.CTkToplevel):
             from reports.print_utils import print_act_pdf
 
             print_act_pdf(print_file, delete_after=True, delay_sec=60)
+            if print_file == self.temp_file:
+                # print_act_pdf(delete_after=True) уже поставил СВОЙ фоновый
+                # поток удалить этот файл — безопасно, с ожиданием
+                # разблокировки (см. print_utils._wait_for_unlock_or_timeout).
+                # Если окно закроют до того, как этот поток сработает,
+                # destroy() -> _cleanup_temp() удалит self.temp_file
+                # СИНХРОННО и БЕЗ проверки блокировки — тот же файл мог
+                # быть удалён прямо во время его чтения принтером/спулером
+                # (workflow-найденный баг). Обнуляем ссылку — владение
+                # файлом уже передано print_utils, у окна больше нет causa
+                # его удалять.
+                self.temp_file = None
             self.status_label.configure(
                 text="🖨️ Отправлено на печать (PDF A5)",
                 text_color=self.colors["success"],
