@@ -344,7 +344,13 @@ class OrdersView:
                     ft.Text(f"{row['total_price']} ₽", size=14, weight=ft.FontWeight.W_600,
                             color=c["text_primary"], width=100, text_align=ft.TextAlign.RIGHT),
                     ft.Dropdown(
-                        value=row["status"], width=190, dense=True,
+                        # 190 обрезало самую длинную легаси-метку ("Готов
+                        # (устаревший статус)") и даже штатный "Ожидание
+                        # запчастей" — по просьбе пользователя расширено;
+                        # card_row теперь scroll=ft.ScrollMode.AUTO, так что
+                        # рост этой ширины не возвращает баг сжатия текста
+                        # на узких окнах (см. коммит про layout narrow-width).
+                        value=row["status"], width=230, dense=True,
                         options=_status_options(row["status"]),
                         on_select=on_status_change,
                     ),
