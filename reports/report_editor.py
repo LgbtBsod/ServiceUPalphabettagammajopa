@@ -439,14 +439,48 @@ class ActPanel:
         self.margins_combo.set(str(self.template_data.get("page_margin_mm", 6)))
         self.margins_combo.grid(row=row, column=1, sticky="w", padx=(8, 0), pady=3)
 
+        # --- Режим макета: список полей (проточная вёрстка) или свободный
+        # canvas (произвольное позиционирование, см. reports/act_canvas_builder.py) ---
+        layout_card = ModernCard(parent, self.colors)
+        layout_card.pack(fill="x", pady=5)
+        ctk.CTkLabel(
+            layout_card,
+            text="🖼 Режим макета",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).pack(anchor="w", padx=12, pady=(8, 4))
+        self.layout_mode_toggle = ctk.CTkSegmentedButton(
+            layout_card,
+            values=["📋 Список полей", "🖼 Свободный макет"],
+            command=self._on_layout_mode_changed,
+        )
+        self.layout_mode_toggle.set(
+            "🖼 Свободный макет"
+            if self.template_data.get("layout_mode") == "canvas"
+            else "📋 Список полей"
+        )
+        self.layout_mode_toggle.pack(fill="x", padx=12, pady=(0, 8))
+
         # --- Поля документа с Drag-and-Drop ---
-        fields_card = ModernCard(parent, self.colors)
+        self.fields_card = fields_card = ModernCard(parent, self.colors)
         fields_card.pack(fill="x", pady=5)
         ctk.CTkLabel(
             fields_card,
             text="📋 Поля документа (перетаскивайте для изменения порядка)",
             font=ctk.CTkFont(size=13, weight="bold"),
         ).pack(anchor="w", padx=12, pady=(8, 4))
+        self.fields_card_canvas_hint = ctk.CTkLabel(
+            fields_card,
+            text="ℹ В режиме «Свободный макет» этот список влияет только на "
+            "блок «Таблица полей» — остальное позиционируется на канвасе справа.",
+            font=ctk.CTkFont(size=10),
+            text_color=self.colors["text_secondary"],
+            justify="left",
+            wraplength=380,
+        )
+        if self.template_data.get("layout_mode") == "canvas":
+            self.fields_card_canvas_hint.pack(
+                anchor="w", padx=12, pady=(0, 4), fill="x"
+            )
 
         ff = ctk.CTkFrame(fields_card, fg_color="transparent")
         ff.pack(fill="x", padx=12, pady=(0, 8))
@@ -559,13 +593,14 @@ class ActPanel:
         preview_header = ctk.CTkFrame(self.right_frame, fg_color="transparent")
         preview_header.pack(fill="x", padx=12, pady=(10, 4))
 
-        ctk.CTkLabel(
+        self.preview_title_label = ctk.CTkLabel(
             preview_header,
             text="👁️ Предпросмотр акта (PDF A5)",
             font=ctk.CTkFont(size=13, weight="bold"),
-        ).pack(side="left")
+        )
+        self.preview_title_label.pack(side="left")
 
-        ModernButton(
+        self.preview_action_btn = ModernButton(
             preview_header,
             self.colors,
             variant="secondary",
@@ -573,20 +608,132 @@ class ActPanel:
             command=self.update_preview,
             width=130,
             height=30,
-        ).pack(side="right")
+        )
+        self.preview_action_btn.pack(side="right")
 
         self.preview_container = ctk.CTkScrollableFrame(
             self.right_frame, fg_color=self.colors["bg_tertiary"]
         )
         self.preview_container.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
-        self.preview_label = ctk.CTkLabel(
-            self.preview_container,
-            text="⏳ Нажмите «🔄 Обновить»",
-            font=ctk.CTkFont(size=12),
-            text_color=self.colors["text_secondary"],
+        self.canvas_editor = None
+        self.preview_label = None
+        self._refresh_preview_mode()
+
+    def _refresh_preview_mode(self):
+        """Переключает правую панель между интерактивным свободным макетом
+        (canvas) и обычным PDF-предпросмотром — в зависимости от текущего
+        template_data['layout_mode']. Вызывается при переключении режима и
+        при первом построении панели."""
+        is_canvas = self.template_data.get("layout_mode") == "canvas"
+        for w in self.preview_container.winfo_children():
+            w.destroy()
+        self.canvas_editor = None
+
+        if is_canvas:
+            self.preview_title_label.configure(text="🖼 Свободный макет акта")
+            self.preview_action_btn.configure(
+                text="🔎 Точный PDF", command=self.open_exact_pdf_preview
+            )
+            from reports.act_canvas_builder import ActCanvasEditor
+
+            self.canvas_editor = ActCanvasEditor(
+                self.preview_container,
+                self.colors,
+                self.act_type,
+                self.template_data.get("canvas_fields") or {},
+                on_change=self._on_canvas_changed,
+            )
+            self.canvas_editor.pack(fill="both", expand=True)
+        else:
+            self.preview_title_label.configure(text="👁️ Предпросмотр акта (PDF A5)")
+            self.preview_action_btn.configure(
+                text="🔄 Обновить", command=self.update_preview
+            )
+            self.preview_label = ctk.CTkLabel(
+                self.preview_container,
+                text="⏳ Нажмите «🔄 Обновить»",
+                font=ctk.CTkFont(size=12),
+                text_color=self.colors["text_secondary"],
+            )
+            self.preview_label.pack(expand=True, pady=40)
+
+    def _on_layout_mode_changed(self, value: str):
+        self.template_data["layout_mode"] = (
+            "canvas" if "Свободный" in value else "flow"
         )
-        self.preview_label.pack(expand=True, pady=40)
+        if self.template_data["layout_mode"] == "canvas" and not self.template_data.get(
+            "canvas_fields"
+        ):
+            from reports.report_renderer import ActPDFGenerator
+
+            gen = ActPDFGenerator(template_data=self.template_data)
+            self.template_data["canvas_fields"] = gen.default_canvas_layout(
+                self.act_type
+            )
+        if self.template_data["layout_mode"] == "canvas":
+            self.fields_card_canvas_hint.pack(
+                anchor="w", padx=12, pady=(0, 4), fill="x"
+            )
+        else:
+            self.fields_card_canvas_hint.pack_forget()
+        self._refresh_preview_mode()
+
+    def _on_canvas_changed(self):
+        """Callback из ActCanvasEditor при перетаскивании/изменении поля —
+        сохраняет актуальные позиции в template_data сразу (не по кнопке
+        «Сохранить»), чтобы «Точный PDF» и последующее сохранение шаблона
+        всегда отражали то, что реально на канвасе."""
+        if self.canvas_editor is not None:
+            self.template_data["canvas_fields"] = self.canvas_editor.get_canvas_fields()
+
+    def open_exact_pdf_preview(self):
+        """Рендерит реальный PDF (тот же generate_*_pdf, что и печать) и
+        показывает его во всплывающем окне — интерактивный канвас использует
+        приблизительную высоту блоков для наглядности, точный перенос строк
+        и рамки видны только в настоящем PDF."""
+        self.sync_template_from_ui()
+        try:
+            from reports.report_renderer import ActPDFGenerator
+
+            gen = ActPDFGenerator(template_data=self.template_data)
+            device = self._build_demo_device()
+            self._cleanup_preview_pdf()
+            fd, self._preview_pdf = tempfile.mkstemp(
+                suffix=f"_{self.act_type}.pdf", prefix="editor_preview_"
+            )
+            os.close(fd)
+            ok = (
+                gen.generate_completion_pdf(self._preview_pdf, device)
+                if self.act_type == "completion"
+                else gen.generate_receipt_pdf(self._preview_pdf, device)
+            )
+            if not ok or not os.path.exists(self._preview_pdf):
+                messagebox.showerror("Ошибка", "Не удалось сформировать PDF")
+                return
+
+            import pypdfium2 as pdfium
+
+            pdf = pdfium.PdfDocument(self._preview_pdf)
+            if len(pdf) == 0:
+                raise RuntimeError("PDF без страниц")
+            page = pdf[0]
+            pil_img = page.render(scale=2.0).to_pil()
+
+            popup = ctk.CTkToplevel(self.editor)
+            popup.title("Точный PDF-предпросмотр")
+            popup.geometry("500x720")
+            ctk_img = ctk.CTkImage(
+                light_image=pil_img,
+                dark_image=pil_img,
+                size=(pil_img.size[0] // 2, pil_img.size[1] // 2),
+            )
+            label = ctk.CTkLabel(popup, image=ctk_img, text="")
+            label._image_ref = ctk_img  # удержание от сборки мусора
+            label.pack(fill="both", expand=True, padx=8, pady=8)
+        except Exception as e:
+            logger.exception(f"Ошибка точного PDF-предпросмотра: {e}")
+            messagebox.showerror("Ошибка", f"Не удалось сформировать предпросмотр: {e}")
 
     # ------------------------------------------------------------------
     # Drag-and-Drop логика для полей
@@ -747,8 +894,7 @@ class ActPanel:
         """Меняет визуальный порядок УЖЕ СУЩЕСТВУЮЩИХ виджетов полей без
         их уничтожения/пересоздания. Вызывать только когда кнопка мыши уже
         отпущена (_on_drag_drop) — pack_forget() unmap'ает виджет, что рвёт
-        активный grab Tk, если сделать это посреди _on_drag_motion
-        (см. AUDIT_REPORT_v20.md)."""
+        активный grab Tk, если сделать это посреди _on_drag_motion."""
         for field_key in new_order:
             frame = self.field_widgets[field_key]["frame"]
             frame.pack_forget()
@@ -882,6 +1028,14 @@ class ActPanel:
         self.template_data["show_qr"] = self.show_qr_var.get()
         self.template_data["logo_path"] = self.logo_path
         self.template_data["qr_path"] = self.qr_path
+        if hasattr(self, "layout_mode_toggle"):
+            self.template_data["layout_mode"] = (
+                "canvas"
+                if "Свободный" in self.layout_mode_toggle.get()
+                else "flow"
+            )
+        if getattr(self, "canvas_editor", None) is not None:
+            self.template_data["canvas_fields"] = self.canvas_editor.get_canvas_fields()
         # Размер и позиция логотипа
         if hasattr(self, "logo_size_slider"):
             self.template_data["logo_size"] = int(self.logo_size_slider.get())
@@ -1051,8 +1205,15 @@ class ActPanel:
         self._preview_timer = self.editor.after(600, self.update_preview)
 
     def update_preview(self):
-        """Рендерит реальный PDF A5 и показывает его как изображение."""
+        """Рендерит реальный PDF A5 и показывает его как изображение.
+
+        В режиме свободного макета (canvas) preview_container занят
+        интерактивным ActCanvasEditor — точный PDF открывается отдельно, по
+        кнопке «🔎 Точный PDF» (см. open_exact_pdf_preview()), а не сюда.
+        """
         self.sync_template_from_ui()
+        if self.template_data.get("layout_mode") == "canvas":
+            return
         try:
             from reports.report_renderer import ActPDFGenerator
 

@@ -104,6 +104,25 @@ CANVAS_COMPOSITE_FIELDS = {
     "signatures": {"label": "Подписи сторон", "act_types": ("receipt", "completion")},
 }
 
+# Ориентировочная высота каждого бокса (мм) — используется и для
+# стартовой раскладки (default_canvas_layout), и билдером (canvas UI) для
+# отображения бокса разумного размера ДО реального рендера. Реальная
+# высота в PDF всегда пересчитывается из содержимого (см. wrapOn в
+# _draw_canvas_act) — это только приближение для расстановки/показа.
+CANVAS_DEFAULT_HEIGHTS_MM = {
+    "header": 22,
+    "title": 10,
+    "order_number": 8,
+    "field_table": 40,
+    "defect_box": 16,
+    "price_box": 10,
+    "conditions_box": 20,
+    "works_table": 35,
+    "warranty_box": 18,
+    "qr": 20,
+    "signatures": 14,
+}
+
 FONT_FALLBACK = "Helvetica"  # fallback если Trebuchet MS недоступен
 
 DEFAULT_COMPANY = {
@@ -534,22 +553,9 @@ class ActPDFGenerator:
         else:
             order += ["works_table", "warranty_box", "qr", "signatures"]
 
-        heights_mm = {
-            "header": 22,
-            "title": 10,
-            "order_number": 8,
-            "field_table": 40,
-            "defect_box": 16,
-            "price_box": 10,
-            "conditions_box": 20,
-            "works_table": 35,
-            "warranty_box": 18,
-            "qr": 20,
-            "signatures": 14,
-        }
         for key in order:
             layout[key] = {"x_mm": margin_mm, "y_mm": y, "w_mm": box_w}
-            y += heights_mm.get(key, 15) + 3
+            y += CANVAS_DEFAULT_HEIGHTS_MM.get(key, 15) + 3
         return layout
 
     def _canvas_fields(self) -> dict[str, dict[str, Any]]:
