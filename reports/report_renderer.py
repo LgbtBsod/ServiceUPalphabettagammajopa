@@ -24,7 +24,7 @@ from datetime import datetime
 from typing import Any
 from xml.sax.saxutils import escape as xml_escape
 
-from reportlab.platypus import Paragraph, Table, TableStyle
+from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
 from utils.formatters import (
     format_date,
@@ -45,8 +45,64 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # A5 в пунктах (1 мм ~= 2.83465 pt). 148x210 мм — половина A4.
-A5 = (148 * 2.83465, 210 * 2.83465)
-MARGIN = 6 * 2.83465  # 6 мм поля — компактнее, больше места под контент
+MM_TO_PT = 2.83465
+A5 = (148 * MM_TO_PT, 210 * MM_TO_PT)
+MARGIN = 6 * MM_TO_PT  # 6 мм поля — компактнее, больше места под контент
+
+# ---------------------------------------------------------------------------
+# Свободный макет (canvas layout_mode) — поля/блоки, которые можно
+# произвольно позиционировать на странице в билдере акта, вместо
+# фиксированного проточного (flow) порядка. См. _build_canvas_flowable().
+# ---------------------------------------------------------------------------
+
+# Простые поля заказа — каждое можно перетащить на канвасе как отдельный бокс.
+CANVAS_SIMPLE_FIELDS = (
+    "order_number",
+    "receipt_date",
+    "completion_date",
+    "client_name",
+    "phone",
+    "device_type",
+    "brand",
+    "model",
+    "serial_number",
+    "completeness",
+    "appearance",
+    "defect",
+    "total_price",
+    "prepayment",
+    "warranty",
+    "engineer",
+    "client_status",
+)
+
+# Составные блоки (переиспользуют существующую вёрстку — рамки, таблицы) —
+# тоже перетаскиваемые боксы, но их внутреннее содержимое строится
+# методом-построителем, а не просто "label: value".
+CANVAS_COMPOSITE_FIELDS = {
+    "header": {
+        "label": "Шапка (лого + организация)",
+        "act_types": ("receipt", "completion"),
+    },
+    "title": {"label": "Заголовок документа", "act_types": ("receipt", "completion")},
+    "field_table": {
+        "label": "Таблица полей (список ниже)",
+        "act_types": ("receipt", "completion"),
+    },
+    "defect_box": {"label": "Блок «Неисправность»", "act_types": ("receipt",)},
+    "price_box": {"label": "Блок «Стоимость ремонта»", "act_types": ("receipt",)},
+    "conditions_box": {"label": "Условия ремонта", "act_types": ("receipt",)},
+    "works_table": {
+        "label": "Таблица выполненных работ",
+        "act_types": ("completion",),
+    },
+    "warranty_box": {
+        "label": "Гарантийные обязательства",
+        "act_types": ("completion",),
+    },
+    "qr": {"label": "QR-код", "act_types": ("completion",)},
+    "signatures": {"label": "Подписи сторон", "act_types": ("receipt", "completion")},
+}
 
 FONT_FALLBACK = "Helvetica"  # fallback если Trebuchet MS недоступен
 
@@ -412,6 +468,8 @@ class ActPDFGenerator:
 
     def generate_receipt_pdf(self, filepath: str, device: dict[str, Any]) -> bool:
         try:
+            if self.template.get("layout_mode") == "canvas":
+                return self._build_canvas_pdf(filepath, device, "receipt")
             story = self._build_receipt_story(device)
             return self._save_pdf(filepath, story)
         except Exception as e:
@@ -420,6 +478,8 @@ class ActPDFGenerator:
 
     def generate_completion_pdf(self, filepath: str, device: dict[str, Any]) -> bool:
         try:
+            if self.template.get("layout_mode") == "canvas":
+                return self._build_canvas_pdf(filepath, device, "completion")
             story = self._build_completion_story(device)
             return self._save_pdf(filepath, story)
         except Exception as e:
@@ -452,6 +512,180 @@ class ActPDFGenerator:
         doc.build(story)
         return True
 
+    # ------------------------------------------------------------------
+    # Свободный макет (canvas layout_mode)
+    # ------------------------------------------------------------------
+
+    def default_canvas_layout(self, act_type: str) -> dict[str, dict[str, float]]:
+        """Стартовая раскладка canvas-полей для нового/сконвертированного
+        шаблона — те же элементы и тот же порядок, что и в проточной
+        вёрстке, просто разложенные сверху вниз в одну колонку. Пользователь
+        начинает от знакомого вида и подвигает то, что нужно, а не с
+        пустой страницы."""
+        page_w_mm = A5[0] / MM_TO_PT
+        margin_mm = self.margin / MM_TO_PT
+        box_w = page_w_mm - 2 * margin_mm
+        y = margin_mm
+        layout: dict[str, dict[str, float]] = {}
+
+        order = ["header", "title", "order_number", "field_table"]
+        if act_type == "receipt":
+            order += ["defect_box", "price_box", "conditions_box", "signatures"]
+        else:
+            order += ["works_table", "warranty_box", "qr", "signatures"]
+
+        heights_mm = {
+            "header": 22,
+            "title": 10,
+            "order_number": 8,
+            "field_table": 40,
+            "defect_box": 16,
+            "price_box": 10,
+            "conditions_box": 20,
+            "works_table": 35,
+            "warranty_box": 18,
+            "qr": 20,
+            "signatures": 14,
+        }
+        for key in order:
+            layout[key] = {"x_mm": margin_mm, "y_mm": y, "w_mm": box_w}
+            y += heights_mm.get(key, 15) + 3
+        return layout
+
+    def _canvas_fields(self) -> dict[str, dict[str, Any]]:
+        cfg = self.template.get("canvas_fields")
+        return cfg if isinstance(cfg, dict) else {}
+
+    def _build_canvas_flowable(self, key: str, device: dict[str, Any], styles, act_type: str):
+        """Возвращает Flowable (или список Flowable) для одного canvas-бокса,
+        либо None, если бокс нечего рисовать (пустое значение и т.п.).
+        Переиспользует ТЕ ЖЕ методы построения блоков, что и проточная
+        вёрстка — макет свободный, но визуал блоков идентичен."""
+        from reportlab.lib.styles import ParagraphStyle
+
+        cfg = self._canvas_fields().get(key, {})
+
+        if key == "order_number":
+            value = self._field_value("order_number", device)
+            return Paragraph(
+                f"<b>{xml_escape(FIELD_LABELS.get(key, key))}:</b> {xml_escape(value)}",
+                styles["cell_value_bold"],
+            )
+
+        if key in CANVAS_SIMPLE_FIELDS:
+            value = self._field_value(key, device)
+            if not value:
+                return None
+            show_label = cfg.get("show_label", True)
+            label = FIELD_LABELS.get(key, key)
+            text = (
+                f"<b>{xml_escape(label)}:</b> {xml_escape(value)}"
+                if show_label
+                else xml_escape(value)
+            )
+            style = styles["cell_value_bold"] if cfg.get("bold") else styles["cell_value"]
+            font_size = cfg.get("font_size")
+            if font_size:
+                style = ParagraphStyle(
+                    f"canvas_{key}",
+                    parent=style,
+                    fontSize=font_size,
+                    leading=font_size * 1.25,
+                )
+            return Paragraph(text, style)
+
+        if key == "header":
+            return self._header_block(styles)
+        if key == "title":
+            return self._title(styles)
+        if key == "field_table":
+            rows = self._rows_from_template(device)
+            return self._field_table(rows, styles) if rows else None
+        if key == "defect_box" and act_type == "receipt":
+            return self._defect_block(device, styles) or None
+        if key == "price_box" and act_type == "receipt":
+            return self._price_block(device, styles) or None
+        if key == "conditions_box" and act_type == "receipt":
+            return self._conditions_block(styles) or None
+        if key == "works_table" and act_type == "completion":
+            return self._works_table(device, styles)
+        if key == "warranty_box" and act_type == "completion":
+            return self._warranty_block(styles) or None
+        if key == "qr" and act_type == "completion":
+            return self._qr_block(styles) or None
+        if key == "signatures":
+            return self._signatures_block(styles, with_date=True)
+        return None
+
+    def _draw_canvas_act(
+        self,
+        c,
+        device: dict[str, Any],
+        act_type: str,
+        origin_x_pt: float,
+        origin_y_pt: float,
+        scale: float = 1.0,
+    ) -> None:
+        """Рисует все canvas-боксы акта на низкоуровневом reportlab Canvas.
+
+        origin_x_pt/origin_y_pt — левый нижний угол страницы A5 в абсолютных
+        координатах ЦЕЛЕВОЙ страницы (0,0 для одиночного акта; для парного
+        A4-листа — граница верхней/нижней половины); scale позволяет
+        уместить A5-макет в меньшую область (парный акт делит A4 пополам)
+        без переписывания координат самих боксов.
+        """
+        styles = self._styles()
+        layout = self._canvas_fields() or self.default_canvas_layout(act_type)
+        c.saveState()
+        c.translate(origin_x_pt, origin_y_pt)
+        c.scale(scale, scale)
+        for key, cfg in layout.items():
+            if key in CANVAS_COMPOSITE_FIELDS and act_type not in CANVAS_COMPOSITE_FIELDS[key]["act_types"]:
+                continue
+            if cfg.get("visible") is False:
+                continue
+            flowable = self._build_canvas_flowable(key, device, styles, act_type)
+            if flowable is None:
+                continue
+            if isinstance(flowable, list):
+                if not flowable:
+                    continue
+                from reportlab.platypus import KeepInFrame
+
+                width_pt = float(cfg.get("w_mm", 60)) * MM_TO_PT
+                flowable = KeepInFrame(
+                    width_pt, 4000, flowable, mode="shrink", hAlign="LEFT"
+                )
+            width_pt = float(cfg.get("w_mm", 60)) * MM_TO_PT
+            try:
+                # wrapOn() (не голый wrap()) обязателен для составных блоков:
+                # KeepInFrame.wrap() лезет в self.canv, который выставляет
+                # только wrapOn() — на простом Paragraph/Table разницы нет
+                # (Flowable.wrapOn — это просто self.canv=canv; return
+                # self.wrap(...)), так что безопасно использовать для всех.
+                _w, h = flowable.wrapOn(c, width_pt, 4000)
+            except Exception as e:
+                logger.warning(f"Не удалось измерить canvas-бокс '{key}': {e}")
+                continue
+            x_pt = float(cfg.get("x_mm", 0)) * MM_TO_PT
+            y_top_pt = float(cfg.get("y_mm", 0)) * MM_TO_PT
+            y_pt = A5[1] - y_top_pt - h
+            try:
+                flowable.drawOn(c, x_pt, y_pt)
+            except Exception as e:
+                logger.warning(f"Не удалось отрисовать canvas-бокс '{key}': {e}")
+        c.restoreState()
+
+    def _build_canvas_pdf(self, filepath: str, device: dict[str, Any], act_type: str) -> bool:
+        from reportlab.pdfgen import canvas as pdfcanvas
+
+        c = pdfcanvas.Canvas(filepath, pagesize=A5)
+        c.setTitle("Акт")
+        c.setAuthor(self.company.get("name", "Сервисный центр"))
+        self._draw_canvas_act(c, device, act_type, origin_x_pt=0, origin_y_pt=0, scale=1.0)
+        c.save()
+        return True
+
     def generate_dual_pdf(
         self,
         filepath: str,
@@ -478,6 +712,19 @@ class ActPDFGenerator:
                 же генератором/шаблоном, что и акт 1 (старое поведение —
                 корректно, когда act_type1 == act_type2).
         """
+        gen2 = (
+            ActPDFGenerator(self.company, template_data=template_data2)
+            if template_data2 is not None
+            else self
+        )
+        canvas_mode = (
+            self.template.get("layout_mode") == "canvas"
+            or gen2.template.get("layout_mode") == "canvas"
+        )
+        if canvas_mode:
+            return self._generate_dual_pdf_canvas(
+                filepath, device1, device2, act_type1, act_type2, gen2
+            )
         try:
             from reportlab.lib.pagesizes import A4
             from reportlab.platypus import KeepInFrame, SimpleDocTemplate, Spacer
@@ -503,12 +750,6 @@ class ActPDFGenerator:
                     return gen._build_completion_story(device)
                 return gen._build_receipt_story(device)
 
-            gen2 = (
-                ActPDFGenerator(self.company, template_data=template_data2)
-                if template_data2 is not None
-                else self
-            )
-
             story = []
             # Акт 1
             story1 = _build_story(self, device1, act_type1)
@@ -524,6 +765,61 @@ class ActPDFGenerator:
             return True
         except Exception as e:
             logger.error(f"Ошибка генерации двойного акта (PDF): {e}", exc_info=True)
+            return False
+
+    def _generate_dual_pdf_canvas(
+        self,
+        filepath: str,
+        device1: dict[str, Any],
+        device2: dict[str, Any] | None,
+        act_type1: str,
+        act_type2: str,
+        gen2: ActPDFGenerator,
+    ) -> bool:
+        """Парный акт (A4, два A5 друг под другом), когда хотя бы один из
+        актов использует свободный макет (canvas). Каждый акт рисуется
+        своим генератором (свой template/layout_mode — flow ИЛИ canvas)
+        через общий _draw_canvas_act(), отмасштабированный в свою половину
+        листа — так пара работает даже если один акт canvas, а другой flow."""
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.pdfgen import canvas as pdfcanvas
+            from reportlab.platypus import KeepInFrame
+
+            a4_w, a4_h = A4
+            content_w = a4_w - 2 * self.margin
+            half_h = (a4_h - 2 * self.margin) / 2 - 10
+            scale = min(content_w / A5[0], half_h / A5[1])
+
+            c = pdfcanvas.Canvas(filepath, pagesize=A4)
+            c.setTitle("Акты")
+            c.setAuthor(self.company.get("name", "Сервисный центр"))
+
+            def _draw_slot(gen: ActPDFGenerator, device, act_type, origin_y_pt):
+                if gen.template.get("layout_mode") == "canvas":
+                    gen._draw_canvas_act(
+                        c, device, act_type, self.margin, origin_y_pt, scale
+                    )
+                else:
+                    story = (
+                        gen._build_completion_story(device)
+                        if act_type == "completion"
+                        else gen._build_receipt_story(device)
+                    )
+                    frame = KeepInFrame(content_w, half_h, story, mode="shrink")
+                    frame.wrapOn(c, content_w, half_h)
+                    frame.drawOn(c, self.margin, origin_y_pt)
+
+            top_origin_y = a4_h - self.margin - half_h
+            _draw_slot(self, device1, act_type1, top_origin_y)
+            if device2:
+                bottom_origin_y = top_origin_y - half_h - 8
+                _draw_slot(gen2, device2, act_type2, bottom_origin_y)
+
+            c.save()
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка генерации двойного акта (canvas, PDF): {e}", exc_info=True)
             return False
 
     def _styles(self):
@@ -782,7 +1078,6 @@ class ActPDFGenerator:
     # ------------------------------------------------------------------
 
     def _build_receipt_story(self, device: dict[str, Any]) -> list:
-        from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
         styles = self._styles()
         story = []
@@ -806,93 +1101,107 @@ class ActPDFGenerator:
                 ("Внешний вид", device.get("appearance", "") or "не указан"),
             ]
         story.append(self._field_table(rows, styles))
-
-        # Блок «Неисправность со слов клиента» — акцентный блок с рамкой.
-        # Показывается, если defect отмечен в шаблоне (или шаблона нет — дефолт).
-        template_fields = self.template.get("fields") or []
-        show_defect = (not template_fields) or ("defect" in template_fields)
-        if show_defect:
-            story.append(Spacer(1, 3))
-            story.append(Paragraph("Неисправность со слов клиента", styles["section"]))
-            defect_text = xml_escape(str(device.get("defect", "") or "—"))
-            defect_tbl = Table(
-                [[Paragraph(defect_text, styles["defect"])]],
-                colWidths=[A5[0] - 2 * self.margin],
-            )
-            defect_tbl.setStyle(
-                TableStyle(
-                    [
-                        ("BOX", (0, 0), (-1, -1), 0.4, _color("#000000")),
-                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                        ("TOPPADDING", (0, 0), (-1, -1), 3),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                    ]
-                )
-            )
-            story.append(defect_tbl)
-
-        # Предварительная стоимость — акцентный блок, если total_price отмечен.
-        total = device.get("total_price", "")
-        show_price = (not template_fields) or ("total_price" in template_fields)
-        if total and show_price:
-            story.append(Spacer(1, 3))
-            prepay = device.get("prepayment", "")
-            price_line = f"Стоимость ремонта — {format_price(total)}"
-            if parse_price_to_float(prepay) > 0:
-                price_line += (
-                    f"  (предоплата {format_price(_prepayment_to_str(prepay))})"
-                )
-            price_tbl = Table(
-                [[Paragraph(xml_escape(price_line), styles["defect"])]],
-                colWidths=[A5[0] - 2 * self.margin],
-            )
-            price_tbl.setStyle(
-                TableStyle(
-                    [
-                        ("BOX", (0, 0), (-1, -1), 0.4, _color("#000000")),
-                        ("BACKGROUND", (0, 0), (-1, -1), _color("#F0F0F0")),
-                        ("TOPPADDING", (0, 0), (-1, -1), 2),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                    ]
-                )
-            )
-            story.append(price_tbl)
-
-        # Условия ремонта из шаблона (если есть)
-        conditions = self.template.get("conditions", "")
-        if conditions:
-            story.append(Spacer(1, 3))
-            story.append(Paragraph("Условия ремонта", styles["section"]))
-            cond_lines = []
-            for line in conditions.split("\n"):
-                if line.strip():
-                    cond_lines.append(
-                        [Paragraph(xml_escape(line.strip()), styles["note_text"])]
-                    )
-            if cond_lines:
-                cond_tbl = Table(cond_lines, colWidths=[A5[0] - 2 * self.margin])
-                cond_tbl.setStyle(
-                    TableStyle(
-                        [
-                            ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                            ("TOPPADDING", (0, 0), (-1, -1), 0),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                        ]
-                    )
-                )
-                story.append(cond_tbl)
-
+        story.extend(self._defect_block(device, styles))
+        story.extend(self._price_block(device, styles))
+        story.extend(self._conditions_block(styles))
         story.extend(self._signatures_block(styles, with_date=True))
         return story
+
+    def _defect_block(self, device: dict[str, Any], styles) -> list:
+        """Блок «Неисправность со слов клиента» — акцентный блок с рамкой.
+
+        Показывается, если defect отмечен в шаблоне (или шаблона нет — дефолт).
+        Используется и проточной вёрсткой, и свободным макетом (canvas) —
+        общий метод, чтобы визуально они не расходились.
+        """
+        template_fields = self.template.get("fields") or []
+        show_defect = (not template_fields) or ("defect" in template_fields)
+        if not show_defect:
+            return []
+        defect_text = xml_escape(str(device.get("defect", "") or "—"))
+        defect_tbl = Table(
+            [[Paragraph(defect_text, styles["defect"])]],
+            colWidths=[A5[0] - 2 * self.margin],
+        )
+        defect_tbl.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 0.4, _color("#000000")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ]
+            )
+        )
+        return [
+            Spacer(1, 3),
+            Paragraph("Неисправность со слов клиента", styles["section"]),
+            defect_tbl,
+        ]
+
+    def _price_block(self, device: dict[str, Any], styles) -> list:
+        """Предварительная стоимость — акцентный блок, если total_price отмечен."""
+        total = device.get("total_price", "")
+        template_fields = self.template.get("fields") or []
+        show_price = (not template_fields) or ("total_price" in template_fields)
+        if not (total and show_price):
+            return []
+        prepay = device.get("prepayment", "")
+        price_line = f"Стоимость ремонта — {format_price(total)}"
+        if parse_price_to_float(prepay) > 0:
+            price_line += f"  (предоплата {format_price(_prepayment_to_str(prepay))})"
+        price_tbl = Table(
+            [[Paragraph(xml_escape(price_line), styles["defect"])]],
+            colWidths=[A5[0] - 2 * self.margin],
+        )
+        price_tbl.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 0.4, _color("#000000")),
+                    ("BACKGROUND", (0, 0), (-1, -1), _color("#F0F0F0")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ]
+            )
+        )
+        return [Spacer(1, 3), price_tbl]
+
+    def _conditions_block(self, styles) -> list:
+        """Условия ремонта из шаблона (если есть)."""
+        conditions = self.template.get("conditions", "")
+        if not conditions:
+            return []
+        cond_lines = [
+            [Paragraph(xml_escape(line.strip()), styles["note_text"])]
+            for line in conditions.split("\n")
+            if line.strip()
+        ]
+        if not cond_lines:
+            return []
+        cond_tbl = Table(cond_lines, colWidths=[A5[0] - 2 * self.margin])
+        cond_tbl.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        return [
+            Spacer(1, 3),
+            Paragraph("Условия ремонта", styles["section"]),
+            cond_tbl,
+        ]
 
     # ------------------------------------------------------------------
     # Акт выполненных работ
     # ------------------------------------------------------------------
 
     def _build_completion_story(self, device: dict[str, Any]) -> list:
-        from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+        from reportlab.platypus import Paragraph, Spacer
 
         styles = self._styles()
         story = []
@@ -928,47 +1237,55 @@ class ActPDFGenerator:
         story.append(Paragraph("Выполненные работы", styles["section"]))
         story.append(self._works_table(device, styles))
 
-        # Гарантийные обязательства из шаблона (если есть)
-        warranty_text = self.template.get("warranty_text", "")
-        if warranty_text:
-            story.append(Spacer(1, 3))
-            story.append(Paragraph("Гарантийные обязательства", styles["section"]))
-            war_lines = []
-            for line in warranty_text.split("\n"):
-                if line.strip():
-                    war_lines.append(
-                        [Paragraph(xml_escape(line.strip()), styles["note_text"])]
-                    )
-            if war_lines:
-                war_tbl = Table(war_lines, colWidths=[A5[0] - 2 * self.margin])
-                war_tbl.setStyle(
-                    TableStyle(
-                        [
-                            ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                            ("TOPPADDING", (0, 0), (-1, -1), 0),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                        ]
-                    )
-                )
-                story.append(war_tbl)
-
-        # QR-код из шаблона (внизу)
-        qr_path = self.template.get("qr_path", "")
-        if self.template.get("show_qr", False) and qr_path:
-            png = _prepare_image(qr_path)
-            if png:
-                try:
-                    from reportlab.platypus import Image as RLImage
-
-                    story.append(Spacer(1, 4))
-                    qr_img = RLImage(png, width=40, height=40, kind="proportional")
-                    qr_img.hAlign = "CENTER"
-                    story.append(qr_img)
-                except Exception:
-                    pass
-
+        story.extend(self._warranty_block(styles))
+        story.extend(self._qr_block(styles))
         story.extend(self._signatures_block(styles, with_date=True))
         return story
+
+    def _warranty_block(self, styles) -> list:
+        """Гарантийные обязательства из шаблона (если есть)."""
+        warranty_text = self.template.get("warranty_text", "")
+        if not warranty_text:
+            return []
+        war_lines = [
+            [Paragraph(xml_escape(line.strip()), styles["note_text"])]
+            for line in warranty_text.split("\n")
+            if line.strip()
+        ]
+        if not war_lines:
+            return []
+        war_tbl = Table(war_lines, colWidths=[A5[0] - 2 * self.margin])
+        war_tbl.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        return [
+            Spacer(1, 3),
+            Paragraph("Гарантийные обязательства", styles["section"]),
+            war_tbl,
+        ]
+
+    def _qr_block(self, styles) -> list:
+        """QR-код из шаблона (если включён)."""
+        qr_path = self.template.get("qr_path", "")
+        if not (self.template.get("show_qr", False) and qr_path):
+            return []
+        png = _prepare_image(qr_path)
+        if not png:
+            return []
+        try:
+            from reportlab.platypus import Image as RLImage
+
+            qr_img = RLImage(png, width=40, height=40, kind="proportional")
+            qr_img.hAlign = "CENTER"
+            return [Spacer(1, 4), qr_img]
+        except Exception:
+            return []
 
     def _works_table(self, device: dict[str, Any], styles) -> Table:
         """Таблица выполненных работ: Наименование | Кол-во | Цена за ед. | Сумма + итог."""

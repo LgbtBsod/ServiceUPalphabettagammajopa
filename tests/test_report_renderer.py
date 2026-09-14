@@ -177,3 +177,151 @@ class TestDualPdfDifferentTemplates:
         )
         assert ok
         assert out.exists()
+
+
+class TestCanvasLayout:
+    """Свободный макет (layout_mode='canvas') — билдер акта позволяет
+    произвольно позиционировать поля/блоки на странице вместо
+    фиксированного проточного порядка. Старые (flow) шаблоны без
+    layout_mode должны продолжать рендериться как раньше — проверено
+    остальными тестами этого файла (ни один не задаёт layout_mode)."""
+
+    def test_canvas_mode_renders_fields_at_their_configured_content(
+        self, demo_device, tmp_path
+    ):
+        tpl = {
+            "layout_mode": "canvas",
+            "header_text": "СВОБОДНЫЙ МАКЕТ",
+            "canvas_fields": {
+                "title": {"x_mm": 6, "y_mm": 6, "w_mm": 136},
+                "client_name": {"x_mm": 6, "y_mm": 30, "w_mm": 136},
+                "device_type": {
+                    "x_mm": 6,
+                    "y_mm": 45,
+                    "w_mm": 60,
+                    "bold": True,
+                    "show_label": False,
+                },
+            },
+        }
+        gen = ActPDFGenerator(template_data=tpl)
+        out = tmp_path / "canvas.pdf"
+        ok = gen.generate_receipt_pdf(str(out), demo_device)
+        assert ok
+        assert out.exists()
+
+        import pypdfium2 as pdfium
+
+        pdf = pdfium.PdfDocument(str(out))
+        assert len(pdf) == 1
+        text = pdf[0].get_textpage().get_text_range()
+        del pdf
+        assert "СВОБОДНЫЙ МАКЕТ" in text
+        assert demo_device["client_name"] in text
+        # show_label=False на device_type — само значение есть, а подписи
+        # поля ("Тип устройства:") быть не должно.
+        assert demo_device["device_type"] in text
+        assert "Тип устройства" not in text
+
+    def test_canvas_mode_skips_fields_with_empty_values(self, tmp_path):
+        """Поле без значения в заказе просто не рисуется (а не падает и не
+        оставляет пустую подпись «Гарантия:»)."""
+        tpl = {
+            "layout_mode": "canvas",
+            "canvas_fields": {
+                "warranty": {"x_mm": 6, "y_mm": 6, "w_mm": 100},
+            },
+        }
+        gen = ActPDFGenerator(template_data=tpl)
+        out = tmp_path / "canvas_empty.pdf"
+        ok = gen.generate_receipt_pdf(str(out), {"order_number": "1"})
+        assert ok
+        assert out.exists()
+
+    def test_canvas_mode_with_no_canvas_fields_falls_back_to_default_layout(
+        self, demo_device, tmp_path
+    ):
+        """layout_mode='canvas' без сохранённых позиций (например, только
+        что переключили режим) — не падает и не даёт пустой PDF, использует
+        default_canvas_layout()."""
+        tpl = {"layout_mode": "canvas", "header_text": "БЕЗ ПОЗИЦИЙ"}
+        gen = ActPDFGenerator(template_data=tpl)
+        out = tmp_path / "canvas_default.pdf"
+        ok = gen.generate_receipt_pdf(str(out), demo_device)
+        assert ok
+
+        import pypdfium2 as pdfium
+
+        pdf = pdfium.PdfDocument(str(out))
+        text = pdf[0].get_textpage().get_text_range()
+        del pdf
+        assert "БЕЗ ПОЗИЦИЙ" in text
+
+    def test_default_canvas_layout_only_includes_relevant_composite_blocks(self):
+        gen = ActPDFGenerator(template_data={})
+        receipt_layout = gen.default_canvas_layout("receipt")
+        completion_layout = gen.default_canvas_layout("completion")
+        assert "defect_box" in receipt_layout
+        assert "works_table" not in receipt_layout
+        assert "works_table" in completion_layout
+        assert "defect_box" not in completion_layout
+
+    def test_dual_pdf_mixes_canvas_and_flow_templates(self, demo_device, tmp_path):
+        """Один акт свободного макета + один проточный на одном листе A4 —
+        оба генератора рисуются через общий путь без взаимной порчи."""
+        canvas_tpl = {
+            "layout_mode": "canvas",
+            "canvas_fields": {
+                "title": {"x_mm": 6, "y_mm": 6, "w_mm": 130},
+                "client_name": {"x_mm": 6, "y_mm": 25, "w_mm": 130},
+            },
+            "header_text": "CANVAS ЗАГОЛОВОК",
+        }
+        flow_tpl = {
+            "header_text": "FLOW ЗАГОЛОВОК",
+            "fields": ["order_number"],
+            "warranty_text": "Гарантия 14 дней",
+        }
+        gen = ActPDFGenerator(template_data=canvas_tpl)
+        out = tmp_path / "dual_mixed.pdf"
+        ok = gen.generate_dual_pdf(
+            str(out),
+            demo_device,
+            demo_device,
+            act_type1="receipt",
+            act_type2="completion",
+            template_data2=flow_tpl,
+        )
+        assert ok
+        assert out.exists()
+
+        import pypdfium2 as pdfium
+
+        pdf = pdfium.PdfDocument(str(out))
+        assert len(pdf) == 1
+        text = pdf[0].get_textpage().get_text_range()
+        del pdf
+        assert "CANVAS ЗАГОЛОВОК" in text
+        assert "FLOW ЗАГОЛОВОК" in text
+        assert "Гарантия 14 дней" in text
+
+    def test_canvas_field_font_size_and_bold_are_applied(self, demo_device, tmp_path):
+        """font_size/bold в конфиге поля не должны падать при построении
+        Paragraph (регрессия на ParagraphStyle(parent=...) с fontSize)."""
+        tpl = {
+            "layout_mode": "canvas",
+            "canvas_fields": {
+                "client_name": {
+                    "x_mm": 6,
+                    "y_mm": 6,
+                    "w_mm": 130,
+                    "font_size": 14,
+                    "bold": True,
+                },
+            },
+        }
+        gen = ActPDFGenerator(template_data=tpl)
+        out = tmp_path / "canvas_style.pdf"
+        ok = gen.generate_receipt_pdf(str(out), demo_device)
+        assert ok
+        assert out.exists()
