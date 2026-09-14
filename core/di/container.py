@@ -113,6 +113,14 @@ class DIContainer(LoggableMixin):
         # (workflow-найденный баг; process-wide контейнер — см.
         # get_container() — реально используется из GUI, threaded=True
         # Flask-сервера PWA и фоновых worker'ов).
+        #
+        # Тот же self._lock также защищает все методы, пишущие в
+        # self._services/self._aliases (_register()/register_factory()/
+        # register_instance()/add_alias()) и resolve_all() (итерирует
+        # self._services.values()) — изначально resolve() получил лок, а
+        # эти методы-соседи, мутирующие ТЕ ЖЕ словари, были пропущены;
+        # тот же класс "dictionary changed size during iteration", что был
+        # у PluginManager.list_plugins() (см. core/plugin_system.py).
         self._lock = threading.RLock()
 
     @property
@@ -163,7 +171,8 @@ class DIContainer(LoggableMixin):
             lifetime=ServiceLifetime.TRANSIENT,
         )
 
-        self._services[service_type] = descriptor
+        with self._lock:
+            self._services[service_type] = descriptor
         self.logger.debug(f"Registered factory for {service_type.__name__}")
 
         return self
@@ -180,14 +189,16 @@ class DIContainer(LoggableMixin):
             lifetime=ServiceLifetime.SINGLETON,
         )
 
-        self._services[service_type] = descriptor
+        with self._lock:
+            self._services[service_type] = descriptor
         self.logger.debug(f"Registered instance for {service_type.__name__}")
 
         return self
 
     def add_alias(self, alias: str, service_type: type) -> DIContainer:
         """Добавляет именованный алиас для сервиса."""
-        self._aliases[alias] = service_type
+        with self._lock:
+            self._aliases[alias] = service_type
         self.logger.debug(f"Added alias '{alias}' for {service_type.__name__}")
         return self
 
@@ -241,16 +252,23 @@ class DIContainer(LoggableMixin):
         """Разрешает все реализации интерфейса."""
         instances = []
 
-        for desc in self._services.values():
-            if desc.service_type == service_type or (
-                inspect.isclass(desc.service_type)
-                and inspect.isclass(service_type)
-                and issubclass(desc.service_type, service_type)
-            ):
-                try:
-                    instances.append(self.resolve(desc.service_type))
-                except Exception as e:
-                    self.logger.warning(f"Failed to resolve {desc.service_type}: {e}")
+        # Лок держим на всю итерацию (включая resolve() ниже — тот же RLock,
+        # поэтому реентерабелен на этом потоке) — без этого конкурентный
+        # register_*()/add_alias() мог изменить размер self._services прямо
+        # во время этой итерации (RuntimeError: dictionary changed size
+        # during iteration), тот же класс бага, что был у PluginManager
+        # (см. core/plugin_system.py).
+        with self._lock:
+            for desc in self._services.values():
+                if desc.service_type == service_type or (
+                    inspect.isclass(desc.service_type)
+                    and inspect.isclass(service_type)
+                    and issubclass(desc.service_type, service_type)
+                ):
+                    try:
+                        instances.append(self.resolve(desc.service_type))
+                    except Exception as e:
+                        self.logger.warning(f"Failed to resolve {desc.service_type}: {e}")
 
         return instances
 
@@ -289,7 +307,8 @@ class DIContainer(LoggableMixin):
         if inspect.isclass(implementation):
             descriptor.dependencies = self._get_dependencies(implementation)
 
-        self._services[service_type] = descriptor
+        with self._lock:
+            self._services[service_type] = descriptor
         self.logger.debug(
             f"Registered {service_type.__name__} ({lifetime.value})"
             f"{f' -> {implementation.__name__}' if implementation != service_type else ''}"

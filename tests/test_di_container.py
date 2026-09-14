@@ -13,6 +13,7 @@ CircularDependencyError."""
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 
@@ -174,3 +175,63 @@ class TestGetContainerSingletonIsThreadSafe:
             )
         finally:
             reset_container()
+
+
+class _ServiceA:
+    pass
+
+
+class _ServiceB:
+    pass
+
+
+class TestRegistrationRaceWithResolveAllIsThreadSafe:
+    """Regression: register_singleton()/register_transient()/register_factory()/
+    register_instance()/add_alias() писали в self._services/self._aliases без
+    self._lock (в отличие от resolve(), уже защищённого им), а resolve_all()
+    итерировал self._services.values() тоже без блокировки — тот же класс
+    "dictionary changed size during iteration", что был у
+    PluginManager.list_plugins()/health_check_all()."""
+
+    def test_concurrent_register_and_resolve_all_does_not_raise(self):
+        container = DIContainer()
+        n = 200
+        stop = threading.Event()
+        errors: list[Exception] = []
+
+        def _register_worker():
+            for i in range(n):
+                try:
+                    if i % 2 == 0:
+                        container.register_transient(type(f"Svc{i}", (), {}))
+                    else:
+                        container.register_instance(type(f"Svc{i}", (), {}), object())
+                except Exception as e:  # pragma: no cover - failure path
+                    errors.append(e)
+            stop.set()
+
+        def _resolve_all_worker():
+            while not stop.is_set():
+                try:
+                    container.resolve_all(_ServiceA)
+                except Exception as e:  # pragma: no cover - failure path
+                    errors.append(e)
+
+        old_interval = sys.getswitchinterval()
+        sys.setswitchinterval(1e-6)
+        try:
+            writer = threading.Thread(target=_register_worker)
+            readers = [threading.Thread(target=_resolve_all_worker) for _ in range(4)]
+            writer.start()
+            for r in readers:
+                r.start()
+            writer.join(timeout=15)
+            stop.set()
+            for r in readers:
+                r.join(timeout=15)
+        finally:
+            sys.setswitchinterval(old_interval)
+
+        assert errors == [], (
+            f"register_*() racing with resolve_all() must not raise: {errors}"
+        )
