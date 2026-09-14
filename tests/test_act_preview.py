@@ -108,3 +108,32 @@ class TestPrintActRelinquishesTempFileOwnership:
 
         if os.path.exists(captured["path"]):
             os.remove(captured["path"])
+
+
+class TestRenderPdfToImageClosesHandle:
+    """Regression: _render_pdf_to_image() (module-level helper above)
+    opened a pypdfium2.PdfDocument and never closed it — the identical bug
+    already fixed at the equivalent call sites in reports/report_editor.py
+    and reports/act_importer.py, just missed here. pypdfium2 does not
+    release the file handle on GC, so an unclosed PdfDocument keeps its
+    temp PDF locked on Windows even after gc.collect(); the NEXT
+    render_pdf_preview() call's attempt to remove the previous temp_file
+    (line ~309, wrapped in contextlib.suppress(OSError)) then silently
+    fails, leaking one locked temp PDF per preview open/refresh for the
+    life of the process."""
+
+    def test_repeated_render_cleans_up_the_previous_temp_pdf(self, preview_window):
+        preview_window.render_pdf_preview()
+        first_pdf = preview_window.temp_file
+        assert first_pdf is not None
+        assert os.path.exists(first_pdf)
+
+        preview_window.render_pdf_preview()
+        second_pdf = preview_window.temp_file
+        assert second_pdf is not None
+        assert second_pdf != first_pdf
+        assert not os.path.exists(first_pdf), (
+            "the previous preview PDF should have been deleted before "
+            "generating the next one — if this fails, the pdfium handle "
+            "from the first render is still locking the file"
+        )

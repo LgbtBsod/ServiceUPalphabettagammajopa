@@ -38,14 +38,25 @@ def _render_pdf_to_image(pdf_path: str, scale: float = 2.0):
     try:
         import pypdfium2 as pdfium
 
+        # pypdfium2 не освобождает файловый хендл при сборке мусора —
+        # незакрытый PdfDocument держит файл заблокированным на Windows даже
+        # после gc.collect() (тот же баг, уже пофикшенный в
+        # reports/report_editor.py/act_importer.py, здесь пропущен). Каждый
+        # вызов render_pdf_preview() сначала пытается удалить ПРЕДЫДУЩИЙ
+        # temp-PDF (act_preview.py, с contextlib.suppress(OSError)) — без
+        # .close() здесь это удаление молча проваливается, и при каждом
+        # открытии/обновлении предпросмотра остаётся ещё один залоченный
+        # temp-файл до конца процесса.
         pdf = pdfium.PdfDocument(pdf_path)
-        n_pages = len(pdf)
-        if n_pages == 0:
-            return None, 0
-        page = pdf[0]
-        bmp = page.render(scale=scale)
-        img = bmp.to_pil()
-        return img, n_pages
+        try:
+            n_pages = len(pdf)
+            if n_pages == 0:
+                return None, 0
+            page = pdf[0]
+            bmp = page.render(scale=scale)
+            return bmp.to_pil(), n_pages
+        finally:
+            pdf.close()
     except Exception as e:
         logger.error(f"Ошибка рендера PDF: {e}", exc_info=True)
         return None, 0
