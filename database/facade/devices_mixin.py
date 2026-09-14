@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from database.facade.shared import (
     OptimisticLockError,
@@ -287,7 +288,21 @@ class DevicesMixin:
 
     def get_all_devices(self, include_completed: bool = True) -> list[dict[str, Any]]:
         with self._session() as s:
-            stmt = select(DeviceModel).order_by(DeviceModel.receipt_date.desc())
+            # selectinload — device_to_row() читает device.created_by.full_name/
+            # device.updated_by.full_name; Device.created_by/updated_by — обычные
+            # relationship() без lazy=, т.е. lazy="select" по умолчанию, и без
+            # eager load каждая СТРОКА с ещё не встреченным created_by_id/
+            # updated_by_id тянула отдельный SELECT к employees — классический
+            # N+1 (workflow-найденный баг: 10 устройств от 10 разных
+            # сотрудников -> 11 SQL-запросов вместо 1-3).
+            stmt = (
+                select(DeviceModel)
+                .options(
+                    selectinload(DeviceModel.created_by),
+                    selectinload(DeviceModel.updated_by),
+                )
+                .order_by(DeviceModel.receipt_date.desc())
+            )
             if not include_completed:
                 stmt = stmt.where(DeviceModel.status.notin_(_CLOSED_STATUSES))
             return [device_to_row(d) for d in s.execute(stmt).scalars().all()]
@@ -337,7 +352,12 @@ class DevicesMixin:
         brand_filter: str = "Все",
     ) -> list[dict[str, Any]]:
         with self._session() as s:
-            stmt = select(DeviceModel)
+            # selectinload — см. комментарий в get_all_devices() выше (тот же
+            # N+1 на device.created_by/updated_by в device_to_row()).
+            stmt = select(DeviceModel).options(
+                selectinload(DeviceModel.created_by),
+                selectinload(DeviceModel.updated_by),
+            )
             if not include_completed:
                 stmt = stmt.where(DeviceModel.status.notin_(_CLOSED_STATUSES))
             if status_filter and status_filter != "Все":

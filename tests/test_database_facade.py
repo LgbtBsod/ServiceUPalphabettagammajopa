@@ -185,6 +185,74 @@ class TestCalculate:
             db.calculate(name)  # не должно бросить ValueError "неизвестное"
 
 
+class TestDeviceToRowEagerLoading:
+    """Workflow-найденный N+1: device_to_row() (database/facade/shared.py)
+    читает device.created_by.full_name/device.updated_by.full_name;
+    Device.created_by/updated_by — обычные relationship() без lazy= (т.е.
+    lazy='select' по умолчанию). Без eager load каждая строка результата с
+    ещё не встреченным created_by_id/updated_by_id тянула отдельный SELECT
+    к employees — классический N+1 (10 устройств от 10 разных сотрудников
+    -> 11 SQL вместо 1)."""
+
+    def _add_employees(self, db, n: int) -> list[int]:
+        from database.sqlalchemy_models import Employee
+
+        ids = []
+        with db._session() as s:
+            for i in range(n):
+                emp = Employee(full_name=f"Сотрудник {i}", login=f"emp{i}")
+                s.add(emp)
+                s.flush()
+                ids.append(emp.id)
+            s.commit()
+        return ids
+
+    def _count_statements(self, db, fn):
+        from sqlalchemy import event
+
+        engine = db.engine.get_engine()
+        count = 0
+
+        def _before_cursor_execute(*_a, **_kw):
+            nonlocal count
+            count += 1
+
+        event.listen(engine, "before_cursor_execute", _before_cursor_execute)
+        try:
+            return fn(), count
+        finally:
+            event.remove(engine, "before_cursor_execute", _before_cursor_execute)
+
+    def test_get_all_devices_does_not_n_plus_1_on_created_by(self, db):
+        emp_ids = self._add_employees(db, 5)
+        for i, emp_id in enumerate(emp_ids):
+            db.add_device(_sample_device(order_number=f"0000{i}", created_by_id=emp_id))
+
+        rows, stmt_count = self._count_statements(db, db.get_all_devices)
+        assert len(rows) == 5
+        assert all(r["created_by_name"] for r in rows)
+        # Без eager load: 1 (devices) + до 5 (по одному на каждого нового
+        # created_by, т.к. updated_by совпадает с created_by в add_device()
+        # и берётся из identity map) = минимум 6. selectinload сводит это к
+        # базовому запросу + 1-2 батч-запросам на relationship, а не по
+        # одному на строку.
+        assert stmt_count <= 3, f"Похоже на N+1: выполнено {stmt_count} SQL-запросов"
+
+    def test_get_devices_by_filters_does_not_n_plus_1_on_created_by(self, db):
+        emp_ids = self._add_employees(db, 5)
+        for i, emp_id in enumerate(emp_ids):
+            db.add_device(_sample_device(order_number=f"1000{i}", created_by_id=emp_id))
+
+        rows, stmt_count = self._count_statements(
+            db,
+            lambda: db.get_devices_by_filters(
+                status_filter="Все", priority_filter="Все"
+            ),
+        )
+        assert len(rows) == 5
+        assert stmt_count <= 3, f"Похоже на N+1: выполнено {stmt_count} SQL-запросов"
+
+
 class TestDictionaryQueryCache:
     """Регрессия AUDIT_v25/Task W: get_dict_values() раньше кэшировался в
     ad-hoc self._dict_cache (dict, без TTL) прямо на facade-классе — теперь

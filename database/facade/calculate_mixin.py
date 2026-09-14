@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from database.facade.shared import OVERDUE_THRESHOLD_DAYS, device_to_row
 from database.sqlalchemy_models import Device as DeviceModel
@@ -87,8 +88,14 @@ class CalculateMixin:
     ) -> list[dict[str, Any]]:
         with self._session() as s:
             cutoff = (datetime.now() - timedelta(days=threshold_days)).strftime("%Y-%m-%d")
+            # selectinload — тот же N+1 на device.created_by/updated_by в
+            # device_to_row(), см. database/facade/devices_mixin.py::get_all_devices().
             stmt = (
                 select(DeviceModel)
+                .options(
+                    selectinload(DeviceModel.created_by),
+                    selectinload(DeviceModel.updated_by),
+                )
                 .where(
                     DeviceModel.status.notin_(_CLOSED_STATUSES),
                     DeviceModel.receipt_date < cutoff,
