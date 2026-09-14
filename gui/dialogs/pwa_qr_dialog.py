@@ -31,6 +31,15 @@ class PWAQRDialog(ctk.CTkToplevel):
         self.transient(parent)
         self.grab_set()
 
+        # Сохраняем геометрию при закрытии — без этого протокол
+        # WM_DELETE_WINDOW не был переопределён вовсе, так что закрытие
+        # нативной кнопкой окна (крестик/Alt+F4) просто уничтожало окно в
+        # обход _close()/close_dialog_with_geometry(), и позиция/размер
+        # никогда не сохранялись для этого диалога — в отличие от
+        # ActPreviewWindow/ClientHistoryWindow, которые оба переопределяют
+        # этот протокол (workflow-найденный баг).
+        self.protocol("WM_DELETE_WINDOW", self._close)
+
         # Геометрия: restore_window_geometry() сама центрирует при первом
         # запуске (см. её докстринг) — раньше здесь ЕЩЁ ДО неё вручную
         # вычислялась и применялась центрированная геометрия, которую
