@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -488,13 +489,27 @@ class ServiceUpCore(LoggableMixin):
 
 # Глобальный экземпляр ядра
 _core_instance: ServiceUpCore | None = None
+_global_core_lock = threading.Lock()
 
 
 def get_core() -> ServiceUpCore:
-    """Получает глобальный экземпляр ядра (singleton)."""
+    """Получает глобальный экземпляр ядра (singleton).
+
+    get_core() — самый центральный singleton в приложении (через него
+    резолвятся все BaseService/BaseRepository/BaseViewModel, см.
+    DependencyInjectableMixin.get_service()/... в core/base.py), и
+    достижим одновременно из GUI-потока и PWA Flask-сервера
+    (threaded=True, pwa/server.py) — тот же сценарий, из-за которого
+    get_container()/get_event_bus()/get_plugin_manager() получили
+    double-checked locking. Раньше здесь была обычная unsync check-then-act
+    проверка — два потока, одновременно увидевшие _core_instance is None,
+    могли независимо сконструировать два ServiceUpCore с расколотым
+    DI/EventBus/module-реестром (workflow-найденный баг)."""
     global _core_instance
     if _core_instance is None:
-        _core_instance = ServiceUpCore()
+        with _global_core_lock:
+            if _core_instance is None:  # double-checked locking
+                _core_instance = ServiceUpCore()
     return _core_instance
 
 

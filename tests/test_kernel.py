@@ -10,6 +10,8 @@ services/, specifications/), который удалён вместе с сам�
 см. AUDIT_REPORT_v21.md.
 """
 
+import threading
+import time
 import uuid
 
 import pytest
@@ -34,6 +36,51 @@ class TestServiceUpCoreLifecycle:
         b = get_core()
         assert a is b
         reset_core()
+
+    def test_concurrent_first_access_returns_the_same_instance(self, monkeypatch):
+        """Regression: get_core() — самый центральный singleton в
+        приложении (все BaseService/BaseRepository/BaseViewModel резолвятся
+        через него) и достижим одновременно из GUI-потока и PWA
+        Flask-сервера (threaded=True) — раньше делал unsync check-then-act
+        на _core_instance без какой-либо блокировки, в отличие от
+        get_container()/get_event_bus()/get_plugin_manager(), уже
+        получивших double-checked locking. Два потока, одновременно
+        впервые вызвавшие get_core(), могли независимо сконструировать два
+        ServiceUpCore с расколотым DI/EventBus/module-реестром.
+
+        ServiceUpCore.__init__ сам по себе слишком быстрый (голые
+        присваивания атрибутов), чтобы окно гонки check-then-act
+        воспроизводилось надёжно — поэтому искусственно расширяем его тем
+        же приёмом, что _SlowConstruct/_SlowSingletonService в
+        test_di_container.py."""
+        reset_core()
+        original_init = ServiceUpCore.__init__
+
+        def _slow_init(self):
+            time.sleep(0.05)
+            original_init(self)
+
+        monkeypatch.setattr(ServiceUpCore, "__init__", _slow_init)
+        try:
+            results: list[ServiceUpCore] = []
+            barrier = threading.Barrier(10)
+
+            def _worker():
+                barrier.wait()
+                results.append(get_core())
+
+            threads = [threading.Thread(target=_worker) for _ in range(10)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=5)
+
+            assert len({id(r) for r in results}) == 1, (
+                "concurrent first-time get_core() calls must all return "
+                "the exact same ServiceUpCore instance"
+            )
+        finally:
+            reset_core()
 
     def test_not_initialized_before_initialize(self):
         reset_core()

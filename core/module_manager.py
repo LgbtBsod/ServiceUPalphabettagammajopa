@@ -19,7 +19,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
-from threading import RLock
+from threading import Lock, RLock
 from typing import TYPE_CHECKING, Any
 
 from core.base import LoggableMixin
@@ -470,21 +470,34 @@ class ModuleRegistrySingleton(LoggableMixin):
 # Глобальные экземпляры (синглетоны)
 _module_cache: ModuleCache | None = None
 _module_singleton_registry: ModuleRegistrySingleton | None = None
+_module_cache_lock = Lock()
+_module_singleton_registry_lock = Lock()
 
 
 def get_module_cache() -> ModuleCache:
-    """Получает глобальный кэш модулей."""
+    """Получает глобальный кэш модулей.
+
+    Тот же unsync check-then-act race, что чинится double-checked locking у
+    get_core()/get_container()/get_event_bus()/get_plugin_manager() — вызывается
+    из ServiceUpCore.__init__ (core/kernel.py) на каждом потоке, конкурентно
+    строящем ядро."""
     global _module_cache
     if _module_cache is None:
-        _module_cache = ModuleCache()
+        with _module_cache_lock:
+            if _module_cache is None:  # double-checked locking
+                _module_cache = ModuleCache()
     return _module_cache
 
 
 def get_module_singleton_registry() -> ModuleRegistrySingleton:
-    """Получает глобальный реестр синглетонов модулей."""
+    """Получает глобальный реестр синглетонов модулей.
+
+    См. get_module_cache() выше — идентичная гонка, идентичное лечение."""
     global _module_singleton_registry
     if _module_singleton_registry is None:
-        _module_singleton_registry = ModuleRegistrySingleton()
+        with _module_singleton_registry_lock:
+            if _module_singleton_registry is None:  # double-checked locking
+                _module_singleton_registry = ModuleRegistrySingleton()
     return _module_singleton_registry
 
 
