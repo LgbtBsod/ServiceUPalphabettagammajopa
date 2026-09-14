@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import tkinter as tk
 from datetime import datetime
@@ -448,6 +449,43 @@ class DeviceWidgetsMixin:
         if device_data:
             self.defect_text.insert("1.0", device_data.get("defect", ""))
 
+        # Теги-неисправности (DeviceDefectRecord) — ДОПОЛНЯЮТ свободный
+        # текст выше, не заменяют его: несколько коротких структурированных
+        # отметок, из справочника "defects" или введённых вручную (тот же
+        # паттерн, что "Модель"/models_dict_type — справочник + свободный
+        # ввод). is_from_dictionary=False для ручного тега — задел под
+        # будущую аналитику ("Прочее").
+        self.defect_tags_state: list[dict] = []
+        for _tag in json.loads((device_data or {}).get("defect_tags") or "[]"):
+            if isinstance(_tag, dict) and str(_tag.get("text", "")).strip():
+                self.defect_tags_state.append(
+                    {
+                        "text": str(_tag.get("text", "")).strip(),
+                        "is_from_dictionary": bool(_tag.get("is_from_dictionary", False)),
+                    }
+                )
+
+        ctk.CTkLabel(dev_frame, text="Теги неисправности:", font=ctk.CTkFont(size=12)).grid(
+            row=len(labels) + 1, column=0, sticky="nw", pady=3
+        )
+        tags_input_frame = ctk.CTkFrame(dev_frame, fg_color="transparent")
+        tags_input_frame.grid(row=len(labels) + 1, column=1, sticky="ew", padx=(8, 0), pady=3)
+        defect_values = self.db.get_dict_values("defects") if self.db else []
+        self.defect_tag_combo = ctk.CTkComboBox(
+            tags_input_frame, values=defect_values, width=150, height=28
+        )
+        self.defect_tag_combo.set("")
+        self.defect_tag_combo.pack(side="left")
+        ctk.CTkButton(
+            tags_input_frame, text="+", width=28, height=28, command=self._add_defect_tag
+        ).pack(side="left", padx=(4, 0))
+
+        self.defect_tags_frame = ctk.CTkFrame(dev_frame, fg_color="transparent")
+        self.defect_tags_frame.grid(
+            row=len(labels) + 2, column=1, sticky="ew", padx=(8, 0), pady=(0, 3)
+        )
+        self._refresh_defect_tags_frame()
+
         dev_frame.grid_columnconfigure(1, weight=1)
 
         # --- Правая колонка: клиент ---
@@ -618,6 +656,39 @@ class DeviceWidgetsMixin:
         self.expense_entry.grid(row=9, column=1, sticky="ew", padx=(8, 0), pady=3)
 
         client_frame.grid_columnconfigure(1, weight=1)
+
+    def _refresh_defect_tags_frame(self) -> None:
+        """Перерисовывает чипы self.defect_tags_state в self.defect_tags_frame
+        — полная перестройка при каждом изменении (список короткий,
+        оптимизировать точечные add/remove виджетов смысла нет)."""
+        for child in self.defect_tags_frame.winfo_children():
+            child.destroy()
+        for i, tag in enumerate(self.defect_tags_state):
+            chip = ctk.CTkFrame(
+                self.defect_tags_frame, fg_color=self.colors["bg_tertiary"], corner_radius=10
+            )
+            chip.pack(side="left", padx=(0, 4), pady=2)
+            ctk.CTkLabel(chip, text=tag["text"], font=ctk.CTkFont(size=11)).pack(
+                side="left", padx=(8, 2), pady=2
+            )
+            ctk.CTkButton(
+                chip, text="×", width=18, height=18, fg_color="transparent",
+                hover_color=self.colors["bg_secondary"],
+                command=lambda i=i: self._remove_defect_tag(i),
+            ).pack(side="left", padx=(0, 4))
+
+    def _add_defect_tag(self) -> None:
+        text = self.defect_tag_combo.get().strip()
+        if not text or any(t["text"] == text for t in self.defect_tags_state):
+            return
+        dict_values = self.db.get_dict_values("defects") if self.db else []
+        self.defect_tags_state.append({"text": text, "is_from_dictionary": text in dict_values})
+        self.defect_tag_combo.set("")
+        self._refresh_defect_tags_frame()
+
+    def _remove_defect_tag(self, i: int) -> None:
+        del self.defect_tags_state[i]
+        self._refresh_defect_tags_frame()
 
     def update_receipt_time(self):
         """Обновление даты и времени приема на текущие"""

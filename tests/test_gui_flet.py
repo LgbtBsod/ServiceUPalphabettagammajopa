@@ -230,6 +230,171 @@ class TestOrderFormSave:
         )
 
 
+class TestOrderFormDefectTags:
+    """Теги-неисправности (DeviceDefectRecord) в форме заказа Flet —
+    дополняют свободный текст f_defect; справочник "defects"
+    (domain.constants.DICTIONARY_TYPES) с ручным вводом как fallback. См.
+    database/facade/child_records_mixin.py::_sync_device_defects."""
+
+    def _tag_input(self, form):
+        return _find(form, label="Добавить тег неисправности")
+
+    def _add_button(self, form):
+        return _find(form, tooltip="Добавить тег")
+
+    def _tags_row(self, form):
+        return _find(form, wrap=True)
+
+    def test_adding_a_tag_and_saving_persists_a_structured_defect_record(self, db):
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        _find(form, label="Имя клиента").value = "Иван"
+        _find(form, label="Телефон").value = "+79990000000"
+        self._tag_input(form).text = "Разбит экран"
+        self._add_button(form).on_click(None)
+
+        _find_button(form, "Сохранить").on_click(None)
+
+        device_id = db.get_all_devices()[0]["id"]
+        tags = db.get_device_defects_from_db(device_id)
+        assert [t["text"] for t in tags] == ["Разбит экран"]
+
+    def test_adding_a_tag_clears_the_input_for_the_next_one(self, db):
+        """Regression — live browser check: setting f_defect_tag_input.value/
+        .text = "" and calling page.update() did NOT visually clear an
+        editable Dropdown's typed text (the Flutter widget's own
+        TextEditingController doesn't pick up that update). Fix:
+        views_orders.py rebuilds a brand-new Dropdown control
+        (_build_defect_tag_input()) inside a stable Container after each
+        add, instead of trying to reset the old one in place."""
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        self._tag_input(form).text = "Разбит экран"
+        self._add_button(form).on_click(None)
+
+        fresh_input = self._tag_input(form)
+        assert (fresh_input.text or "") == ""
+        assert (fresh_input.value or "") == ""
+
+    def test_saving_without_adding_any_tag_stores_an_empty_list(self, db):
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        _find(form, label="Имя клиента").value = "Иван"
+        _find(form, label="Телефон").value = "+79990000000"
+        _find_button(form, "Сохранить").on_click(None)
+
+        device_id = db.get_all_devices()[0]["id"]
+        assert db.get_device_defects_from_db(device_id) == []
+
+    def test_adding_a_duplicate_tag_text_is_ignored(self, db):
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        add_btn = self._add_button(form)
+        # Каждый add пересоздаёт Dropdown с нуля (см.
+        # views_orders.py::_build_defect_tag_input) — старая ссылка на
+        # инпут после этого отвязана от дерева, перечитываем заново.
+        self._tag_input(form).text = "Разбит экран"
+        add_btn.on_click(None)
+        self._tag_input(form).text = "Разбит экран"
+        add_btn.on_click(None)
+
+        assert len(self._tags_row(form).controls) == 1
+
+    def test_removing_a_tag_chip_and_saving_drops_it(self, db):
+        device_id = db.add_device(
+            {
+                "order_number": "1",
+                "client_name": "Иван",
+                "phone": "+79990000000",
+                "defect_tags_json": json.dumps(
+                    [{"text": "Разбит экран"}, {"text": "Не заряжается"}]
+                ),
+            }
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        view.editing_id = device_id
+        form = view._render_form()
+
+        tags_row = self._tags_row(form)
+        assert len(tags_row.controls) == 2
+        remove_btn = _find(tags_row.controls[0], tooltip="Удалить тег")
+        remove_btn.on_click(None)
+        assert len(tags_row.controls) == 1
+
+        _find_button(form, "Сохранить").on_click(None)
+
+        tags = db.get_device_defects_from_db(device_id)
+        assert [t["text"] for t in tags] == ["Не заряжается"]
+
+    def test_editing_a_device_preloads_its_existing_tags(self, db):
+        device_id = db.add_device(
+            {
+                "order_number": "1",
+                "client_name": "Иван",
+                "phone": "+79990000000",
+                "defect_tags_json": json.dumps([{"text": "Разбит экран"}]),
+            }
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        view.editing_id = device_id
+        form = view._render_form()
+
+        tags_row = self._tags_row(form)
+        assert len(tags_row.controls) == 1
+
+
+class TestOrderCardShowsDefectTagsSummary:
+    def test_card_shows_a_tag_summary_line_when_tags_present(self, db):
+        device_id = db.add_device(
+            {
+                "order_number": "1",
+                "client_name": "Иван",
+                "phone": "+79990000000",
+                "defect_tags_json": json.dumps(
+                    [{"text": "Разбит экран"}, {"text": "Не заряжается"}]
+                ),
+            }
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        row = db.get_device(device_id)
+
+        card = view._order_card(row)
+
+        summary = _find(card, italic=True)
+        assert summary is not None
+        assert "Разбит экран" in summary.value
+        assert "Не заряжается" in summary.value
+
+    def test_card_has_no_extra_line_when_no_tags(self, db):
+        device_id = db.add_device(
+            {"order_number": "1", "client_name": "Иван", "phone": "+79990000000"}
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        row = db.get_device(device_id)
+
+        card = view._order_card(row)
+
+        assert _find(card, italic=True) is None
+
+
 class TestDeleteOrder:
     """Regression (Flet/classic parity gap): the classic GUI's only delete
     path — gui/main_window_parts/devices_table_mixin.py::_quick_delete_selected(),

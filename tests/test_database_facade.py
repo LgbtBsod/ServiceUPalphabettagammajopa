@@ -185,6 +185,89 @@ class TestDeviceCRUD:
         assert len(devices) >= 2
 
 
+class TestDeviceDefects:
+    """device_defects (DeviceDefectRecord) — дочерняя таблица тегов-
+    неисправностей, дополняющая devices.defect (свободный текст),
+    построенная по тому же dual-write паттерну, что work_items/photos (см.
+    ChildRecordsMixin._sync_device_defects). Device.defect_tags —
+    отдельный scalar-столбец специально ради change-detection в
+    update_device(): без него правка ТОЛЬКО тегов (все остальные поля
+    совпадают) не попала бы в `changed` и молча не дошла бы до
+    _sync_device_defects()."""
+
+    def test_add_device_with_defect_tags_persists_child_records(self, db):
+        import json
+
+        tags = [
+            {"text": "Не включается", "is_from_dictionary": True},
+            {"text": "Своя формулировка", "is_from_dictionary": False},
+        ]
+        device_id = db.add_device(
+            _sample_device(defect_tags_json=json.dumps(tags, ensure_ascii=False))
+        )
+
+        stored = db.get_device_defects_from_db(device_id)
+        assert [d["text"] for d in stored] == ["Не включается", "Своя формулировка"]
+        assert [d["is_from_dictionary"] for d in stored] == [True, False]
+
+    def test_updating_only_defect_tags_is_detected_as_a_change_and_synced(self, db):
+        """Регрессия: до добавления Device.defect_tags как scalar-колонки,
+        update_device() сравнивал только work_items/photos/... — правка,
+        меняющая ИСКЛЮЧИТЕЛЬНО defect_tags_json, не выставляла changed=True
+        и `if not changed: return True` возвращал бы раньше вызова
+        _sync_device_defects(), молча не сохранив новые теги."""
+        import json
+
+        device_id = db.add_device(
+            _sample_device(
+                defect_tags_json=json.dumps([{"text": "Не включается"}])
+            )
+        )
+
+        new_tags = json.dumps(
+            [{"text": "Разбит экран"}, {"text": "Не заряжается"}]
+        )
+        ok = db.update_device(device_id, _sample_device(defect_tags_json=new_tags))
+        assert ok is True
+
+        stored = db.get_device_defects_from_db(device_id)
+        assert [d["text"] for d in stored] == ["Разбит экран", "Не заряжается"]
+
+    def test_deleting_device_cascades_defect_records(self, db):
+        import json
+
+        from database.sqlalchemy_models import DeviceDefectRecord
+
+        device_id = db.add_device(
+            _sample_device(
+                defect_tags_json=json.dumps([{"text": "Не включается"}])
+            )
+        )
+        assert db.get_device_defects_from_db(device_id) != []
+
+        assert db.delete_device(device_id) is True
+
+        with db._session() as s:
+            remaining = (
+                s.query(DeviceDefectRecord)
+                .filter(DeviceDefectRecord.device_id == device_id)
+                .all()
+            )
+        assert remaining == [], (
+            "cascade='all, delete-orphan' на Device.defect_records должен "
+            "удалить дочерние теги вместе с устройством"
+        )
+
+    def test_device_to_row_exposes_defect_tags_json(self, db):
+        import json
+
+        tags_json = json.dumps([{"text": "Не включается"}])
+        device_id = db.add_device(_sample_device(defect_tags_json=tags_json))
+
+        row = db.get_device(device_id)
+        assert row["defect_tags"] == tags_json
+
+
 class TestUpdateDeviceStatus:
     """Регрессия AUDIT_v25: update_device_status() (PWA PUT /status, кнопка
     "выдать") раньше не бампил version_id и не писал финзапись при выдаче —

@@ -147,6 +147,7 @@ def device_to_row(device: DeviceModel) -> dict[str, Any]:
         "appearance": device.appearance,
         "completeness": device.completeness,
         "work_items": device.work_items,
+        "defect_tags": device.defect_tags,
         "client_name": device.client_name,
         "client_status": device.client_status,
         "phone": device.phone,

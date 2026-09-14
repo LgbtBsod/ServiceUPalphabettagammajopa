@@ -6,6 +6,7 @@ AUDIT_REPORT_v25.md, Task T (перенесено из device_form.py без и�
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from tkinter import messagebox
@@ -140,6 +141,9 @@ class DeviceSaveMixin:
                 if hasattr(self, "completeness_combo")
                 else "",
                 "work_items_json": work_items_json,
+                "defect_tags_json": json.dumps(self.defect_tags_state, ensure_ascii=False)
+                if hasattr(self, "defect_tags_state")
+                else "[]",
                 "client_name": client_name,
                 "client_status": self.client_status_combo.get().strip()
                 if hasattr(self, "client_status_combo")
@@ -304,6 +308,9 @@ class DeviceSaveMixin:
                     "appearance": appearance,
                     "completeness": completeness,
                     "work_items_json": work_items_json,
+                    "defect_tags_json": json.dumps(self.defect_tags_state, ensure_ascii=False)
+                    if hasattr(self, "defect_tags_state")
+                    else "[]",
                     "client_name": client_name,
                     "client_status": client_status,
                     "phone": phone,
@@ -357,6 +364,9 @@ class DeviceSaveMixin:
                     "appearance": appearance,
                     "completeness": completeness,
                     "work_items_json": work_items_json,
+                    "defect_tags_json": json.dumps(self.defect_tags_state, ensure_ascii=False)
+                    if hasattr(self, "defect_tags_state")
+                    else "[]",
                     "client_name": client_name,
                     "client_status": client_status,
                     "phone": phone,

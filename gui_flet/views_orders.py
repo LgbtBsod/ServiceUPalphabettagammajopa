@@ -7,6 +7,8 @@ update_device_status) — тот же контракт данных, трети�
 
 from __future__ import annotations
 
+import json
+
 import flet as ft
 
 from database.sqlalchemy_database import OptimisticLockError
@@ -22,6 +24,25 @@ from . import theme
 from .theme import PRIORITY_COLORS, STATUS_COLORS
 
 _ALL = "Все"
+
+
+def _defect_tags_summary(row: dict) -> str:
+    """Компактная строка тегов-неисправностей для строки заказа
+    (карточка списка) — "Разбит экран, Не заряжается" — пусто, если
+    device_data.defect_tags отсутствует/NULL (legacy-строка до этой
+    колонки) или это пустой список ("[]")."""
+    raw = row.get("defect_tags") or "[]"
+    try:
+        tags = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(tags, list):
+        return ""
+    return ", ".join(
+        str(t.get("text", "")).strip()
+        for t in tags
+        if isinstance(t, dict) and str(t.get("text", "")).strip()
+    )
 
 
 def _opt(value: str, label: str | None = None) -> ft.dropdown.Option:
@@ -327,6 +348,7 @@ class OrdersView:
 
         title = f"№{row['order_number']}  ·  {row['device_type']} {row['brand']} {row['model']}".strip()
         subtitle = f"{row['client_name']}  ·  {row['phone']}" if row["client_name"] else row["phone"]
+        tags_summary = _defect_tags_summary(row)
 
         return ft.Container(
             ft.Row(
@@ -361,6 +383,16 @@ class OrdersView:
                             ft.Text(
                                 subtitle, size=12, color=c["text_secondary"],
                                 max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                            *(
+                                [
+                                    ft.Text(
+                                        f"🏷 {tags_summary}", size=11, color=c["text_secondary"],
+                                        max_lines=1, overflow=ft.TextOverflow.ELLIPSIS, italic=True,
+                                    )
+                                ]
+                                if tags_summary
+                                else []
                             ),
                         ],
                         spacing=2, width=240,
@@ -467,6 +499,79 @@ class OrdersView:
             label="Неисправность", value=(existing or {}).get("defect", ""),
             multiline=True, min_lines=3, max_lines=6,
         )
+
+        # Теги-неисправности (DeviceDefectRecord) — ДОПОЛНЯЮТ f_defect выше
+        # (свободный текст остаётся основным описанием), не заменяют его:
+        # несколько коротких структурированных отметок на устройство, из
+        # справочника "defects" или введённых вручную (is_from_dictionary
+        # тогда False — задел под будущую аналитику, где ручные значения
+        # бакетируются в общую группу "Прочее").
+        defect_tags_state: list[dict] = []
+        for _tag in json.loads((existing or {}).get("defect_tags") or "[]"):
+            if isinstance(_tag, dict) and str(_tag.get("text", "")).strip():
+                defect_tags_state.append(
+                    {
+                        "text": str(_tag.get("text", "")).strip(),
+                        "is_from_dictionary": bool(_tag.get("is_from_dictionary", False)),
+                    }
+                )
+
+        def _build_defect_tag_input() -> ft.Dropdown:
+            return ft.Dropdown(
+                label="Добавить тег неисправности", editable=True, enable_filter=True,
+                options=[_opt(v) for v in db.get_dict_values("defects")],
+            )
+
+        # Контейнер, а не сам Dropdown — после добавления тега поле нужно
+        # ОЧИСТИТЬ, а простановка f_defect_tag_input.value/.text = "" плюс
+        # page.update() визуально НЕ очищает уже введённый текст (живой
+        # прогон: Flutter-виджет редактируемого Dropdown держит свой
+        # TextEditingController и не подхватывает такое обновление —
+        # тот же класс проблемы, что и с моделью, только там мы читаем
+        # .text, а не пытаемся его сбросить). Пересоздаём Dropdown с нуля
+        # вместо попытки очистить старый.
+        tag_input_container = ft.Container(content=_build_defect_tag_input(), expand=True)
+        defect_tags_row = ft.Row(wrap=True, spacing=6, run_spacing=6)
+
+        def _refresh_defect_tags_row() -> None:
+            defect_tags_row.controls = [
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Text(tag["text"], size=12, color=c["text_primary"]),
+                            ft.IconButton(
+                                icon=ft.Icons.CLOSE, icon_size=14, width=24, height=24,
+                                tooltip="Удалить тег",
+                                on_click=lambda _e, i=i: _remove_defect_tag(i),
+                            ),
+                        ],
+                        spacing=2, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    bgcolor=c["bg_card"], border=theme.card_border(c["border"]),
+                    border_radius=16, padding=ft.Padding(10, 2, 2, 2),
+                )
+                for i, tag in enumerate(defect_tags_state)
+            ]
+
+        def _remove_defect_tag(i: int) -> None:
+            del defect_tags_state[i]
+            _refresh_defect_tags_row()
+            self.app.page.update()
+
+        def _add_defect_tag(_e) -> None:
+            text = _editable_dropdown_value(
+                tag_input_container.content, "нет в справочнике"
+            ).strip()
+            if not text or any(t["text"] == text for t in defect_tags_state):
+                return
+            dict_values = db.get_dict_values("defects")
+            defect_tags_state.append({"text": text, "is_from_dictionary": text in dict_values})
+            tag_input_container.content = _build_defect_tag_input()
+            _refresh_defect_tags_row()
+            self.app.page.update()
+
+        _refresh_defect_tags_row()
+
         f_client_name = ft.TextField(label="Имя клиента", value=(existing or {}).get("client_name", ""))
         f_phone = ft.TextField(label="Телефон", value=(existing or {}).get("phone", ""))
         f_price = ft.TextField(
@@ -527,6 +632,7 @@ class OrdersView:
                 "model": _editable_dropdown_value(f_model, "нет в справочнике"),
                 "serial_number": f_serial.value,
                 "defect": f_defect.value,
+                "defect_tags_json": json.dumps(defect_tags_state, ensure_ascii=False),
                 "client_name": f_client_name.value,
                 "client_status": (existing or {}).get("client_status", "Новый"),
                 "phone": f_phone.value,
@@ -599,6 +705,17 @@ class OrdersView:
                     ]),
                     f_serial,
                     f_defect,
+                    ft.Row(
+                        [
+                            tag_input_container,
+                            ft.IconButton(
+                                icon=ft.Icons.ADD_CIRCLE_OUTLINE, tooltip="Добавить тег",
+                                on_click=_add_defect_tag,
+                            ),
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    defect_tags_row,
                     ft.Divider(color=c["border"]),
                     ft.ResponsiveRow([
                         ft.Container(f_client_name, col={"sm": 12, "md": 6}),

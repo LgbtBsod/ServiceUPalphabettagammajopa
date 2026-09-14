@@ -248,6 +248,15 @@ class Device(Base):
     # Работы (JSON) - храним как work_items для совместимости с legacy кодом
     work_items: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
 
+    # Теги-неисправности (JSON, [{"text": ..., "is_from_dictionary": ...}]) —
+    # дублируется в дочернюю таблицу device_defects (DeviceDefectRecord) тем
+    # же dual-write паттерном, что и work_items/photos: этот скалярный
+    # столбец даёт update_device()'s change-detection увидеть изменение (см.
+    # new_values в devices_mixin.py), а дочерняя таблица — быстрые
+    # запросы/будущую аналитику по тегам. НЕ путать с defect (свободный
+    # текст, основное описание) — теги дополняют его, не заменяют.
+    defect_tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+
     # Финансы
     total_price: Mapped[float] = mapped_column(Float, default=0.0)
     prepayment: Mapped[float] = mapped_column(Float, default=0.0)
@@ -309,6 +318,9 @@ class Device(Base):
     )
     photo_records: Mapped[list[PhotoRecord]] = relationship(
         "PhotoRecord", back_populates="device", cascade="all, delete-orphan"
+    )
+    defect_records: Mapped[list[DeviceDefectRecord]] = relationship(
+        "DeviceDefectRecord", back_populates="device", cascade="all, delete-orphan"
     )
 
     @validates("order_number")
@@ -464,6 +476,32 @@ class PhotoRecord(Base):
     )
 
     device: Mapped[Device] = relationship("Device", back_populates="photo_records")
+
+
+class DeviceDefectRecord(Base):
+    """Отдельная неисправность-тег устройства (дочерняя таблица) — ДОПОЛНЯЕТ
+    devices.defect (свободный текст, основное описание неисправности,
+    используется в актах/поиске без изменений), а не заменяет его: несколько
+    структурированных тегов на устройство, каждый либо из справочника
+    "defects" (database/facade/dictionaries_mixin.py), либо введённый вручную
+    (is_from_dictionary=False — заложено для будущей аналитики: ручные
+    значения агрегируются в общую группу "Прочее", а не фрагментируют отчёт
+    по каждому уникальному тексту)."""
+
+    __tablename__ = "device_defects"
+
+    device_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    text: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_from_dictionary: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    device: Mapped[Device] = relationship("Device", back_populates="defect_records")
 
 
 class CompletedRepair(Base):
