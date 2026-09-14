@@ -10,6 +10,8 @@ guard сквозь публичный API Database(); эти тесты бьют
 
 import os
 import tempfile
+import threading
+import time
 
 import pytest
 
@@ -52,6 +54,92 @@ class TestDatabaseCoreLifecycle:
         with pytest.raises(DuplicateDatabaseConnectionError):
             DatabaseCore(same_path_engine)
         same_path_engine.dispose()
+
+
+class TestClaimedConnectionStringsGuardIsThreadSafe:
+    """Regression: _claimed_connection_strings существует именно чтобы
+    поймать GUI-поток и PWA-поток, конкурентно конструирующих Database() на
+    один и тот же файл (см. докстринг DatabaseCore) — но был unsync
+    check-then-act (`if conn_str in _claimed_connection_strings: raise ...`
+    отдельной операцией от `.add(conn_str)`), поэтому не мог поймать именно
+    эту гонку. Виджем окно гонки, подменяя множество на такое, чей
+    __contains__ спит — воспроизводимо независимо от реализации: с локом
+    сон сериализуется внутри критической секции, без лока оба потока успевают
+    пройти проверку до чьего-либо .add()."""
+
+    def test_concurrent_construction_on_same_path_only_one_succeeds(
+        self, engine, monkeypatch
+    ):
+        import database.db_core as db_core_module
+
+        class _SlowContainsSet(set):
+            def __contains__(self, item):
+                # Проверяем СРАЗУ (снимок текущего состояния), спим ПОСЛЕ —
+                # так окно гонки открывается между "check" и "act" (.add()
+                # у вызывающего кода), а не внутри самого __contains__: оба
+                # потока успевают увидеть "отсутствует" до того, как любой
+                # из них дойдёт до .add().
+                result = super().__contains__(item)
+                time.sleep(0.05)
+                return result
+
+        monkeypatch.setattr(
+            db_core_module, "_claimed_connection_strings", _SlowContainsSet()
+        )
+        # Изолируем тест от несвязанной гонки на уровне самого SQLite
+        # (оба потока реально создающие таблицы в один файл одновременно
+        # ловят свою отдельную "table already exists"/locked ошибку) — нас
+        # интересует только гонка guard'а по _claimed_connection_strings.
+        monkeypatch.setattr(SQLiteEngine, "create_tables", lambda self: None)
+
+        path = str(engine.get_engine().url).replace("sqlite:///", "")
+        engine_a = SQLiteEngine(DatabaseConfig(database=path))
+        engine_b = SQLiteEngine(DatabaseConfig(database=path))
+
+        results: list[DatabaseCore | Exception] = []
+        barrier = threading.Barrier(2)
+
+        def _worker(eng):
+            barrier.wait()
+            try:
+                results.append(DatabaseCore(eng))
+            except DuplicateDatabaseConnectionError as e:
+                results.append(e)
+
+        threads = [
+            threading.Thread(target=_worker, args=(engine_a,)),
+            threading.Thread(target=_worker, args=(engine_b,)),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+
+        try:
+            successes = [r for r in results if isinstance(r, DatabaseCore)]
+            failures = [
+                r for r in results if isinstance(r, DuplicateDatabaseConnectionError)
+            ]
+
+            assert len(successes) == 1, (
+                f"exactly one concurrent DatabaseCore() on the same conn_str "
+                f"must succeed, got {len(successes)}"
+            )
+            assert len(failures) == 1, (
+                f"exactly one concurrent DatabaseCore() on the same conn_str "
+                f"must be refused with DuplicateDatabaseConnectionError, "
+                f"got {len(failures)}"
+            )
+        finally:
+            # Закрываем ВСЕ успешные DatabaseCore, даже если ассерты выше
+            # упали (что и должно случиться до фикса) — иначе движок
+            # остаётся держать файловый хендл открытым, и teardown фикстуры
+            # engine падает с WinError 32 при попытке os.remove(path).
+            for r in results:
+                if isinstance(r, DatabaseCore):
+                    r.close()
+            engine_a.dispose()
+            engine_b.dispose()
 
 
 class TestDatabaseCoreQueryCache:

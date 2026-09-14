@@ -19,6 +19,7 @@ Mediator: DI, потоки, общий кэш, события) — только 
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING
 
 from core.module_manager import ModuleCache
@@ -42,6 +43,15 @@ logger = logging.getLogger(__name__)
 QUERY_CACHE_TTL_SECONDS = 3600
 
 _claimed_connection_strings: set[str] = set()
+# Этот guard существует именно для того, чтобы поймать конкурентное
+# конструирование Database() из GUI-потока и PWA-потока на один и тот же
+# файл (см. докстринг DatabaseCore ниже) — но раньше сам был unsync
+# check-then-act ("if conn_str in _claimed_connection_strings: raise ...",
+# затем отдельной операцией ".add(conn_str)"), так что не мог поймать
+# именно ту гонку, ради которой был написан: два потока могли оба увидеть
+# conn_str отсутствующим до того, как любой из них дойдёт до .add()
+# (workflow-найденный баг).
+_claimed_connection_strings_lock = threading.Lock()
 
 
 class DuplicateDatabaseConnectionError(RuntimeError):
@@ -78,13 +88,14 @@ class DatabaseCore:
             conn_str = None
         self._conn_str: str | None = conn_str
         if conn_str is not None:
-            if conn_str in _claimed_connection_strings:
-                raise DuplicateDatabaseConnectionError(
-                    f"Database уже создан для {conn_str!r} в этом процессе. "
-                    "Используйте core.get_db_access() вместо повторного "
-                    "создания Database()."
-                )
-            _claimed_connection_strings.add(conn_str)
+            with _claimed_connection_strings_lock:
+                if conn_str in _claimed_connection_strings:
+                    raise DuplicateDatabaseConnectionError(
+                        f"Database уже создан для {conn_str!r} в этом процессе. "
+                        "Используйте core.get_db_access() вместо повторного "
+                        "создания Database()."
+                    )
+                _claimed_connection_strings.add(conn_str)
 
         self._engine.create_tables()
         self.query_cache = ModuleCache(default_ttl_seconds=QUERY_CACHE_TTL_SECONDS)
@@ -119,7 +130,8 @@ class DatabaseCore:
         первый экземпляр давно не используется. Идемпотентно: повторный
         вызов — no-op (conn_str уже отсутствует в множестве)."""
         if self._conn_str is not None:
-            _claimed_connection_strings.discard(self._conn_str)
+            with _claimed_connection_strings_lock:
+                _claimed_connection_strings.discard(self._conn_str)
         try:
             self._engine.dispose()
         except Exception:

@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import threading
+
 from database.engines.base import IDatabaseEngine
 from database.engines.postgresql_engine import PostgreSQLEngine
 from database.engines.sqlite_engine import SQLiteEngine
@@ -52,6 +54,7 @@ def create_engine_for(config) -> IDatabaseEngine:
 
 
 _engine_instance: IDatabaseEngine | None = None
+_engine_lock = threading.Lock()
 
 
 def get_database_engine(force_reload: bool = False) -> IDatabaseEngine:
@@ -59,23 +62,38 @@ def get_database_engine(force_reload: bool = False) -> IDatabaseEngine:
 
     Args:
         force_reload: пересоздать движок (например, после смены .env в тестах).
+
+    DatabaseCore.__init__ вызывает это на каждом обычном пути построения
+    Database() — раньше здесь была unsync check-then-act проверка
+    (`if _engine_instance is None or force_reload: ...`), и два потока,
+    конкурентно конструирующих DatabaseCore для одного файла (GUI-поток vs.
+    поток запуска PWA-сервера), могли оба увидеть _engine_instance is None
+    и создать по отдельному SQLAlchemy Engine/пулу соединений на один и тот
+    же файл, молча осиротив один из них (без .dispose()) — workflow-найденный
+    баг. force_reload усложняет double-checked locking (нужно пересоздавать
+    даже когда instance уже есть), поэтому вместо внешней unlocked
+    fast-path проверки тело целиком выполняется под локом — вызывается
+    редко (раз на конструирование DatabaseCore), так что цена лока
+    незначительна.
     """
     global _engine_instance
 
     from database.db_config import get_db_config
 
-    if _engine_instance is None or force_reload:
-        if _engine_instance is not None:
-            _engine_instance.dispose()
-        _engine_instance = create_engine_for(get_db_config())
+    with _engine_lock:
+        if _engine_instance is None or force_reload:
+            if _engine_instance is not None:
+                _engine_instance.dispose()
+            _engine_instance = create_engine_for(get_db_config())
 
-    return _engine_instance
+        return _engine_instance
 
 
 def reset_database_engine() -> None:
     """Сбрасывает singleton движка (для тестов)."""
     global _engine_instance
 
-    if _engine_instance is not None:
-        _engine_instance.dispose()
-    _engine_instance = None
+    with _engine_lock:
+        if _engine_instance is not None:
+            _engine_instance.dispose()
+        _engine_instance = None
