@@ -195,6 +195,38 @@ class TestMoveDrag:
         assert cfg["x_mm"] % GRID_MM == 0
         assert cfg["x_mm"] == pytest.approx(35.0, abs=0.01)
 
+    def test_dragging_a_different_field_refreshes_screen_by_drag_end(self, view):
+        """Regression: _on_move_start выбирает новое поле через
+        _select(key, rerender=False) (намеренно — полный rerender()
+        посреди активного жеста мог бы сбить распознаватель drag у
+        GestureDetector), но раньше НИЧТО не вызывало app.rerender() до
+        конца драга вообще. Значит после перетаскивания поля 'b' (пока
+        было выбрано поле 'a') экран продолжал показывать 'a' выделенным
+        (граница + панель свойств), хотя view.selected_key уже стало 'b' —
+        клик "Убрать с макета" в этот момент удалил бы 'b', а не то поле,
+        что видно выделенным на экране."""
+        view._fields()["a"] = {"x_mm": 10.0, "y_mm": 10.0, "w_mm": 60.0}
+        view._fields()["b"] = {"x_mm": 20.0, "y_mm": 20.0, "w_mm": 60.0}
+        view._build_canvas()
+
+        view._select("a")
+        calls_before_drag = view.app.rerender_calls
+
+        view._on_move_start(None, "b")
+        assert view.selected_key == "b"
+        # На старте драга rerender НЕ должен вызываться — это ожидаемо
+        # (см. докстринг выше), а не часть бага.
+        assert view.app.rerender_calls == calls_before_drag
+
+        view._on_move_update(_drag_event(dx=5, dy=5), "b")
+        view._on_move_end(None, "b")
+
+        assert view.app.rerender_calls > calls_before_drag, (
+            "screen must refresh (border + props panel) by the time the "
+            "drag ends, so it matches the new selected_key before any "
+            "delete action can act on the stale selection"
+        )
+
 
 class TestResizeDrag:
     def test_resize_changes_width_not_position(self, view):
@@ -259,6 +291,35 @@ class TestResizeDrag:
         view._on_resize_update(_drag_event(dx=20 * PX_PER_MM, dy=0), "client_name")
 
         assert view._fields()["client_name"]["w_mm"] == 60.0
+
+
+class TestImportFileErrorHandling:
+    """Regression: pick_files() сидел ВНЕ try/except, охватывающего
+    остальной _on_import_click() (тот начинается только с проверки
+    picked.bytes) — а page.run_task() отдаёт исключения таска только
+    дефолтному (консольному) обработчику asyncio, никакого snackbar
+    пользователь не видел. Кнопка "📥 Импорт из файла" при сбое пикера
+    (разрыв сессии, таймаут, нет zenity на Linux-десктопе) выглядела как
+    ничего не делающая."""
+
+    def test_pick_files_failure_shows_error_snackbar_not_a_silent_crash(self, view):
+        import asyncio
+
+        view.app.page.run_task = lambda coro_fn: asyncio.run(coro_fn())
+
+        async def _raise(*_args, **_kwargs):
+            raise RuntimeError("picker disconnected")
+
+        view._file_picker.pick_files = _raise
+
+        view._on_import_click()  # не должно бросить исключение наружу
+
+        assert view.app.snackbars, (
+            "a failed file-picker call must surface visible feedback, "
+            "not disappear silently"
+        )
+        _message, is_error = view.app.snackbars[-1]
+        assert is_error is True
 
 
 class TestActTypeSwitch:

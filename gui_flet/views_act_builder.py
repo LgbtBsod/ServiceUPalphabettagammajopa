@@ -358,6 +358,16 @@ class ActBuilderView:
         cfg["x_mm"] = body.left / PX_PER_MM
         cfg["y_mm"] = body.top / PX_PER_MM
         self._drag = None
+        # _on_move_start выбирает key через _select(key, rerender=False)
+        # (полный rerender() посреди активного жеста мог бы сбить
+        # распознаватель drag у GestureDetector), поэтому граница выделения
+        # и панель свойств оставались показывать ПРЕЖНЕЕ выбранное поле всё
+        # время перетаскивания. Теперь, когда жест завершён и пересборка
+        # безопасна, досчитываем это здесь — иначе после драга поле B
+        # становится selected_key "тихо", а на экране всё ещё подсвечено
+        # поле A с его же панелью свойств, и клик "Убрать с макета" удаляет
+        # не то, что видно (workflow-найденный баг).
+        self.app.rerender()
 
     # ── drag: изменение ширины ───────────────────────────────
 
@@ -509,12 +519,27 @@ class ActBuilderView:
 
     def _on_import_click(self, _e=None) -> None:
         async def _run() -> None:
-            files = await self._file_picker.pick_files(
-                dialog_title="Выберите файл акта",
-                file_type=ft.FilePickerFileType.CUSTOM,
-                allowed_extensions=[ext.lstrip(".") for ext in sorted(SUPPORTED_EXTENSIONS)],
-                with_data=True,
-            )
+            # pick_files() — единственная точка отказа в этой корутине, не
+            # покрытая try/except ниже (тот начинается только с чтения
+            # picked.bytes). page.run_task() передаёт исключения таска только
+            # в дефолтный (консольный) обработчик asyncio — никакой snackbar
+            # пользователь не увидит. Реальные отказы: разрыв сессии,
+            # таймаут (invoke_method ждёт до часа), отсутствие zenity на
+            # Linux-десктопе. Без этого клик по кнопке "молча ничего не
+            # делает" (workflow-найденный баг).
+            try:
+                files = await self._file_picker.pick_files(
+                    dialog_title="Выберите файл акта",
+                    file_type=ft.FilePickerFileType.CUSTOM,
+                    allowed_extensions=[
+                        ext.lstrip(".") for ext in sorted(SUPPORTED_EXTENSIONS)
+                    ],
+                    with_data=True,
+                )
+            except Exception as e:
+                logger.exception(f"Ошибка выбора файла акта: {e}")
+                self.app.show_snackbar(f"Не удалось открыть выбор файла: {e}", error=True)
+                return
             if not files:
                 return
             picked = files[0]
