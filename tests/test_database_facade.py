@@ -268,6 +268,89 @@ class TestDeviceDefects:
         assert row["defect_tags"] == tags_json
 
 
+class TestOrderTags:
+    """order_tags (OrderTagRecord) — метки САМОГО ЗАКАЗА (VIP, срочно,
+    повторное обращение...), НЕ описание неисправности устройства (см.
+    TestDeviceDefects выше) — отдельная дочерняя таблица, тот же
+    dual-write паттерн и та же причина для scalar-колонки Device.order_tags
+    (change-detection в update_device())."""
+
+    def test_add_device_with_order_tags_persists_child_records(self, db):
+        import json
+
+        tags = [
+            {"text": "VIP", "is_from_dictionary": True},
+            {"text": "Своя пометка", "is_from_dictionary": False},
+        ]
+        device_id = db.add_device(
+            _sample_device(order_tags_json=json.dumps(tags, ensure_ascii=False))
+        )
+
+        stored = db.get_order_tags_from_db(device_id)
+        assert [t["text"] for t in stored] == ["VIP", "Своя пометка"]
+        assert [t["is_from_dictionary"] for t in stored] == [True, False]
+
+    def test_updating_only_order_tags_is_detected_as_a_change_and_synced(self, db):
+        import json
+
+        device_id = db.add_device(
+            _sample_device(order_tags_json=json.dumps([{"text": "VIP"}]))
+        )
+
+        new_tags = json.dumps([{"text": "Срочно"}, {"text": "Повторное обращение"}])
+        ok = db.update_device(device_id, _sample_device(order_tags_json=new_tags))
+        assert ok is True
+
+        stored = db.get_order_tags_from_db(device_id)
+        assert [t["text"] for t in stored] == ["Срочно", "Повторное обращение"]
+
+    def test_deleting_device_cascades_order_tag_records(self, db):
+        import json
+
+        from database.sqlalchemy_models import OrderTagRecord
+
+        device_id = db.add_device(
+            _sample_device(order_tags_json=json.dumps([{"text": "VIP"}]))
+        )
+        assert db.get_order_tags_from_db(device_id) != []
+
+        assert db.delete_device(device_id) is True
+
+        with db._session() as s:
+            remaining = (
+                s.query(OrderTagRecord)
+                .filter(OrderTagRecord.device_id == device_id)
+                .all()
+            )
+        assert remaining == []
+
+    def test_device_to_row_exposes_order_tags_json(self, db):
+        import json
+
+        tags_json = json.dumps([{"text": "VIP"}])
+        device_id = db.add_device(_sample_device(order_tags_json=tags_json))
+
+        row = db.get_device(device_id)
+        assert row["order_tags"] == tags_json
+
+    def test_order_tags_and_defect_tags_are_independent(self, db):
+        """Регрессия на возможную путаницу имён — defect_tags и order_tags
+        должны жить в РАЗНЫХ дочерних таблицах и не затирать друг друга."""
+        import json
+
+        device_id = db.add_device(
+            _sample_device(
+                defect_tags_json=json.dumps([{"text": "Разбит экран"}]),
+                order_tags_json=json.dumps([{"text": "VIP"}]),
+            )
+        )
+
+        assert [t["text"] for t in db.get_device_defects_from_db(device_id)] == [
+            "Разбит экран"
+        ]
+        assert [t["text"] for t in db.get_order_tags_from_db(device_id)] == ["VIP"]
+
+
 class TestUpdateDeviceStatus:
     """Регрессия AUDIT_v25: update_device_status() (PWA PUT /status, кнопка
     "выдать") раньше не бампил version_id и не писал финзапись при выдаче —

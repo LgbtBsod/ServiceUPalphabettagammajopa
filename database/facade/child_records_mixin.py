@@ -187,6 +187,57 @@ class ChildRecordsMixin:
                 for d in sorted(device.defect_records, key=lambda d: d.sort_order)
             ]
 
+    def _sync_order_tags(self, s: Session, device_id: int, order_tags_json: str) -> None:
+        """Дочерняя таблица меток заказа (OrderTagRecord) — НЕ описывает
+        неисправность (см. _sync_device_defects выше), а произвольно
+        классифицирует сам заказ (VIP, срочно...). Тот же dual-write
+        паттерн: полная перезапись списка при каждом сохранении формы."""
+        device = s.get(DeviceModel, device_id)
+        if device is not None:
+            for tag in list(device.tag_records):
+                s.delete(tag)
+        if not order_tags_json:
+            return
+        try:
+            tags = json.loads(order_tags_json)
+        except (json.JSONDecodeError, TypeError):
+            return
+        if not isinstance(tags, list):
+            return
+        from database.sqlalchemy_models import OrderTagRecord
+
+        for i, tag in enumerate(tags):
+            if isinstance(tag, dict):
+                text = str(tag.get("text", "")).strip()
+                is_from_dictionary = bool(tag.get("is_from_dictionary", False))
+            else:
+                text = str(tag).strip()
+                is_from_dictionary = False
+            if not text:
+                continue
+            s.add(
+                OrderTagRecord(
+                    device_id=device_id,
+                    text=text,
+                    is_from_dictionary=is_from_dictionary,
+                    sort_order=i,
+                )
+            )
+
+    def get_order_tags_from_db(self, device_id: int) -> list[dict[str, Any]]:
+        with self._session() as s:
+            device = s.get(DeviceModel, device_id)
+            if device is None:
+                return []
+            return [
+                {
+                    "id": t.id,
+                    "text": t.text,
+                    "is_from_dictionary": t.is_from_dictionary,
+                }
+                for t in sorted(device.tag_records, key=lambda t: t.sort_order)
+            ]
+
     def add_completed_repair(self, device: dict[str, Any]) -> bool:
         try:
             with self._session() as s:

@@ -240,10 +240,10 @@ class TestOrderFormDefectTags:
         return _find(form, label="Добавить тег неисправности")
 
     def _add_button(self, form):
-        return _find(form, tooltip="Добавить тег")
+        return _find(form, data="add:defects")
 
     def _tags_row(self, form):
-        return _find(form, wrap=True)
+        return _find(form, data="tags:defects")
 
     def test_adding_a_tag_and_saving_persists_a_structured_defect_record(self, db):
         app = _FakeApp(db)
@@ -267,9 +267,9 @@ class TestOrderFormDefectTags:
         .text = "" and calling page.update() did NOT visually clear an
         editable Dropdown's typed text (the Flutter widget's own
         TextEditingController doesn't pick up that update). Fix:
-        views_orders.py rebuilds a brand-new Dropdown control
-        (_build_defect_tag_input()) inside a stable Container after each
-        add, instead of trying to reset the old one in place."""
+        _TagEditor (views_orders.py) rebuilds a brand-new Dropdown control
+        inside a stable Container after each add, instead of trying to
+        reset the old one in place."""
         app = _FakeApp(db)
         view = OrdersView(app)
         view.mode = "form"
@@ -357,6 +357,103 @@ class TestOrderFormDefectTags:
 
         tags_row = self._tags_row(form)
         assert len(tags_row.controls) == 1
+
+
+class TestOrderFormOrderTags:
+    """Метки заказа (OrderTagRecord) — НЕ описание неисправности (см.
+    TestOrderFormDefectTags выше), произвольная классификация самого
+    заказа (VIP, срочно...). Тот же _TagEditor, другой dict_type."""
+
+    def _tag_input(self, form):
+        return _find(form, label="Добавить тег заказа")
+
+    def _add_button(self, form):
+        return _find(form, data="add:order_tags")
+
+    def _tags_row(self, form):
+        return _find(form, data="tags:order_tags")
+
+    def test_adding_a_tag_and_saving_persists_a_structured_order_tag(self, db):
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        _find(form, label="Имя клиента").value = "Иван"
+        _find(form, label="Телефон").value = "+79990000000"
+        self._tag_input(form).text = "VIP"
+        self._add_button(form).on_click(None)
+
+        _find_button(form, "Сохранить").on_click(None)
+
+        device_id = db.get_all_devices()[0]["id"]
+        tags = db.get_order_tags_from_db(device_id)
+        assert [t["text"] for t in tags] == ["VIP"]
+
+    def test_order_tags_and_defect_tags_do_not_share_state(self, db):
+        """Регрессия на общий _TagEditor — два независимых экземпляра
+        (defects/order_tags) в одной форме не должны делить self.state."""
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        _find(form, label="Добавить тег неисправности").text = "Разбит экран"
+        _find(form, data="add:defects").on_click(None)
+        _find(form, label="Добавить тег заказа").text = "VIP"
+        _find(form, data="add:order_tags").on_click(None)
+
+        assert len(_find(form, data="tags:defects").controls) == 1
+        assert len(_find(form, data="tags:order_tags").controls) == 1
+
+    def test_editing_a_device_preloads_its_existing_order_tags(self, db):
+        device_id = db.add_device(
+            {
+                "order_number": "1",
+                "client_name": "Иван",
+                "phone": "+79990000000",
+                "order_tags_json": json.dumps([{"text": "VIP"}]),
+            }
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        view.editing_id = device_id
+        form = view._render_form()
+
+        assert len(self._tags_row(form).controls) == 1
+
+
+class TestOrderCardShowsOrderTagBadges:
+    def test_card_shows_a_badge_per_order_tag(self, db):
+        device_id = db.add_device(
+            {
+                "order_number": "1",
+                "client_name": "Иван",
+                "phone": "+79990000000",
+                "order_tags_json": json.dumps([{"text": "VIP"}, {"text": "Срочно"}]),
+            }
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        row = db.get_device(device_id)
+
+        card = view._order_card(row)
+
+        assert _find(card, value="VIP") is not None
+        assert _find(card, value="Срочно") is not None
+
+    def test_card_has_no_badges_when_no_order_tags(self, db):
+        device_id = db.add_device(
+            {"order_number": "1", "client_name": "Иван", "phone": "+79990000000"}
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        row = db.get_device(device_id)
+
+        card = view._order_card(row)
+
+        assert _find(card, value="VIP") is None
 
 
 class TestOrderCardShowsDefectTagsSummary:

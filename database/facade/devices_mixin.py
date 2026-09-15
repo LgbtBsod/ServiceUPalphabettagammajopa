@@ -85,6 +85,7 @@ class DevicesMixin:
                     completeness=device_data.get("completeness", ""),
                     work_items=device_data.get("work_items_json", "") or "[]",
                     defect_tags=device_data.get("defect_tags_json", "") or "[]",
+                    order_tags=device_data.get("order_tags_json", "") or "[]",
                     client_name=device_data.get("client_name", ""),
                     client_status=device_data.get("client_status", "Новый"),
                     phone=device_data.get("phone", ""),
@@ -107,6 +108,7 @@ class DevicesMixin:
                 self._sync_work_items(s, device_id, device_data.get("work_items_json", ""))
                 self._sync_photos(s, device_id, device_data.get("photos", ""))
                 self._sync_device_defects(s, device_id, device_data.get("defect_tags_json", ""))
+                self._sync_order_tags(s, device_id, device_data.get("order_tags_json", ""))
                 s.commit()
                 return device_id
         except Exception as e:
@@ -158,6 +160,7 @@ class DevicesMixin:
                     "completeness": device_data.get("completeness", ""),
                     "work_items": device_data.get("work_items_json", "") or "[]",
                     "defect_tags": device_data.get("defect_tags_json", "") or "[]",
+                    "order_tags": device_data.get("order_tags_json", "") or "[]",
                     "client_name": device_data.get("client_name", ""),
                     "client_status": device_data.get("client_status", "Новый"),
                     "phone": device_data.get("phone", ""),
@@ -217,6 +220,7 @@ class DevicesMixin:
                 self._sync_work_items(s, device_id, device_data.get("work_items_json", ""))
                 self._sync_photos(s, device_id, device_data.get("photos", ""))
                 self._sync_device_defects(s, device_id, device_data.get("defect_tags_json", ""))
+                self._sync_order_tags(s, device_id, device_data.get("order_tags_json", ""))
                 s.commit()
                 publish_device_status_changed(device_id, old_status, status, device_to_row(device))
                 return True

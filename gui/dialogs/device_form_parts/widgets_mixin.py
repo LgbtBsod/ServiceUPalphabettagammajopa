@@ -486,6 +486,43 @@ class DeviceWidgetsMixin:
         )
         self._refresh_defect_tags_frame()
 
+        # Теги заказа (OrderTagRecord) — НЕ описание поломки (см. теги
+        # неисправности выше), произвольная классификация самого заказа
+        # (VIP, срочно, повторное обращение...), тот же паттерн справочник
+        # + свободный ввод, отдельная дочерняя таблица/справочник.
+        self.order_tags_state: list[dict] = []
+        for _tag in json.loads((device_data or {}).get("order_tags") or "[]"):
+            if isinstance(_tag, dict) and str(_tag.get("text", "")).strip():
+                self.order_tags_state.append(
+                    {
+                        "text": str(_tag.get("text", "")).strip(),
+                        "is_from_dictionary": bool(_tag.get("is_from_dictionary", False)),
+                    }
+                )
+
+        ctk.CTkLabel(dev_frame, text="Теги заказа:", font=ctk.CTkFont(size=12)).grid(
+            row=len(labels) + 3, column=0, sticky="nw", pady=3
+        )
+        order_tags_input_frame = ctk.CTkFrame(dev_frame, fg_color="transparent")
+        order_tags_input_frame.grid(
+            row=len(labels) + 3, column=1, sticky="ew", padx=(8, 0), pady=3
+        )
+        order_tag_values = self.db.get_dict_values("order_tags") if self.db else []
+        self.order_tag_combo = ctk.CTkComboBox(
+            order_tags_input_frame, values=order_tag_values, width=150, height=28
+        )
+        self.order_tag_combo.set("")
+        self.order_tag_combo.pack(side="left")
+        ctk.CTkButton(
+            order_tags_input_frame, text="+", width=28, height=28, command=self._add_order_tag
+        ).pack(side="left", padx=(4, 0))
+
+        self.order_tags_frame = ctk.CTkFrame(dev_frame, fg_color="transparent")
+        self.order_tags_frame.grid(
+            row=len(labels) + 4, column=1, sticky="ew", padx=(8, 0), pady=(0, 3)
+        )
+        self._refresh_order_tags_frame()
+
         dev_frame.grid_columnconfigure(1, weight=1)
 
         # --- Правая колонка: клиент ---
@@ -689,6 +726,39 @@ class DeviceWidgetsMixin:
     def _remove_defect_tag(self, i: int) -> None:
         del self.defect_tags_state[i]
         self._refresh_defect_tags_frame()
+
+    def _refresh_order_tags_frame(self) -> None:
+        """Тот же паттерн, что _refresh_defect_tags_frame выше, но для
+        self.order_tags_state/self.order_tags_frame (метки заказа, не
+        неисправности)."""
+        for child in self.order_tags_frame.winfo_children():
+            child.destroy()
+        for i, tag in enumerate(self.order_tags_state):
+            chip = ctk.CTkFrame(
+                self.order_tags_frame, fg_color=self.colors["bg_tertiary"], corner_radius=10
+            )
+            chip.pack(side="left", padx=(0, 4), pady=2)
+            ctk.CTkLabel(chip, text=tag["text"], font=ctk.CTkFont(size=11)).pack(
+                side="left", padx=(8, 2), pady=2
+            )
+            ctk.CTkButton(
+                chip, text="×", width=18, height=18, fg_color="transparent",
+                hover_color=self.colors["bg_secondary"],
+                command=lambda i=i: self._remove_order_tag(i),
+            ).pack(side="left", padx=(0, 4))
+
+    def _add_order_tag(self) -> None:
+        text = self.order_tag_combo.get().strip()
+        if not text or any(t["text"] == text for t in self.order_tags_state):
+            return
+        dict_values = self.db.get_dict_values("order_tags") if self.db else []
+        self.order_tags_state.append({"text": text, "is_from_dictionary": text in dict_values})
+        self.order_tag_combo.set("")
+        self._refresh_order_tags_frame()
+
+    def _remove_order_tag(self, i: int) -> None:
+        del self.order_tags_state[i]
+        self._refresh_order_tags_frame()
 
     def update_receipt_time(self):
         """Обновление даты и времени приема на текущие"""

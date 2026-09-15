@@ -144,6 +144,9 @@ class DeviceSaveMixin:
                 "defect_tags_json": json.dumps(self.defect_tags_state, ensure_ascii=False)
                 if hasattr(self, "defect_tags_state")
                 else "[]",
+                "order_tags_json": json.dumps(self.order_tags_state, ensure_ascii=False)
+                if hasattr(self, "order_tags_state")
+                else "[]",
                 "client_name": client_name,
                 "client_status": self.client_status_combo.get().strip()
                 if hasattr(self, "client_status_combo")
@@ -311,6 +314,9 @@ class DeviceSaveMixin:
                     "defect_tags_json": json.dumps(self.defect_tags_state, ensure_ascii=False)
                     if hasattr(self, "defect_tags_state")
                     else "[]",
+                    "order_tags_json": json.dumps(self.order_tags_state, ensure_ascii=False)
+                    if hasattr(self, "order_tags_state")
+                    else "[]",
                     "client_name": client_name,
                     "client_status": client_status,
                     "phone": phone,
@@ -366,6 +372,9 @@ class DeviceSaveMixin:
                     "work_items_json": work_items_json,
                     "defect_tags_json": json.dumps(self.defect_tags_state, ensure_ascii=False)
                     if hasattr(self, "defect_tags_state")
+                    else "[]",
+                    "order_tags_json": json.dumps(self.order_tags_state, ensure_ascii=False)
+                    if hasattr(self, "order_tags_state")
                     else "[]",
                     "client_name": client_name,
                     "client_status": client_status,

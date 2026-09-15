@@ -257,6 +257,12 @@ class Device(Base):
     # текст, основное описание) — теги дополняют его, не заменяют.
     defect_tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
 
+    # Теги заказа (JSON, тот же формат/паттерн, что defect_tags выше) — НЕ
+    # то же самое, что defect_tags: это произвольная классификация самого
+    # ЗАКАЗА (VIP, срочно, повторное обращение...), а не описание поломки
+    # устройства. Дублируется в order_tags (OrderTagRecord).
+    order_tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+
     # Финансы
     total_price: Mapped[float] = mapped_column(Float, default=0.0)
     prepayment: Mapped[float] = mapped_column(Float, default=0.0)
@@ -321,6 +327,9 @@ class Device(Base):
     )
     defect_records: Mapped[list[DeviceDefectRecord]] = relationship(
         "DeviceDefectRecord", back_populates="device", cascade="all, delete-orphan"
+    )
+    tag_records: Mapped[list[OrderTagRecord]] = relationship(
+        "OrderTagRecord", back_populates="device", cascade="all, delete-orphan"
     )
 
     @validates("order_number")
@@ -502,6 +511,31 @@ class DeviceDefectRecord(Base):
     )
 
     device: Mapped[Device] = relationship("Device", back_populates="defect_records")
+
+
+class OrderTagRecord(Base):
+    """Метка (тег) заказа — дочерняя таблица, тот же паттерн, что
+    DeviceDefectRecord выше. НЕ описывает неисправность устройства — это
+    произвольная классификация самого заказа (VIP-клиент, срочность,
+    повторное обращение...), из справочника "order_tags"
+    (domain.constants.DICTIONARY_TYPES) либо введённая вручную
+    (is_from_dictionary=False, тот же задел под будущую аналитику
+    "Прочее", что и у DeviceDefectRecord)."""
+
+    __tablename__ = "order_tags"
+
+    device_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    text: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_from_dictionary: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    device: Mapped[Device] = relationship("Device", back_populates="tag_records")
 
 
 class CompletedRepair(Base):
