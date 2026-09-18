@@ -262,6 +262,25 @@ def get_config_path() -> Path:
     return _writable_root() / "service_center.config"
 
 
+def get_log_dir() -> Path:
+    """Get log directory as Path object (writable root, same as backups/config).
+
+    Регрессия (живой отчёт): frozen --windowed сборка на Windows не имеет
+    консоли вообще (build.py: `--windowed` на win32) — весь print()/
+    logger.error() без файлового handler'а улетает в никуда, и при падении
+    на старте (например, Flet не смог поднять локальный веб-сервер)
+    пользователь не видит АБСОЛЮТНО ничего, а без лога это невозможно
+    диагностировать удалённо. core/logging/logger.py::setup_logging() уже
+    умеет писать ротируемый файл — не хватало только пути и самого вызова
+    на старте (main.py)."""
+    return _writable_root() / "logs"
+
+
+def get_log_file() -> Path:
+    """Get the main application log file path (see get_log_dir())."""
+    return get_log_dir() / "serviceup.log"
+
+
 def get_license_key_file() -> Path:
     """Get license key file path.
 
@@ -325,6 +344,7 @@ def ensure_directories() -> None:
         get_clients_db_dir(),
         get_reports_dir(),
         get_templates_dir(),
+        get_log_dir(),
     ]
 
     for directory in directories:
@@ -361,6 +381,8 @@ __all__ = [
     "get_default_language",
     "get_export_dir",
     "get_license_key_file",
+    "get_log_dir",
+    "get_log_file",
     "get_max_workers",
     "get_photos_dir",
     # Path helpers

@@ -80,9 +80,21 @@ class ColoredFormatter(logging.Formatter):
     RESET = "\033[0m"
 
     def format(self, record: logging.LogRecord) -> str:
+        # Регрессия (живой прогон): один и тот же LogRecord доходит до ВСЕХ
+        # обработчиков, подписанных на этот логгер и его предков (root
+        # включительно, если propagate=True) — записывая цвет прямо в
+        # record.levelname без отката, мы необратимо портили его для любого
+        # обработчика, сработавшего ПОСЛЕ этого (например, файлового
+        # RotatingFileHandler из setup_logging(): в файл лога попадали
+        # сырые ANSI-коды вместо "INFO"/"ERROR", что убивает саму пользу
+        # файла лога — grep/поиск по уровню переставал работать).
         color = self.COLORS.get(record.levelname, self.RESET)
-        record.levelname = f"{color}{record.levelname}{self.RESET}"
-        return super().format(record)
+        original_levelname = record.levelname
+        record.levelname = f"{color}{original_levelname}{self.RESET}"
+        try:
+            return super().format(record)
+        finally:
+            record.levelname = original_levelname
 
 
 class LogContext:

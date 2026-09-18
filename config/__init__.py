@@ -37,6 +37,8 @@ from .settings import (
     get_default_language,
     get_export_dir,
     get_license_key_file,
+    get_log_dir,
+    get_log_file,
     get_max_workers,
     get_photos_dir,
     # Path helpers - SSOT for directory paths (replaces config.py)
@@ -78,6 +80,8 @@ __all__ = [
     "get_default_language",
     "get_export_dir",
     "get_license_key_file",
+    "get_log_dir",
+    "get_log_file",
     "get_max_workers",
     "get_photos_dir",
     # Path helpers

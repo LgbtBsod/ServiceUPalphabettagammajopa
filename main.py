@@ -70,6 +70,22 @@ def _finish_pending_update() -> bool:
         return False
 
 
+def _show_fatal_error_dialog(message: str) -> None:
+    """Последний рубеж видимости ошибки в frozen --windowed сборке (см.
+    комментарий в main() про setup_logging()) — на Windows там НЕТ консоли
+    вообще, а Tk/customtkinter к моменту падения мог и не подняться. Чистый
+    ctypes MessageBoxW не зависит ни от того, ни от другого. No-op не на
+    Windows и если сам вызов чем-то не сложится — это последняя попытка
+    сообщить об ошибке, а не единственная (лог уже записан к этому моменту)."""
+    if sys.platform != "win32":
+        return
+    with contextlib.suppress(Exception):
+        import ctypes
+
+        MB_ICONERROR = 0x10
+        ctypes.windll.user32.MessageBoxW(None, message, "ServiceUP — ошибка запуска", MB_ICONERROR)
+
+
 def _cleanup_update_leftovers() -> None:
     """Frozen only: удаляет ``<exe>.old``, оставленный предыдущей подменой
     бинарника (utils/update_manager.AutoUpdater._swap_windows_binary)."""
@@ -111,6 +127,21 @@ def main():
         sys.exit(1)
 
     ensure_directories()
+
+    # Файловый лог — ДО любого кода, который мог бы упасть (обновление,
+    # лицензия, выбор оболочки, запуск GUI). Frozen --windowed сборка на
+    # Windows не имеет консоли вообще (см. build.py) — без файла падение
+    # на старте (например, Flet не поднял локальный веб-сервер) не оставляет
+    # НИКАКОГО следа, ни для пользователя, ни для разработчика (живой
+    # отчёт: ".exe просто не запускает Flet", лог отсутствовал, пришлось
+    # гадать по запуску из исходников). setup_logging() добавляет
+    # RotatingFileHandler на корневой логгер — все existing logger.error(...)
+    # по всему проекту начинают попадать в файл, не только в консоль.
+    from config import get_log_file
+    from core.logging.logger import setup_logging
+
+    with contextlib.suppress(Exception):
+        setup_logging(log_file=get_log_file())
 
     if _finish_pending_update():
         print("⏳ Отложенное обновление передано свежему процессу — выходим.")
@@ -229,6 +260,18 @@ def main():
         import traceback
 
         traceback.print_exc()
+
+        # print()/traceback.print_exc() выше ничего не дают в frozen
+        # --windowed сборке (нет консоли — см. setup_logging() комментарий
+        # выше) — logging.critical() попадает в файловый RotatingFileHandler
+        # независимо от наличия консоли, это и есть единственный
+        # ГАРАНТИРОВАННЫЙ след падения.
+        import logging
+
+        logging.getLogger("main").critical(
+            "Критическая ошибка при запуске", exc_info=True
+        )
+
         # sys.stdin.isatty(): в frozen --windowed сборке консоли нет вообще
         # (stdin — не просто "не терминал", а зачастую None/недоступен) —
         # input() там сразу падал EOFError/TypeError, ЗАМЕНЯЯ настоящую
@@ -236,6 +279,15 @@ def main():
         if sys.stdin is not None and sys.stdin.isatty():
             with contextlib.suppress(EOFError, OSError):
                 input("\nНажмите Enter для выхода...")
+        else:
+            # Нет консоли — пользователь иначе не увидит НИЧЕГО (живой
+            # отчёт: ".exe просто не запускает Flet", ни строки на экране).
+            log_hint = ""
+            with contextlib.suppress(Exception):
+                from config import get_log_file
+
+                log_hint = f"\n\nПодробности в логе:\n{get_log_file()}"
+            _show_fatal_error_dialog(f"Не удалось запустить ServiceUP:\n{e}{log_hint}")
         sys.exit(1)
 
 
