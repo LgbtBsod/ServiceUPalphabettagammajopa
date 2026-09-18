@@ -302,41 +302,75 @@ class DevicesTableMixin:
             logger.exception(f"Ошибка фильтра просроченных: {e}")
 
     def show_today_orders(self):
-        """Показ заказов, принятых сегодня."""
+        """Показ заказов, принятых сегодня — запрос и фильтрация идут в
+        фоновом потоке (workflow-найденный баг: раньше это была единственная
+        пара методов в файле, читающая всю таблицу устройств синхронно на
+        GUI-потоке — тот же класс проблемы, что load_devices/apply_filters/
+        search_devices уже решили через AsyncLoadMixin, Task O)."""
         try:
             today = datetime.now().strftime("%Y-%m-%d")
-            all_devices = self.db.get_all_devices(include_completed=True)
-            today_orders = [
-                d
-                for d in all_devices
-                if (d.get("receipt_date", "") or "")[:10] == today
-            ]
-            self._clear_tree_and_populate(
-                today_orders, count_label_text=f"Сегодня: {len(today_orders)}"
+
+            def _fetch():
+                all_devices = self.db.get_all_devices(include_completed=True)
+                return [
+                    d
+                    for d in all_devices
+                    if (d.get("receipt_date", "") or "")[:10] == today
+                ]
+
+            def _apply(today_orders):
+                self._clear_tree_and_populate(
+                    today_orders, count_label_text=f"Сегодня: {len(today_orders)}"
+                )
+                self.update_status_bar(f"📅 Принято сегодня: {len(today_orders)}")
+
+            insert_skeleton_rows(self.tree)
+            self._run_async(
+                "devices_table",
+                _fetch,
+                _apply,
+                on_error=self._on_devices_load_error,
+                busy_indicator=getattr(self, "busy_indicator", None),
+                busy_text=Msg.LOADING_ORDERS,
             )
-            self.update_status_bar(f"📅 Принято сегодня: {len(today_orders)}")
         except Exception as e:
             logger.exception(f"Ошибка фильтра «сегодня»: {e}")
 
     def show_week_orders(self):
-        """Показ заказов за последнюю неделю."""
+        """Показ заказов за последнюю неделю — тот же async-паттерн, что
+        show_today_orders выше."""
         try:
             week_ago = datetime.now() - timedelta(days=7)
-            all_devices = self.db.get_all_devices(include_completed=True)
-            week_orders = []
-            for d in all_devices:
-                rd = d.get("receipt_date", "")
-                if rd:
-                    try:
-                        dt = datetime.strptime(rd[:10], "%Y-%m-%d")
-                        if dt >= week_ago:
-                            week_orders.append(d)
-                    except (ValueError, TypeError):
-                        pass
-            self._clear_tree_and_populate(
-                week_orders, count_label_text=f"За неделю: {len(week_orders)}"
+
+            def _fetch():
+                all_devices = self.db.get_all_devices(include_completed=True)
+                week_orders = []
+                for d in all_devices:
+                    rd = d.get("receipt_date", "")
+                    if rd:
+                        try:
+                            dt = datetime.strptime(rd[:10], "%Y-%m-%d")
+                            if dt >= week_ago:
+                                week_orders.append(d)
+                        except (ValueError, TypeError):
+                            pass
+                return week_orders
+
+            def _apply(week_orders):
+                self._clear_tree_and_populate(
+                    week_orders, count_label_text=f"За неделю: {len(week_orders)}"
+                )
+                self.update_status_bar(f"📅 За неделю: {len(week_orders)}")
+
+            insert_skeleton_rows(self.tree)
+            self._run_async(
+                "devices_table",
+                _fetch,
+                _apply,
+                on_error=self._on_devices_load_error,
+                busy_indicator=getattr(self, "busy_indicator", None),
+                busy_text=Msg.LOADING_ORDERS,
             )
-            self.update_status_bar(f"📅 За неделю: {len(week_orders)}")
         except Exception as e:
             logger.exception(f"Ошибка фильтра «неделя»: {e}")
 
