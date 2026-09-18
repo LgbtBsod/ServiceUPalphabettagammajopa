@@ -438,6 +438,134 @@ class TestTagEditorSurvivesMalformedJson:
         assert form is not None
 
 
+class TestOrderFormWorkItems:
+    """Позиции работ (_WorkItemsEditor) в форме заказа Flet — раньше
+    отсутствовали в Flet ВООБЩЕ (провал паритета с classic-GUI, где это
+    gui/widgets/work_table.py::WorkItemsTable): без списка работ Flet-заказ
+    не мог сформировать корректный акт выполненных работ и стоимость
+    приходилось вбивать одной суммой вручную, не отражая состав работ."""
+
+    def _desc_field(self, form):
+        return _find(form, label="Описание работы")
+
+    def _price_field(self, form):
+        return _find(form, label="Цена")
+
+    def _qty_field(self, form):
+        return _find(form, label="Кол-во")
+
+    def _add_button(self, form):
+        return _find(form, data="add:work_items")
+
+    def _rows(self, form):
+        # Каждая строка работы - Container(border_radius=8) с чипами тегов
+        # использующими border_radius=16, так что 8 однозначно отличает
+        # строки работ от остального дерева формы.
+        return [n for n in _walk(form) if getattr(n, "border_radius", None) == 8]
+
+    def test_adding_a_work_item_computes_the_row_total(self, db):
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        self._desc_field(form).value = "Замена экрана"
+        self._price_field(form).value = "1500"
+        self._qty_field(form).value = "2"
+        self._add_button(form).on_click(None)
+
+        rows = self._rows(form)
+        assert len(rows) == 1
+
+    def test_saving_persists_work_items_and_computes_total_price(self, db):
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        _find(form, label="Имя клиента").value = "Иван"
+        _find(form, label="Телефон").value = "+79990000000"
+        self._desc_field(form).value = "Замена экрана"
+        self._price_field(form).value = "1500"
+        self._qty_field(form).value = "2"
+        self._add_button(form).on_click(None)
+
+        _find_button(form, "Сохранить").on_click(None)
+
+        device = db.get_all_devices()[0]
+        items = json.loads(device["work_items"])
+        assert items == [{"description": "Замена экрана", "price": "1500", "quantity": 2}]
+        assert device["total_price_num"] == 3000.0
+
+    def test_manual_price_is_used_when_no_work_items_added(self, db):
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        _find(form, label="Имя клиента").value = "Иван"
+        _find(form, label="Телефон").value = "+79990000000"
+        _find(form, label="Стоимость").value = "500"
+
+        _find_button(form, "Сохранить").on_click(None)
+
+        device = db.get_all_devices()[0]
+        assert device["work_items"] in ("[]", "", None)
+        assert device["total_price_num"] == 500.0
+
+    def test_editing_a_device_preloads_its_existing_work_items(self, db):
+        device_id = db.add_device(
+            {
+                "order_number": "1",
+                "client_name": "Иван",
+                "phone": "+79990000000",
+                "work_items_json": json.dumps(
+                    [{"description": "Диагностика", "price": "500", "quantity": 1}]
+                ),
+            }
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        view.editing_id = device_id
+        form = view._render_form()
+
+        assert len(self._rows(form)) == 1
+        assert _find(form, label="Стоимость").value == "500"
+
+    def test_removing_a_work_item_and_saving_drops_it(self, db):
+        device_id = db.add_device(
+            {
+                "order_number": "1",
+                "client_name": "Иван",
+                "phone": "+79990000000",
+                "work_items_json": json.dumps(
+                    [
+                        {"description": "Диагностика", "price": "500", "quantity": 1},
+                        {"description": "Чистка", "price": "300", "quantity": 1},
+                    ]
+                ),
+            }
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        view.editing_id = device_id
+        form = view._render_form()
+
+        rows = self._rows(form)
+        assert len(rows) == 2
+        remove_btn = _find(rows[0], tooltip="Удалить позицию")
+        remove_btn.on_click(None)
+        assert len(self._rows(form)) == 1
+
+        _find_button(form, "Сохранить").on_click(None)
+
+        device = db.get_device(device_id)
+        items = json.loads(device["work_items"])
+        assert [i["description"] for i in items] == ["Чистка"]
+
+
 class TestOrderFormOrderTags:
     """Метки заказа (OrderTagRecord) — НЕ описание неисправности (см.
     TestOrderFormDefectTags выше), произвольная классификация самого

@@ -19,7 +19,7 @@ from domain.constants import (
     WARRANTIES,
     models_dict_type,
 )
-from utils.formatters import generate_order_number
+from utils.formatters import generate_order_number, parse_price_to_float
 
 from . import theme
 from .theme import PRIORITY_COLORS, STATUS_COLORS
@@ -152,6 +152,122 @@ class _TagEditor:
 
     def to_json(self) -> str:
         return json.dumps(self.state, ensure_ascii=False)
+
+
+class _WorkItemsEditor:
+    """Позиции выполненных работ (описание + цена + количество) в форме
+    заказа Flet — было ПОЛНОСТЬЮ отсутствующей фичёй (парность с
+    classic-GUI, где это gui/widgets/work_table.py::WorkItemsTable +
+    database/models.py::WorkItemsManager): без списка работ Flet-заказ не
+    мог сформировать корректный акт выполненных работ (reports/ читает
+    именно device.work_items) и стоимость приходилось вбивать вручную
+    одной суммой, не отражая реальный состав работ. Тот же JSON-контракт,
+    что и classic-GUI/facade (database/facade/child_records_mixin.py::
+    _sync_work_items): [{"description": str, "price": str, "quantity": int}]."""
+
+    def __init__(self, app, initial_json: str, colors: dict):
+        self.app = app
+        self.colors = colors
+        self.items: list[dict] = []
+        try:
+            _items = json.loads(initial_json or "[]")
+        except (json.JSONDecodeError, TypeError):
+            _items = []
+        if isinstance(_items, list):
+            for it in _items:
+                if not isinstance(it, dict):
+                    continue
+                desc = str(it.get("description", "")).strip()
+                if not desc:
+                    continue
+                try:
+                    qty = max(int(it.get("quantity", 1)), 1)
+                except (ValueError, TypeError):
+                    qty = 1
+                self.items.append(
+                    {"description": desc, "price": str(it.get("price", "")).strip(), "quantity": qty}
+                )
+
+        self.rows_column = ft.Column(spacing=4)
+        self.total_text = ft.Text("", size=13, weight=ft.FontWeight.W_600)
+        self.desc_field = ft.TextField(label="Описание работы", expand=True)
+        self.price_field = ft.TextField(
+            label="Цена", width=110, keyboard_type=ft.KeyboardType.NUMBER
+        )
+        self.qty_field = ft.TextField(
+            label="Кол-во", width=90, value="1", keyboard_type=ft.KeyboardType.NUMBER
+        )
+        self._refresh()
+
+    def _row_total(self, item: dict) -> float:
+        return parse_price_to_float(item["price"]) * item["quantity"]
+
+    def total(self) -> float:
+        return sum(self._row_total(it) for it in self.items)
+
+    def _refresh(self) -> None:
+        c = self.colors
+        self.rows_column.controls = [
+            ft.Container(
+                ft.Row(
+                    [
+                        ft.Text(it["description"], size=13, color=c["text_primary"], expand=True),
+                        ft.Text(
+                            f"{it['price']} ₽ × {it['quantity']} = {self._row_total(it):.0f} ₽",
+                            size=12, color=c["text_secondary"],
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.CLOSE, icon_size=14, width=24, height=24,
+                            tooltip="Удалить позицию",
+                            on_click=lambda _e, i=i: self._remove(i),
+                        ),
+                    ],
+                    spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                bgcolor=c["bg_card"], border=theme.card_border(c["border"]),
+                border_radius=8, padding=ft.Padding(10, 4, 4, 4),
+            )
+            for i, it in enumerate(self.items)
+        ]
+        self.total_text.value = f"Итого по работам: {self.total():.0f} ₽" if self.items else ""
+
+    def _remove(self, i: int) -> None:
+        del self.items[i]
+        self._refresh()
+        self.app.page.update()
+
+    def add(self, _e=None) -> None:
+        desc = (self.desc_field.value or "").strip()
+        if not desc:
+            return
+        price = (self.price_field.value or "").strip()
+        try:
+            qty = max(int((self.qty_field.value or "1").strip()), 1)
+        except ValueError:
+            qty = 1
+        self.items.append({"description": desc, "price": price, "quantity": qty})
+        self.desc_field.value = ""
+        self.price_field.value = ""
+        self.qty_field.value = "1"
+        self._refresh()
+        self.app.page.update()
+
+    def row(self) -> ft.Control:
+        return ft.Row(
+            [
+                self.desc_field,
+                self.price_field,
+                self.qty_field,
+                ft.IconButton(
+                    icon=ft.Icons.ADD_CIRCLE_OUTLINE, tooltip="Добавить работу",
+                    data="add:work_items", on_click=self.add,
+                ),
+            ],
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+    def to_json(self) -> str:
+        return json.dumps(self.items, ensure_ascii=False)
 
 
 def _opt(value: str, label: str | None = None) -> ft.dropdown.Option:
@@ -652,10 +768,23 @@ class OrdersView:
             (existing or {}).get("order_tags") or "[]", c,
         )
 
+        # Позиции работ (WorkItemsManager) — параллель classic-GUI. Итог по
+        # работам, если они есть, становится стоимостью заказа (та же
+        # логика, что gui/dialogs/device_form_parts/save_mixin.py: сумма
+        # работ приоритетнее вручную введённой цены).
+        work_items_editor = _WorkItemsEditor(
+            self.app, (existing or {}).get("work_items") or "[]", c
+        )
+
         f_client_name = ft.TextField(label="Имя клиента", value=(existing or {}).get("client_name", ""))
         f_phone = ft.TextField(label="Телефон", value=(existing or {}).get("phone", ""))
         f_price = ft.TextField(
-            label="Стоимость", value=str((existing or {}).get("total_price_num", "") or ""),
+            label="Стоимость",
+            value=(
+                str(int(work_items_editor.total()))
+                if work_items_editor.items
+                else str((existing or {}).get("total_price_num", "") or "")
+            ),
             keyboard_type=ft.KeyboardType.NUMBER,
         )
         f_prepay = ft.TextField(
@@ -717,7 +846,14 @@ class OrdersView:
                 "client_name": f_client_name.value,
                 "client_status": (existing or {}).get("client_status", "Новый"),
                 "phone": f_phone.value,
-                "total_price": f_price.value or "0",
+                # Сумма по позициям работ приоритетнее ручного ввода — та же
+                # логика, что и в classic-GUI (save_mixin.py: wm_total > 0
+                # побеждает total_price_entry).
+                "total_price": (
+                    str(int(work_items_editor.total()))
+                    if work_items_editor.items
+                    else (f_price.value or "0")
+                ),
                 "prepayment": f_prepay.value or "0",
                 "status": f_status.value,
                 "priority": f_priority.value,
@@ -725,15 +861,15 @@ class OrdersView:
                 "warranty": f_warranty.value or "",
                 "notes": f_notes.value,
                 # Эта форма не показывает completeness/appearance/expense/
-                # фото/работы — но update_device()/_sync_photos()/
-                # _sync_work_items() трактуют ОТСУТСТВИЕ ключа как "очистить
-                # всё" (device_data.get(key, "") -> пустая строка -> все
-                # существующие фото/работы удаляются). Пробрасываем текущие
-                # значения без изменений, а не молчим о них.
+                # фото — но update_device()/_sync_photos() трактуют
+                # ОТСУТСТВИЕ ключа как "очистить всё" (device_data.get(key,
+                # "") -> пустая строка -> все существующие фото удаляются).
+                # Пробрасываем текущие значения без изменений, а не молчим
+                # о них.
                 "completeness": (existing or {}).get("completeness", ""),
                 "appearance": (existing or {}).get("appearance", ""),
                 "expense": (existing or {}).get("expense", "0"),
-                "work_items_json": (existing or {}).get("work_items", ""),
+                "work_items_json": work_items_editor.to_json(),
                 "photos": (existing or {}).get("photos", ""),
             }
 
@@ -793,6 +929,11 @@ class OrdersView:
                         ft.Container(f_client_name, col={"sm": 12, "md": 6}),
                         ft.Container(f_phone, col={"sm": 12, "md": 6}),
                     ]),
+                    ft.Text("Работы", size=13, weight=ft.FontWeight.W_600, color=c["text_secondary"]),
+                    work_items_editor.rows_column,
+                    work_items_editor.row(),
+                    work_items_editor.total_text,
+                    ft.Divider(color=c["border"]),
                     ft.ResponsiveRow([
                         ft.Container(f_price, col={"sm": 12, "md": 6}),
                         ft.Container(f_prepay, col={"sm": 12, "md": 6}),
