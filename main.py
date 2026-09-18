@@ -98,10 +98,16 @@ def main():
         print(_HELP)
         return
 
+    # --ui= разбирается здесь (не ниже, где раньше был единственный разбор)
+    # специально ДО проверки зависимостей — check_dependencies() должен
+    # знать, понадобится ли Flet, чтобы не пропустить отсутствующий пакет
+    # (см. её докстринг).
+    ui_override = next((a.split("=", 1)[1] for a in args if a.startswith("--ui=")), None)
+
     # ==================== ПРОВЕРКА ЗАВИСИМОСТЕЙ ====================
     from bootstrap import check_dependencies, ensure_directories, initialize_kernel
 
-    if not check_dependencies():
+    if not check_dependencies(ui_override):
         sys.exit(1)
 
     ensure_directories()
@@ -139,8 +145,6 @@ def main():
     # Kernel — единая точка сборки зависимостей (Database, менеджеры) для
     # gui/main_window.py, gui_flet/app.py и pwa/server.py.
     core = initialize_kernel()
-
-    ui_override = next((a.split("=", 1)[1] for a in args if a.startswith("--ui=")), None)
 
     from config import APP_VERSION
 

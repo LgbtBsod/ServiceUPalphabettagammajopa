@@ -6,19 +6,46 @@
 """
 
 
-def check_dependencies() -> bool:
+def check_dependencies(ui_mode: str | None = None) -> bool:
     """Проверка наличия необходимых пакетов через requirements.txt.
+
+    Args:
+        ui_mode: "classic"/"flet", если оболочка задана явно через --ui=,
+            иначе None (интерактивный выбор — доступны обе оболочки, значит
+            нужны пакеты для обеих). customtkinter/PIL нужны ВСЕГДА, даже
+            при --ui=flet — main.py использует ctk.CTk() для диалогов
+            лицензии/обновления независимо от выбранной оболочки заказов.
+            flet нужен, только если пользователь может попасть в Flet-режим
+            (--ui=flet или сам выбор ещё не сделан).
 
     Returns:
         bool: True если все зависимости установлены, иначе False
+
+    Регрессия (живой отчёт с чужой машины, свежий git-checkout без venv):
+    main.py --ui=flet падал сырым traceback'ом ModuleNotFoundError: No
+    module named 'flet' вместо понятного "Отсутствуют обязательные пакеты"
+    — эта проверка знала только про customtkinter/PIL (нужны классической
+    оболочке), про flet не знала вообще, хотя main.py поддерживает выбор
+    Flet-оболочки (--ui=flet или диалог выбора). Заодно добавлены pydantic/
+    sqlalchemy — та же болезнь: main.py импортирует их до любого выбора
+    оболочки (ensure_directories()/initialize_kernel()), а эта проверка
+    их не знала вообще.
     """
     missing_packages = []
 
-    # Проверяем обязательные пакеты
+    # Проверяем обязательные пакеты — customtkinter/PIL/pydantic/sqlalchemy
+    # нужны ВСЕГДА независимо от ui_mode: config/settings.py (pydantic) и
+    # database/ (sqlalchemy) импортируются в main.py до любого выбора
+    # оболочки (ensure_directories()/initialize_kernel()), а
+    # customtkinter/PIL — диалогами лицензии/обновления даже при --ui=flet.
     required_packages = {
         "customtkinter": "customtkinter",
         "PIL": "Pillow",
+        "pydantic": "pydantic",
+        "sqlalchemy": "sqlalchemy",
     }
+    if ui_mode != "classic":
+        required_packages["flet"] = "flet[web]"
 
     for module_name, package_name in required_packages.items():
         try:
