@@ -101,11 +101,18 @@ class DeviceDialogsMixin:
 
         item = self.tree.item(selected[0])
         values = item["values"]
-        if len(values) < 6:
+        if len(values) < 7:
             return
 
-        client_name = values[4]
-        client_phone = values[5]
+        # Workflow-найденный баг: колонки Treeview (см. columns tuple в
+        # widgets_mixin.py) — 0=Заказ№, 1=Дата приёма, 2=Дней, 3=Дата
+        # выдачи, 4=Устройство, 5=Клиент, 6=Телефон. Раньше здесь читались
+        # values[4]/values[5] (Устройство/Клиент) вместо values[5]/values[6]
+        # (Клиент/Телефон) — окно истории открывалось с именем устройства
+        # вместо имени клиента и с именем клиента вместо телефона, так что
+        # поиск по client_db всегда находил пустую/чужую историю.
+        client_name = values[5]
+        client_phone = values[6]
 
         if client_name and client_phone:
             order_number_display = values[0]

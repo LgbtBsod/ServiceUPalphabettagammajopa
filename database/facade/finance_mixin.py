@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from database.facade.shared import logger
 from database.sqlalchemy_models import FinanceRecord
@@ -80,6 +80,22 @@ class FinanceMixin:
         except Exception as e:
             logger.error(f"Ошибка обновления расхода: {e}", exc_info=True)
             return False
+
+    def _delete_finance_record(self, s: Session, order_number: str) -> None:
+        """Удаляет FinanceRecord заказа — вызывается ИЗ delete_device()
+        (devices_mixin.py) в той же сессии/транзакции, что и сам Device.
+
+        Workflow-найденный баг: FinanceRecord связан с заказом только по
+        order_number (обычная текстовая колонка, НЕ ForeignKey — в отличие
+        от work_item_records/photo_records/defect_records/tag_records,
+        у которых есть ondelete="CASCADE"), поэтому ORM-каскад при
+        s.delete(device) его не трогает вообще. Без этой чистки удалённый
+        заказ навсегда оставлял фантомную финзапись, которую
+        get_finances()/get_finance_summary() продолжали суммировать —
+        необратимо и молча завышая выручку/прибыль магазина."""
+        if not order_number:
+            return
+        s.execute(delete(FinanceRecord).where(FinanceRecord.order_number == order_number))
 
     def _upsert_finance_record(
         self, s: Session, order_number: str, completion_date: str, income: float, expense: float

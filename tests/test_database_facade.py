@@ -185,6 +185,31 @@ class TestDeviceCRUD:
         assert len(devices) >= 2
 
 
+class TestDeleteDeviceCleansUpFinanceRecord:
+    """Workflow-найденный баг: FinanceRecord привязан к заказу только по
+    order_number (обычная текстовая колонка, НЕ ForeignKey — в отличие от
+    work_item_records/photo_records/defect_records/tag_records, у которых
+    есть ondelete="CASCADE"), поэтому ORM-каскад при delete_device() его
+    не трогал вообще. Удалённый заказ навсегда оставлял фантомную
+    финзапись, которую get_finances()/get_finance_summary() продолжали
+    суммировать — тихо и необратимо завышая выручку/прибыль магазина."""
+
+    def test_deleting_a_device_removes_its_finance_record(self, db):
+        device_id = db.add_device(_sample_device(total_price="1500", expense="300"))
+        assert db.update_device_status(device_id, "Выдан клиенту") is True
+        assert any(f["order_number"] == "00001" for f in db.get_finances())
+
+        assert db.delete_device(device_id) is True
+
+        assert not any(f["order_number"] == "00001" for f in db.get_finances())
+
+    def test_deleting_a_device_without_a_finance_record_still_succeeds(self, db):
+        """Большинство заказов удаляют ДО выдачи клиенту — финзаписи ещё
+        нет, чистка обязана быть безопасным no-op, а не падать."""
+        device_id = db.add_device(_sample_device())
+        assert db.delete_device(device_id) is True
+
+
 class TestDeviceDefects:
     """device_defects (DeviceDefectRecord) — дочерняя таблица тегов-
     неисправностей, дополняющая devices.defect (свободный текст),
@@ -426,6 +451,60 @@ class TestUpdateDeviceStatusWithLegacyTextTotalPrice:
         assert record["income"] == 1500.0
         assert record["expense"] == 300.0
         assert record["profit"] == 1200.0
+
+
+class TestUpdateDeviceChangeDetectionWithLegacyTextTotalPrice:
+    """Workflow-найденный баг (Survey/Verify sweep): update_device()'s
+    BOBF-детект ("открыл заказ, ничего не поменял, сохранил — запись не
+    трогаем") сравнивал getattr(device, field) (str на legacy TEXT-схеме,
+    см. TestUpdateDeviceStatusWithLegacyTextTotalPrice выше) с new_value
+    (всегда float — parse_price_to_float чуть выше в update_device()) без
+    нормализации обеих сторон. 'x' != y.y — Python-строка никогда не равна
+    float, так что этот no-op ресейв ВСЕГДА ложно считался изменением:
+    version_id бампался (ложный конфликт оптимистичной блокировки для
+    другого пользователя, который в этот момент реально ничего не менял),
+    updated_by/updated_at переписывались, и (если статус "Выдан клиенту")
+    зря перезаписывалась финзапись — на КАЖДОМ legacy-заказе."""
+
+    def test_resaving_with_identical_total_price_does_not_bump_version(
+        self, legacy_db
+    ):
+        device_id = legacy_db.add_device(
+            _sample_device(total_price="7500", prepayment="1000")
+        )
+        before = legacy_db.get_device(device_id)
+        assert before["version"] == 1
+
+        ok = legacy_db.update_device(
+            device_id, _sample_device(total_price="7500", prepayment="1000")
+        )
+        assert ok is True
+
+        after = legacy_db.get_device(device_id)
+        assert after["version"] == 1, (
+            "resaving with identical total_price/prepayment must NOT be "
+            "misdetected as a real change on a legacy TEXT-column device — "
+            "a false version bump defeats optimistic locking for other "
+            "users editing the same order"
+        )
+
+    def test_resaving_with_a_genuinely_different_total_price_still_bumps_version(
+        self, legacy_db
+    ):
+        """The fix must not defeat REAL change detection — only the
+        str-vs-float false positive."""
+        device_id = legacy_db.add_device(
+            _sample_device(total_price="7500", prepayment="1000")
+        )
+
+        ok = legacy_db.update_device(
+            device_id, _sample_device(total_price="8000", prepayment="1000")
+        )
+        assert ok is True
+
+        after = legacy_db.get_device(device_id)
+        assert after["version"] == 2
+        assert after["total_price_num"] == 8000.0
 
 
 class TestCalculate:

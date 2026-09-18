@@ -178,7 +178,19 @@ class DevicesMixin:
 
                 changed = False
                 for field, new_value in new_values.items():
-                    if getattr(device, field) != new_value:
+                    old_value = getattr(device, field)
+                    if field in ("total_price", "prepayment"):
+                        # Workflow-найденный баг: new_value здесь всегда float
+                        # (parse_price_to_float чуть выше), а old_value на
+                        # legacy-схеме (total_price/prepayment TEXT, см.
+                        # комментарий в device_to_row()) приходит str — без
+                        # нормализации сравнение ЛОЖНО считало "изменено"
+                        # при каждом ресейве без единой реальной правки,
+                        # бампая version_id (ложные конфликты оптимистичной
+                        # блокировки у других пользователей) и лишний раз
+                        # перезаписывая финзапись.
+                        old_value = parse_price_to_float(old_value)
+                    if old_value != new_value:
                         setattr(device, field, new_value)
                         changed = True
 
@@ -302,7 +314,11 @@ class DevicesMixin:
                 device = s.get(DeviceModel, device_id)
                 if device is None:
                     return False
-                s.delete(device)  # cascade удаляет work_item_records/photo_records
+                order_number = device.order_number
+                s.delete(device)  # cascade удаляет work_item_records/photo_records/...
+                # FinanceRecord — НЕ по ForeignKey (см. _delete_finance_record),
+                # каскад его не подхватывает, чистим отдельно в той же транзакции.
+                self._delete_finance_record(s, order_number)
                 s.commit()
                 return True
         except Exception as e:
