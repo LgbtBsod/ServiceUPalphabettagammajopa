@@ -68,7 +68,18 @@ class WidgetsMixin:
         if hasattr(self, "hide_completed_var"):
             self.hide_completed_var.set(current_hide)
 
-        self.load_devices()
+        # Workflow-найденный баг: load_devices() ниже честно "восстанавливал"
+        # текст фильтров выше (через .set(), который у CTkComboBox не зовёт
+        # command=), но сам перечитывал ТОЛЬКО hide_completed_var —
+        # status/priority/device_type/brand игнорировались, так что смена
+        # темы в Настройках тихо сбрасывала активный фильтр таблицы на "всё",
+        # хотя выпадающие списки продолжали визуально показывать прежний
+        # выбор. apply_filters() — тот же метод, что реально применяет все
+        # эти фильтры при живом выборе пользователя, см. devices_table_mixin.py.
+        if hasattr(self, "status_filter"):
+            self.apply_filters()
+        else:
+            self.load_devices()
 
     def create_widgets(self):
         """Создание виджетов главного окна.

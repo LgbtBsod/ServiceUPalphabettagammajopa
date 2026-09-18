@@ -229,6 +229,36 @@ class TestOrderFormSave:
             f"ожидались 2 разных номера заказа, получено: {numbers}"
         )
 
+    def test_new_order_number_is_zero_padded_like_the_classic_gui_and_pwa(self, db):
+        """Workflow-найденный баг: Flet собирал order_number через голое
+        str(db.get_next_order_number()) вместо общего
+        utils.formatters.generate_order_number() (f"{counter:05d}"), которым
+        пользуются и classic GUI (save_mixin.py), и PWA (pwa/server.py) — в
+        общем списке заказов Flet-заказы выглядели как "1" рядом с "00002"
+        у остальных."""
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        _find(form, label="Имя клиента").value = "Клиент"
+        _find(form, label="Телефон").value = "+79990000000"
+        _find_button(form, "Сохранить").on_click(None)
+
+        order_number = db.get_all_devices()[0]["order_number"]
+        assert order_number == "00001"
+
+    def test_new_order_form_preview_title_is_also_zero_padded(self, db):
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        title = _find(form, weight=ft.FontWeight.BOLD)
+        assert title is not None
+        assert "00001" in title.value
+        assert "№1 " not in title.value
+
 
 class TestOrderFormDefectTags:
     """Теги-неисправности (DeviceDefectRecord) в форме заказа Flet —
@@ -357,6 +387,55 @@ class TestOrderFormDefectTags:
 
         tags_row = self._tags_row(form)
         assert len(tags_row.controls) == 1
+
+
+class TestTagEditorSurvivesMalformedJson:
+    """Workflow-найденный баг: _TagEditor.__init__() звал json.loads() без
+    try/except, в отличие от _tags_list() того же модуля (сводка тегов в
+    строке списка заказов), у которой этот guard уже был. Любая строка
+    устройства с невалидным defect_tags/order_tags (битая запись, ручная
+    правка БД, будущий legacy-путь) роняла построение формы редактирования
+    — а поскольку on_edit() выставляет self.mode = "form" ДО падения,
+    экран Заказов оставался залипшим на повторном падении при каждом
+    следующем визите до перезапуска процесса."""
+
+    def _corrupt_column(self, db, device_id: int, column: str) -> None:
+        from database.sqlalchemy_models import Device as DeviceModel
+
+        with db._session() as s:
+            device = s.get(DeviceModel, device_id)
+            setattr(device, column, "{not valid json")
+            s.commit()
+
+    def test_editing_a_device_with_malformed_defect_tags_json_does_not_crash(self, db):
+        device_id = db.add_device(
+            {"order_number": "1", "client_name": "Иван", "phone": "+79990000000"}
+        )
+        self._corrupt_column(db, device_id, "defect_tags")
+
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        view.editing_id = device_id
+
+        form = view._render_form()
+
+        assert form is not None
+
+    def test_editing_a_device_with_malformed_order_tags_json_does_not_crash(self, db):
+        device_id = db.add_device(
+            {"order_number": "1", "client_name": "Иван", "phone": "+79990000000"}
+        )
+        self._corrupt_column(db, device_id, "order_tags")
+
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        view.editing_id = device_id
+
+        form = view._render_form()
+
+        assert form is not None
 
 
 class TestOrderFormOrderTags:

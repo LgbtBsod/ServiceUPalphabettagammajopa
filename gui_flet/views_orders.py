@@ -19,6 +19,7 @@ from domain.constants import (
     WARRANTIES,
     models_dict_type,
 )
+from utils.formatters import generate_order_number
 
 from . import theme
 from .theme import PRIORITY_COLORS, STATUS_COLORS
@@ -63,14 +64,26 @@ class _TagEditor:
         self.label = label
         self.colors = colors
         self.state: list[dict] = []
-        for _tag in json.loads(initial_json or "[]"):
-            if isinstance(_tag, dict) and str(_tag.get("text", "")).strip():
-                self.state.append(
-                    {
-                        "text": str(_tag.get("text", "")).strip(),
-                        "is_from_dictionary": bool(_tag.get("is_from_dictionary", False)),
-                    }
-                )
+        # Workflow-найденный баг: без try/except невалидный JSON в колонке
+        # (битая ручная правка БД, повреждённая запись) ронял диалог
+        # прямо в конструкторе — и, что хуже, self.mode уже успевал стать
+        # "form" ДО падения (см. on_edit), так что экран Заказов оставался
+        # намертво сломан при каждом следующем открытии до перезапуска
+        # процесса. Тот же guard, что уже есть у _tags_list() ниже —
+        # только там достаточно было её впервые добавить, а не забыть тут.
+        try:
+            _tags = json.loads(initial_json or "[]")
+        except (json.JSONDecodeError, TypeError):
+            _tags = []
+        if isinstance(_tags, list):
+            for _tag in _tags:
+                if isinstance(_tag, dict) and str(_tag.get("text", "")).strip():
+                    self.state.append(
+                        {
+                            "text": str(_tag.get("text", "")).strip(),
+                            "is_from_dictionary": bool(_tag.get("is_from_dictionary", False)),
+                        }
+                    )
         self.chips_row = ft.Row(wrap=True, spacing=6, run_spacing=6, data=f"tags:{dict_type}")
         # Контейнер, а не сам Dropdown — после добавления тега поле нужно
         # ОЧИСТИТЬ, а простановка .value/.text = "" плюс page.update()
@@ -562,7 +575,11 @@ class OrdersView:
             self.mode = "list"
             return self._render_list()
 
-        order_preview = existing["order_number"] if existing else str(db.peek_next_order_number())
+        order_preview = (
+            existing["order_number"]
+            if existing
+            else generate_order_number(db.peek_next_order_number())
+        )
 
         device_type_value = (existing or {}).get("device_type", "")
         brand_value = (existing or {}).get("brand", "")
@@ -743,7 +760,7 @@ class OrdersView:
                 # — реальный номер берём здесь, непосредственно перед
                 # вставкой (та же точка, что и save_mixin.py в классическом
                 # интерфейсе).
-                real_order_number = str(db.get_next_order_number())
+                real_order_number = generate_order_number(db.get_next_order_number())
                 device_data["order_number"] = real_order_number
                 device_data["receipt_date"] = _now_str()
                 device_data["completion_date"] = ""
