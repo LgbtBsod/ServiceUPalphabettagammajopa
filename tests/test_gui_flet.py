@@ -132,9 +132,17 @@ def _find_button(control, label: str):
 class _FakePage:
     def __init__(self):
         self.dialogs = []
+        self.services = []
 
     def update(self):
         pass
+
+    def run_task(self, coro_fn, *args, **kwargs):
+        """Тестовый стаб: реальный Page.run_task планирует корутину в
+        asyncio-цикле Flet, которого в этих (без реального Page) тестах
+        нет. Тесты фич, которым нужен настоящий асинхронный запуск
+        (например, добавление фото через FilePicker), не используют
+        _FakeApp — см. отдельный интеграционный live-прогон в браузере."""
 
     def show_dialog(self, dialog):
         self.dialogs.append(dialog)
@@ -144,9 +152,28 @@ class _FakePage:
             self.dialogs.pop()
 
 
+class _FakePhotoManager:
+    """_PhotosEditor только строит форму в этих тестах (реальный выбор
+    файлов требует настоящего asyncio-цикла Flet, недоступного с
+    _FakePage/_FakeApp) - методы здесь просто не должны падать при
+    построении/удалении существующих фото."""
+
+    def save_photo(self, *_a, **_kw):
+        return None
+
+    def delete_photos(self, *_a, **_kw):
+        return True
+
+
+class _FakeCore:
+    def get_module_api(self, _name):
+        return _FakePhotoManager()
+
+
 class _FakeApp:
     def __init__(self, db):
         self.db = db
+        self.core = _FakeCore()
         self.colors = colors("light")
         self.page = _FakePage()
         self.snackbars = []
@@ -564,6 +591,106 @@ class TestOrderFormWorkItems:
         device = db.get_device(device_id)
         items = json.loads(device["work_items"])
         assert [i["description"] for i in items] == ["Чистка"]
+
+
+class TestOrderFormPhotos:
+    """Фотографии устройства (_PhotosEditor) в форме заказа Flet — раньше
+    отсутствовали в Flet ВООБЩЕ (провал паритета с classic-GUI, где это
+    gui/dialogs/device_form_parts/photos_mixin.py + managers/photo_manager.py):
+    без них Flet-заказ нельзя было задокументировать фотографиями. Реальный
+    выбор файлов (_PhotosEditor.add()) асинхронный и требует настоящего
+    Flet Page/asyncio-цикла — здесь проверяется предзагрузка существующих
+    фото и их удаление/сохранение, а не сам pick_files()."""
+
+    def _delete_buttons(self, form):
+        return [n for n in _walk(form) if getattr(n, "tooltip", None) == "Удалить фото"]
+
+    def test_editing_a_device_preloads_its_existing_photos(self, db):
+        device_id = db.add_device(
+            {
+                "order_number": "1",
+                "client_name": "Иван",
+                "phone": "+79990000000",
+                "photos": "a.jpg,b.jpg",
+            }
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        view.editing_id = device_id
+        form = view._render_form()
+
+        assert len(self._delete_buttons(form)) == 2
+
+    def test_new_device_starts_with_no_photos(self, db):
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        assert self._delete_buttons(form) == []
+
+    def test_removing_a_photo_and_saving_drops_it_from_the_csv(self, db):
+        device_id = db.add_device(
+            {
+                "order_number": "1",
+                "client_name": "Иван",
+                "phone": "+79990000000",
+                "photos": "a.jpg,b.jpg",
+            }
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        view.editing_id = device_id
+        form = view._render_form()
+
+        buttons = self._delete_buttons(form)
+        assert len(buttons) == 2
+        buttons[0].on_click(None)
+        assert len(self._delete_buttons(form)) == 1
+
+        _find_button(form, "Сохранить").on_click(None)
+
+        device = db.get_device(device_id)
+        assert device["photos"] == "b.jpg"
+
+    def test_saving_a_new_device_with_no_photos_added_stores_empty_string(self, db):
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        _find(form, label="Имя клиента").value = "Иван"
+        _find(form, label="Телефон").value = "+79990000000"
+        _find_button(form, "Сохранить").on_click(None)
+
+        device = db.get_all_devices()[0]
+        assert device["photos"] in ("", None)
+
+    def test_editing_preserves_untouched_photos_alongside_other_edits(self, db):
+        """Регрессия того же класса, что уже покрыт для work_items/photos в
+        TestOrderFormSave: правка ДРУГОГО поля не должна тихо стереть
+        нетронутые фото."""
+        device_id = db.add_device(
+            {
+                "order_number": "1",
+                "client_name": "Иван",
+                "phone": "+79990000000",
+                "photos": "a.jpg,b.jpg",
+            }
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        view.editing_id = device_id
+        form = view._render_form()
+
+        _find(form, label="Заметки").value = "Новая заметка"
+        _find_button(form, "Сохранить").on_click(None)
+
+        device = db.get_device(device_id)
+        assert device["photos"] == "a.jpg,b.jpg"
 
 
 class TestOrderFormOrderTags:

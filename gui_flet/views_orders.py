@@ -7,7 +7,12 @@ update_device_status) — тот же контракт данных, трети�
 
 from __future__ import annotations
 
+import base64
+import contextlib
+import io
 import json
+import os
+import tempfile
 
 import flet as ft
 
@@ -270,6 +275,146 @@ class _WorkItemsEditor:
         return json.dumps(self.items, ensure_ascii=False)
 
 
+class _PhotosEditor:
+    """Фотографии устройства в форме заказа Flet — ещё одна ранее
+    отсутствовавшая фича (паритет с gui/dialogs/device_form_parts/
+    photos_mixin.py): без неё Flet-заказ нельзя было задокументировать
+    фотографиями состояния/дефектов устройства на приёме.
+
+    pick_files(with_data=True) отдаёт содержимое файла прямо в ответе
+    (тот же приём, что ActBuilderView._on_import_click в
+    views_act_builder.py) — не нужен отдельный upload_dir/upload_url,
+    которые нужны были бы для потокового аплоада большого файла. Каждый
+    выбранный файл пишется во временный файл и передаётся в
+    managers/photo_manager.py::PhotoManager.save_photo() — тот же
+    контракт (source_path на диске), что и у classic-GUI, только источник
+    там — реальный путь из filedialog, а здесь — временный файл с
+    байтами из браузера."""
+
+    def __init__(
+        self, app, photo_manager, file_picker: ft.FilePicker,
+        client_name_field: ft.TextField, phone_field: ft.TextField,
+        order_number: str, initial_csv: str, colors: dict,
+    ):
+        self.app = app
+        self.photo_manager = photo_manager
+        self.file_picker = file_picker
+        self.client_name_field = client_name_field
+        self.phone_field = phone_field
+        self.order_number = order_number
+        self.colors = colors
+        self.paths: list[str] = [p.strip() for p in (initial_csv or "").split(",") if p.strip()]
+        self.thumbnails_row = ft.Row(wrap=True, spacing=8, run_spacing=8)
+        self._refresh()
+
+    @staticmethod
+    def _thumb_base64(path: str) -> str | None:
+        try:
+            from PIL import Image
+
+            with Image.open(path) as img:
+                img.thumbnail((80, 80))
+                buf = io.BytesIO()
+                img.convert("RGB").save(buf, format="JPEG", quality=70)
+                return base64.b64encode(buf.getvalue()).decode()
+        except Exception:
+            return None
+
+    def _refresh(self) -> None:
+        c = self.colors
+        controls = []
+        for i, path in enumerate(self.paths):
+            b64 = self._thumb_base64(path)
+            thumb = (
+                ft.Image(
+                    src_base64=b64, width=80, height=80,
+                    fit=ft.ImageFit.COVER, border_radius=8,
+                )
+                if b64
+                else ft.Container(
+                    width=80, height=80, bgcolor=c["bg_card"], border_radius=8,
+                    border=theme.card_border(c["border"]),
+                )
+            )
+            controls.append(
+                ft.Column(
+                    [
+                        thumb,
+                        ft.IconButton(
+                            icon=ft.Icons.DELETE_OUTLINE, icon_size=16, width=28, height=28,
+                            tooltip="Удалить фото",
+                            on_click=lambda _e, i=i: self._remove(i),
+                        ),
+                    ],
+                    spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                )
+            )
+        self.thumbnails_row.controls = controls
+
+    def _remove(self, i: int) -> None:
+        path = self.paths.pop(i)
+        with contextlib.suppress(Exception):
+            self.photo_manager.delete_photos([path])
+        self._refresh()
+        self.app.page.update()
+
+    def add(self, _e=None) -> None:
+        async def _run() -> None:
+            client_name = (self.client_name_field.value or "").strip()
+            client_phone = (self.phone_field.value or "").strip()
+            if not client_name or not client_phone:
+                self.app.show_snackbar(
+                    "Сначала укажите имя клиента и телефон", error=True
+                )
+                return
+            try:
+                files = await self.file_picker.pick_files(
+                    dialog_title="Выберите фотографии",
+                    file_type=ft.FilePickerFileType.IMAGE,
+                    allow_multiple=True,
+                    with_data=True,
+                )
+            except Exception as e:
+                self.app.show_snackbar(f"Не удалось открыть выбор файлов: {e}", error=True)
+                return
+            if not files:
+                return
+
+            saved = 0
+            for picked in files:
+                if not picked.bytes:
+                    continue
+                suffix = os.path.splitext(picked.name)[1] or ".jpg"
+                fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+                try:
+                    with os.fdopen(fd, "wb") as out:
+                        out.write(picked.bytes)
+                    dest = self.photo_manager.save_photo(
+                        tmp_path, client_name, client_phone, self.order_number, "device"
+                    )
+                    if dest:
+                        self.paths.append(dest)
+                        saved += 1
+                finally:
+                    with contextlib.suppress(OSError):
+                        os.remove(tmp_path)
+
+            if saved:
+                self._refresh()
+                self.app.show_snackbar(f"Добавлено фото: {saved}")
+            else:
+                self.app.show_snackbar("Не удалось сохранить фото", error=True)
+            self.app.page.update()
+
+        self.app.page.run_task(_run)
+
+    def row(self) -> ft.Control:
+        return ft.OutlinedButton("📷 Добавить фото", on_click=self.add)
+
+    def to_csv(self) -> str:
+        return ",".join(self.paths)
+
+
 def _opt(value: str, label: str | None = None) -> ft.dropdown.Option:
     """ft.dropdown.Option(value) сам по себе НЕ показывает текст — первый
     позиционный параметр это key, а text по умолчанию None (значение есть,
@@ -433,6 +578,12 @@ class OrdersView:
         self.editing_id: int | None = None
         self.search_text = ""
         self.status_filter = _ALL
+        # Персистентный на весь OrdersView (не пересоздаётся на каждый
+        # _render_form()) — тот же паттерн, что ActBuilderView._file_picker
+        # в views_act_builder.py: FilePicker — service-контрол, повторная
+        # регистрация в page.services на каждый рендер формы копила бы дубли.
+        self._photo_picker = ft.FilePicker()
+        self.app.page.services.append(self._photo_picker)
 
     # ── публичный рендер ─────────────────────────────────────
 
@@ -778,6 +929,18 @@ class OrdersView:
 
         f_client_name = ft.TextField(label="Имя клиента", value=(existing or {}).get("client_name", ""))
         f_phone = ft.TextField(label="Телефон", value=(existing or {}).get("phone", ""))
+
+        # Фотографии устройства — параллель classic-GUI (см. класс
+        # _PhotosEditor выше). "new" — тот же сентинел, что classic-GUI
+        # использует для ещё не сохранённого заказа (order_number станет
+        # известен только после реального сохранения).
+        photos_editor = _PhotosEditor(
+            self.app, self.app.core.get_module_api("photos"), self._photo_picker,
+            f_client_name, f_phone,
+            (existing or {}).get("order_number") if existing else "new",
+            (existing or {}).get("photos", ""), c,
+        )
+
         f_price = ft.TextField(
             label="Стоимость",
             value=(
@@ -860,17 +1023,16 @@ class OrdersView:
                 "engineer": f_engineer.value,
                 "warranty": f_warranty.value or "",
                 "notes": f_notes.value,
-                # Эта форма не показывает completeness/appearance/expense/
-                # фото — но update_device()/_sync_photos() трактуют
-                # ОТСУТСТВИЕ ключа как "очистить всё" (device_data.get(key,
-                # "") -> пустая строка -> все существующие фото удаляются).
+                # Эта форма не показывает completeness/appearance/expense —
+                # но update_device() трактует ОТСУТСТВИЕ ключа как "очистить
+                # всё" (device_data.get(key, "") -> пустая строка).
                 # Пробрасываем текущие значения без изменений, а не молчим
                 # о них.
                 "completeness": (existing or {}).get("completeness", ""),
                 "appearance": (existing or {}).get("appearance", ""),
                 "expense": (existing or {}).get("expense", "0"),
                 "work_items_json": work_items_editor.to_json(),
-                "photos": (existing or {}).get("photos", ""),
+                "photos": photos_editor.to_csv(),
             }
 
             if editing:
@@ -929,6 +1091,10 @@ class OrdersView:
                         ft.Container(f_client_name, col={"sm": 12, "md": 6}),
                         ft.Container(f_phone, col={"sm": 12, "md": 6}),
                     ]),
+                    ft.Text("Фото", size=13, weight=ft.FontWeight.W_600, color=c["text_secondary"]),
+                    photos_editor.thumbnails_row,
+                    photos_editor.row(),
+                    ft.Divider(color=c["border"]),
                     ft.Text("Работы", size=13, weight=ft.FontWeight.W_600, color=c["text_secondary"]),
                     work_items_editor.rows_column,
                     work_items_editor.row(),
