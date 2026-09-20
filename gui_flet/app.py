@@ -7,11 +7,13 @@ Database через core.get_db_access(), как у gui/main_window.py.
 
 Сознательно НЕ полный паритет с customtkinter-интерфейсом с первого дня:
 покрыты Баланс/Дашборд, Заказы (список, создание, редактирование, смена
-статуса, поиск, фильтр по статусу, печать актов), Макет акта (свободный
-canvas-билдер + импорт из файла — views_act_builder.py), Справочники
-(бренды/типы устройств/модели/инженеры и т.д. — views_dictionaries.py) и
-Настройки (тема, апдейтер). Фото к заказам и сотрудники — пока только в
-классическом интерфейсе (gui/); использовать его для этих задач.
+статуса, поиск, фильтр по статусу, печать актов, фото, работы), Макет акта
+(свободный canvas-билдер + импорт из файла — views_act_builder.py),
+Справочники (бренды/типы устройств/модели/инженеры и т.д. —
+views_dictionaries.py), Сотрудники + роли/полномочия (views_employees.py,
+см. TODO_RBAC_ROADMAP.md) и Настройки (тема, апдейтер). Финансовый
+разбор по периодам, клиентская история и управление бэкапами — пока только
+в классическом интерфейсе (gui/); использовать его для этих задач.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ import flet as ft
 from . import theme
 from .views_act_builder import ActBuilderView
 from .views_dictionaries import DictionariesView
+from .views_employees import EmployeesView
 from .views_orders import OrdersView
 from .views_settings import DashboardView, SettingsView
 
@@ -33,6 +36,7 @@ _NAV: list[tuple[str, str, object, object]] = [
     ("orders", "Заказы", ft.Icons.RECEIPT_LONG_OUTLINED, ft.Icons.RECEIPT_LONG),
     ("act_builder", "Макет акта", ft.Icons.DESIGN_SERVICES_OUTLINED, ft.Icons.DESIGN_SERVICES),
     ("dictionaries", "Справочники", ft.Icons.MENU_BOOK_OUTLINED, ft.Icons.MENU_BOOK),
+    ("employees", "Сотрудники", ft.Icons.PEOPLE_OUTLINE, ft.Icons.PEOPLE),
     ("settings", "Настройки", ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS),
 ]
 
@@ -70,6 +74,7 @@ class ServiceApp:
             "orders": OrdersView(self),
             "act_builder": ActBuilderView(self),
             "dictionaries": DictionariesView(self),
+            "employees": EmployeesView(self),
             "settings": SettingsView(self),
         }
 

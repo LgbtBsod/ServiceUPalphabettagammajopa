@@ -109,6 +109,84 @@ class Employee(Base):
         return value.strip()
 
 
+class Role(Base):
+    """Роль — именованный набор полномочий (SAP PFCG-аналог), см.
+    TODO_RBAC_ROADMAP.md. У сотрудника может быть >1 роли (employee_roles,
+    many-to-many) — Employee.role ("all") остаётся для обратной
+    совместимости старых записей, но реальная проверка (has_permission)
+    идёт через эту таблицу, не через него."""
+
+    __tablename__ = "roles"
+
+    name: Mapped[str] = mapped_column(
+        String(50), unique=True, nullable=False, index=True
+    )
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    @validates("name")
+    def validate_name(self, key: str, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("Имя роли не может быть пустым")
+        return value.strip()
+
+
+class Permission(Base):
+    """Полномочие — код вида "<PermissionObject.name>.<операция>"
+    (напр. "EMPLOYEES.delete"), см. core.base.PermissionObject. Коды
+    берутся из уже объявленных permission_object сервисов, а не
+    придумываются заново на месте enforcement."""
+
+    __tablename__ = "permissions"
+
+    code: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, index=True
+    )
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class RolePermission(Base):
+    """Связь роль<->полномочие (many-to-many): какие коды входят в роль."""
+
+    __tablename__ = "role_permissions"
+    __table_args__ = (
+        UniqueConstraint("role_id", "permission_id", name="uq_role_permissions"),
+    )
+
+    role_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    permission_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("permissions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+
+class EmployeeRole(Base):
+    """Связь сотрудник<->роль (many-to-many) — у сотрудника может быть >1 роли,
+    в отличие от старого одиночного поля Employee.role."""
+
+    __tablename__ = "employee_roles"
+    __table_args__ = (
+        UniqueConstraint("employee_id", "role_id", name="uq_employee_roles"),
+    )
+
+    employee_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+
 class RecordLock(Base):
     """Пессимистичная блокировка редактируемой записи (по аналогии с SAP
     enqueue-объектами — SM12) — необязательная, включается настройкой

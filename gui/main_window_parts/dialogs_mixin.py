@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 class DialogsMixin:
     """Требует от финального класса ServiceCenterApp: self.root, self.db,
-    self.colors, self.settings, self.employees_api."""
+    self.colors, self.settings, self.employees_api. self.roles_api —
+    опционален (RBAC, см. TODO_RBAC_ROADMAP.md), читается через getattr()."""
 
     def show_activation(self):
         """Показывает окно активации лицензии из главного окна."""
@@ -51,7 +52,11 @@ class DialogsMixin:
             messagebox.showerror("Ошибка", "Модуль сотрудников недоступен")
             return
         EmployeesManagerWindow(
-            self.root, self.employees_api, self.colors, settings=self.settings
+            self.root,
+            self.employees_api,
+            self.colors,
+            settings=self.settings,
+            roles_api=getattr(self, "roles_api", None),
         )
 
     def refresh_employee_selector(self):

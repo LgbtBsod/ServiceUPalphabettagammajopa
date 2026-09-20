@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 
 class BasisCockpitMixin:
     """Требует от финального класса ServiceCenterApp: self.root, self.colors,
-    self.settings."""
+    self.settings. self.roles_api — опционален (RBAC), читается через
+    getattr()."""
 
     def create_basis_tab(self, parent):
         """Строит содержимое вкладки "🔧 Базис"."""
@@ -125,24 +126,42 @@ class BasisCockpitMixin:
         messagebox.showinfo("Базис", Msg.BASIS_CACHE_REFRESHED.format(count=count))
 
     def _create_permissions_section(self, parent):
-        """Полномочия/RBAC — пока только задел (PermissionObject/
-        core.base.PermissionAwareMixin уже объявлены на сервисах, реальной
-        ролевой модели ещё нет). Не строим фиктивные контролы поверх
-        несуществующей модели — см. TODO_RBAC_ROADMAP.md."""
+        """Полномочия/RBAC — схема ролей/полномочий и реальный
+        has_permission() уже есть (см. TODO_RBAC_ROADMAP.md, шаги 1 и 3),
+        но enforcement (реальный отказ в доступе в GUI/PWA) и пароль
+        (шаг 2) ещё нет — сейчас роль/полномочия можно назначить, но
+        ничего пока не блокирует того, у кого их нет."""
         content = self._basis_section(parent, "🔐 Полномочия")
         ctk.CTkLabel(
             content,
             text=(
-                "Ролевая модель ещё не реализована — сейчас любой сотрудник "
-                "проходит любую проверку (см. TODO_RBAC_ROADMAP.md). Объекты "
-                "полномочий уже объявлены на сервисах (CLIENTS, EMPLOYEES, "
-                "ANALYTICS) и готовы к подключению реального enforcement."
+                "Роли и полномочия можно создавать и назначать сотрудникам "
+                "(кнопка ниже), но реального ограничения доступа ещё нет — "
+                "пока нет входа по паролю, любой может назначить себе любую "
+                "роль тем же диалогом. См. TODO_RBAC_ROADMAP.md."
             ),
             font=ctk.CTkFont(size=12),
             text_color=self.colors["text_secondary"],
             wraplength=500,
             justify="left",
+        ).pack(anchor="w", pady=(0, 8))
+        ctk.CTkButton(
+            content,
+            text="🔑 Управление ролями",
+            command=self._open_roles_manager_from_basis,
+            fg_color=self.colors["bg_tertiary"],
+            text_color=self.colors["text_primary"],
+            height=32,
         ).pack(anchor="w")
+
+    def _open_roles_manager_from_basis(self):
+        roles_api = getattr(self, "roles_api", None)
+        if roles_api is None:
+            messagebox.showerror("Ошибка", "Модуль ролей недоступен")
+            return
+        from gui.dialogs.roles_manager import RolesManagerWindow
+
+        RolesManagerWindow(self.root, roles_api, self.colors, settings=self.settings)
 
     def _create_locking_section(self, parent):
         content = self._basis_section(parent, "⚙️ Блокировка заказов")

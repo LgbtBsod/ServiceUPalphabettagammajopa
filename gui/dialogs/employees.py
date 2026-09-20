@@ -18,13 +18,20 @@ from gui.widgets.premium import PremiumCard
 class EmployeesManagerWindow(ctk.CTkToplevel):
     """Окно управления сотрудниками."""
 
-    def __init__(self, parent, employees_api, colors: dict[str, str], settings=None):
+    def __init__(
+        self, parent, employees_api, colors: dict[str, str], settings=None, roles_api=None
+    ):
         super().__init__(parent)
         self.parent = parent
         self.employees_api = employees_api
+        # Опционален (может быть None, если RBAC ещё не подключён/недоступен) —
+        # без него секция "Роли" в форме и кнопка "🔑 Роли..." не показываются,
+        # см. TODO_RBAC_ROADMAP.md.
+        self.roles_api = roles_api
         self.colors = colors
         self.settings = settings
         self.current_employee_id: int | None = None
+        self.role_vars: dict[int, ctk.BooleanVar] = {}
 
         self.title("Управление сотрудниками")
         from utils.window_state import restore_window_geometry
@@ -152,7 +159,30 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         self.active_var = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(
             form, text="Активен", variable=self.active_var
-        ).pack(anchor="w", pady=(5, 15))
+        ).pack(anchor="w", pady=(5, 10))
+
+        if self.roles_api is not None:
+            roles_header = ctk.CTkFrame(form, fg_color="transparent")
+            roles_header.pack(fill="x", pady=(0, 3))
+            ctk.CTkLabel(
+                roles_header, text="Роли:", font=ctk.CTkFont(size=12, weight="bold")
+            ).pack(side="left")
+            ctk.CTkButton(
+                roles_header,
+                text="🔑 Роли...",
+                command=self.open_roles_manager,
+                height=22,
+                width=90,
+                corner_radius=6,
+                fg_color=self.colors["bg_tertiary"],
+                text_color=self.colors["text_primary"],
+                font=ctk.CTkFont(size=11),
+            ).pack(side="right")
+            self.roles_frame = ctk.CTkScrollableFrame(
+                form, fg_color=self.colors["bg_tertiary"], height=80
+            )
+            self.roles_frame.pack(fill="x", pady=(0, 15))
+            self.build_roles_checklist()
 
         btn_frame = ctk.CTkFrame(form, fg_color="transparent")
         btn_frame.pack(fill="x")
@@ -179,6 +209,49 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         btn_frame.grid_columnconfigure(1, weight=1)
 
         self.load_employees()
+
+    def build_roles_checklist(self):
+        """(Пере)строит чекбоксы доступных ролей в форме сотрудника —
+        нужно вызывать заново после закрытия "🔑 Роли..." (список ролей мог
+        измениться). Сохранённое состояние выбора для ТЕКУЩЕГО открытого
+        сотрудника не теряется — оно всё равно будет перечитано on_select()."""
+        for child in self.roles_frame.winfo_children():
+            child.destroy()
+        self.role_vars = {}
+        try:
+            roles = self.roles_api.list_roles()
+        except Exception:
+            roles = []
+        if not roles:
+            ctk.CTkLabel(
+                self.roles_frame, text="Нет ролей", text_color=self.colors["text_secondary"]
+            ).pack(anchor="w", padx=6, pady=4)
+            return
+        for role in roles:
+            var = ctk.BooleanVar(value=False)
+            self.role_vars[role.id] = var
+            ctk.CTkCheckBox(self.roles_frame, text=role.name, variable=var).pack(
+                anchor="w", padx=6, pady=1
+            )
+
+    def open_roles_manager(self):
+        from gui.dialogs.roles_manager import RolesManagerWindow
+
+        dialog = RolesManagerWindow(self, self.roles_api, self.colors, settings=self.settings)
+        self.wait_window(dialog)
+        # Роли могли измениться (добавлены/удалены/переименованы) — форма
+        # сотрудника должна отражать актуальный список при следующем показе.
+        self.build_roles_checklist()
+        if self.current_employee_id:
+            self._load_employee_roles(self.current_employee_id)
+
+    def _load_employee_roles(self, employee_id: int) -> None:
+        try:
+            assigned_ids = {r.id for r in self.roles_api.get_employee_roles(employee_id)}
+        except Exception:
+            assigned_ids = set()
+        for role_id, var in self.role_vars.items():
+            var.set(role_id in assigned_ids)
 
     def _attach_tooltip(self, widget, text: str) -> None:
         """Прикрепляет tooltip к виджету, не прерывая инициализацию UI при ошибке."""
@@ -331,6 +404,11 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         self.position_entry.delete(0, "end")
         self.position_entry.insert(0, employee.position or "")
         self.active_var.set(employee.is_active)
+        if self.roles_api is not None:
+            self._load_employee_roles(employee.id)
+
+    def _selected_role_ids(self) -> set[int]:
+        return {role_id for role_id, var in self.role_vars.items() if var.get()}
 
     def add_employee(self):
         from plugins.employees import CreateEmployeeCommand
@@ -350,6 +428,8 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
             )
         )
         if employee:
+            if self.roles_api is not None:
+                self.roles_api.set_employee_roles(employee.id, self._selected_role_ids())
             messagebox.showinfo("Успех", "✅ Сотрудник добавлен")
             self.load_employees()
             self.clear_form()
@@ -381,6 +461,10 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
             )
         )
         if ok:
+            if self.roles_api is not None:
+                self.roles_api.set_employee_roles(
+                    self.current_employee_id, self._selected_role_ids()
+                )
             messagebox.showinfo("Успех", "✅ Сотрудник обновлён")
             self.load_employees()
             self.clear_form()
@@ -413,6 +497,8 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         self.phone_entry.delete(0, "end")
         self.position_entry.delete(0, "end")
         self.active_var.set(True)
+        for var in self.role_vars.values():
+            var.set(False)
         self.current_employee_id = None
 
     def _refresh_main_window_selector(self):

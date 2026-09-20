@@ -211,4 +211,47 @@ def initialize_kernel():
     if loaded:
         core.logger.info(f"Плагины загружены: {', '.join(loaded)}")
 
+    _initialize_rbac(core)
+
     return core
+
+
+def _initialize_rbac(core) -> None:
+    """Подключает ролевую модель (roles/permissions, см.
+    TODO_RBAC_ROADMAP.md) ПОСЛЕ дискавери плагинов — EmployeeService уже
+    существует (создан EmployeesPlugin.on_initialize()), но реальная
+    проверка has_permission() до этого момента была заглушкой (всегда True).
+
+    Вызывается ОДИН раз при каждом старте приложения — сид/миграция внутри
+    (RoleService.seed_default_rbac) идемпотентны, повторный вызов ничего не
+    ломает и не дублирует.
+    """
+    from plugins.employees.roles import IRoleRepository, RoleService
+    from plugins.employees.roles_repository import SqlAlchemyRoleRepository
+
+    db = core.get_db_access()
+    role_repo = SqlAlchemyRoleRepository(db.engine)
+    core.register_service(IRoleRepository, role_repo)
+    role_service = RoleService(role_repo)
+    core.register_module("roles", role_service, RoleService, api=role_service)
+
+    employees_api = core.get_module_api("employees")
+    if employees_api is None:
+        core.logger.warning("RBAC: модуль 'employees' не загружен, RoleService не подключён")
+        return
+    employees_api.attach_role_service(role_service)
+
+    # Явный список модулей, чьи сервисы уже объявили permission_object (см.
+    # core.base.PermissionObject) — расширять по мере того, как новые
+    # сервисы объявляют свой объект полномочий (см. TODO_RBAC_ROADMAP.md).
+    declared_permission_objects = []
+    for module_name in ("clients", "employees", "analytics"):
+        api = core.get_module_api(module_name)
+        po = getattr(type(api), "permission_object", None) if api is not None else None
+        if po is not None:
+            declared_permission_objects.append(po)
+
+    from plugins.employees import ListEmployeesQuery
+
+    all_employee_ids = [e.id for e in employees_api.list_employees(ListEmployeesQuery(active_only=False))]
+    role_service.seed_default_rbac(declared_permission_objects, all_employee_ids)

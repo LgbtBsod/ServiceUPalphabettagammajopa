@@ -85,6 +85,7 @@ class ServiceCenterApp(
         self.integration_manager = core.get_module_api("integrations")
         self.photo_manager = core.get_module_api("photos")
         self.employees_api = core.get_module_api("employees")
+        self.roles_api = core.get_module_api("roles")
         self.lock_api = core.get_module_api("locking")
 
         self.device_entries = {}

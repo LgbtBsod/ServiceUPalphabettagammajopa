@@ -158,9 +158,22 @@ class EmployeeService(BaseService):
         table="employees",
     )
 
-    def __init__(self, employee_repository: IEmployeeRepository):
+    def __init__(self, employee_repository: IEmployeeRepository, role_service=None):
         self._repo = employee_repository
         self._current_employee_id: int | None = None
+        # Опционален для обратной совместимости (существующие вызовы
+        # EmployeeService(repo) без второго аргумента) — без него
+        # has_permission() ведёт себя как раньше (всегда True), см. ниже.
+        # Реально подключается bootstrap.py::initialize_kernel().
+        self._role_service = role_service
+
+    def attach_role_service(self, role_service) -> None:
+        """Позднее подключение RoleService — используется bootstrap.py РАЗ,
+        сразу после дискавери плагинов: на момент EmployeesPlugin.on_initialize()
+        (внутри discover()) RoleService ещё не построен (сам требует уже
+        готового IRoleRepository и завершённого сида), поэтому конструктор
+        не может получить его сразу. См. plugins.employees.roles.RoleService."""
+        self._role_service = role_service
 
     def suggest_login(self, full_name: str) -> str:
         """Предлагает свободный логин по ФИО (транслитерация, фамилия +
@@ -172,22 +185,29 @@ class EmployeeService(BaseService):
         )
 
     def has_permission(self, employee_id: int | None, permission: str) -> bool:
-        """Точка входа для проверки полномочий — ЗАГЛУШКА.
+        """Точка входа для проверки полномочий.
 
-        Единственная существующая роль — "all" (нет реальной ролевой модели/
-        авторизации), поэтому сейчас любой сотрудник (и employee_id=None —
-        сотрудник не выбран) проходит любую проверку. Код, которому в
-        будущем понадобится проверять права, может звать этот метод уже
-        сейчас — когда появится реальная ролевая модель, поведение
-        изменится только там, где прав действительно не хватает, вызывающий
-        код переписывать не придётся. Полный план — TODO_RBAC_ROADMAP.md.
+        Без подключённого RoleService (см. __init__) — прежнее поведение
+        заглушки (всегда True), как было до появления ролевой модели: код,
+        который уже сейчас зовёт этот метод, не ломается, когда
+        RBAC ещё не сконфигурирован (например, в тестах, создающих
+        EmployeeService(repo) без второго аргумента).
+
+        С подключённым RoleService — реальная проверка через роли
+        сотрудника (см. plugins.employees.roles.RoleService.has_permission).
+        employee_id=None (сотрудник не выбран) — всегда False: нет
+        сотрудника, некому иметь права, в отличие от заглушки выше.
 
         Естественная реализация checker'а для core.base.PermissionAwareMixin.
         require_permission()/check_permission() — другой сервис может
         вызвать: ``self.require_permission("delete", checker=lambda op:
         employees_api.has_permission(current_employee_id, op))``.
         """
-        return True
+        if self._role_service is None:
+            return True
+        if employee_id is None:
+            return False
+        return self._role_service.has_permission(employee_id, permission)
 
     def create_employee(self, command: CreateEmployeeCommand) -> EmployeeEntity | None:
         """Создать сотрудника. Логин должен быть уникален."""
