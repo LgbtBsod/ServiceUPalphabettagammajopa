@@ -14,6 +14,7 @@ from tkinter import messagebox, ttk
 import customtkinter as ctk
 
 from gui.widgets.premium import PremiumCard
+from utils.messages import Msg
 
 
 class RolesManagerWindow(ctk.CTkToplevel):
@@ -249,7 +250,7 @@ class RolesManagerWindow(ctk.CTkToplevel):
 
         name = self.name_entry.get().strip()
         if not name:
-            messagebox.showerror("Ошибка", "Введите название роли")
+            messagebox.showerror("Ошибка", Msg.ROLE_NAME_REQUIRED)
             return
 
         role = self.roles_api.create_role(
@@ -260,22 +261,22 @@ class RolesManagerWindow(ctk.CTkToplevel):
             )
         )
         if role:
-            messagebox.showinfo("Успех", "✅ Роль добавлена")
+            messagebox.showinfo("Успех", Msg.ROLE_ADDED)
             self.load_roles()
             self.clear_form()
         else:
-            messagebox.showerror("Ошибка", "❌ Не удалось добавить (название уже занято?)")
+            messagebox.showerror("Ошибка", Msg.ROLE_ADD_FAILED)
 
     def save_role(self):
         from plugins.employees.roles import UpdateRoleCommand
 
         if not self.current_role_id:
-            messagebox.showwarning("Предупреждение", "Сначала выберите роль")
+            messagebox.showwarning("Предупреждение", Msg.ROLE_SELECT_FIRST)
             return
 
         name = self.name_entry.get().strip()
         if not name:
-            messagebox.showerror("Ошибка", "Введите название роли")
+            messagebox.showerror("Ошибка", Msg.ROLE_NAME_REQUIRED)
             return
 
         ok = self.roles_api.update_role(
@@ -287,27 +288,24 @@ class RolesManagerWindow(ctk.CTkToplevel):
             )
         )
         if ok:
-            messagebox.showinfo("Успех", "✅ Роль обновлена")
+            messagebox.showinfo("Успех", Msg.ROLE_UPDATED)
             self.load_roles()
             self.clear_form()
         else:
-            messagebox.showerror("Ошибка", "❌ Не удалось обновить (название уже занято?)")
+            messagebox.showerror("Ошибка", Msg.ROLE_UPDATE_FAILED)
 
     def delete_role(self):
         if not self.current_role_id:
-            messagebox.showwarning("Предупреждение", "Выберите роль для удаления")
+            messagebox.showwarning("Предупреждение", Msg.ROLE_SELECT_TO_DELETE)
             return
-        if not messagebox.askyesno(
-            "Подтверждение",
-            "Удалить роль? Она будет снята со всех сотрудников, которым назначена.",
-        ):
+        if not messagebox.askyesno("Подтверждение", Msg.ROLE_DELETE_CONFIRM):
             return
         if self.roles_api.delete_role(self.current_role_id):
-            messagebox.showinfo("Успех", "✅ Роль удалена")
+            messagebox.showinfo("Успех", Msg.ROLE_DELETED)
             self.load_roles()
             self.clear_form()
         else:
-            messagebox.showerror("Ошибка", "❌ Не удалось удалить роль")
+            messagebox.showerror("Ошибка", Msg.ROLE_DELETE_FAILED)
 
     def clear_form(self):
         self.name_entry.delete(0, "end")

@@ -78,3 +78,46 @@ class Msg:
     LOADING_FINANCE = "Загрузка финансов..."
     LOAD_ORDERS_FAILED = "Не удалось загрузить список заказов: {error}"
     LOAD_FINANCE_FAILED = "Не удалось загрузить финансы: {error}"
+
+    # --- Сотрудники (plugins/employees, gui/dialogs/employees.py,
+    # gui_flet/views_employees.py) — общий текст для обеих оболочек, чтобы
+    # не расходиться незаметно (workflow-найденное расхождение: см. ROLE_*
+    # ниже, "Удалить роль?" отличался между classic/Flet одним словом) ---
+    EMPLOYEE_NAME_REQUIRED_FOR_LOGIN = "Сначала введите ФИО"
+    EMPLOYEE_LOGIN_GENERATION_FAILED = "Не удалось сгенерировать логин: {error}"
+    EMPLOYEE_FIELDS_REQUIRED = "Заполните ФИО и логин"
+    EMPLOYEE_ADDED = "✅ Сотрудник добавлен"
+    EMPLOYEE_ADD_FAILED = "❌ Не удалось добавить (логин уже занят?)"
+    EMPLOYEE_SELECT_FIRST = "Сначала выберите сотрудника"
+    EMPLOYEE_UPDATED = "✅ Сотрудник обновлён"
+    EMPLOYEE_UPDATE_FAILED = "❌ Не удалось обновить (логин уже занят?)"
+    EMPLOYEE_SELECT_TO_DELETE = "Выберите сотрудника для удаления"
+    EMPLOYEE_DELETE_CONFIRM = "Удалить сотрудника? Записи, созданные им, сохранятся без привязки."
+    EMPLOYEE_DELETED = "✅ Сотрудник удалён"
+    EMPLOYEE_DELETE_FAILED = "❌ Не удалось удалить сотрудника"
+    EMPLOYEES_MODULE_UNAVAILABLE = "Модуль сотрудников недоступен"
+
+    # --- Роли/полномочия, RBAC (plugins/employees/roles.py,
+    # gui/dialogs/roles_manager.py, gui_flet/views_employees.py) ---
+    ROLE_NAME_REQUIRED = "Введите название роли"
+    ROLE_ADDED = "✅ Роль добавлена"
+    ROLE_ADD_FAILED = "❌ Не удалось добавить (название уже занято?)"
+    ROLE_SELECT_FIRST = "Сначала выберите роль"
+    ROLE_UPDATED = "✅ Роль обновлена"
+    ROLE_UPDATE_FAILED = "❌ Не удалось обновить (название уже занято?)"
+    ROLE_SELECT_TO_DELETE = "Выберите роль для удаления"
+    ROLE_DELETE_CONFIRM = "Удалить роль? Она будет снята со всех сотрудников, которым назначена."
+    ROLE_DELETED = "✅ Роль удалена"
+    ROLE_DELETE_FAILED = "❌ Не удалось удалить роль"
+    ROLES_MODULE_UNAVAILABLE = "Модуль ролей недоступен"
+
+    # --- Полномочия в "Базис" (gui/main_window_parts/basis_cockpit_mixin.py)
+    # — тот же паттерн, что BASIS_QUERY_CACHE_HINT/BASIS_REFRESH_CACHE_BUTTON
+    # выше, для соседней секции того же экрана ---
+    BASIS_PERMISSIONS_HINT = (
+        "Роли и полномочия можно создавать и назначать сотрудникам "
+        "(кнопка ниже), но реального ограничения доступа ещё нет — "
+        "пока нет входа по паролю, любой может назначить себе любую "
+        "роль тем же диалогом. См. TODO_RBAC_ROADMAP.md."
+    )
+    BASIS_MANAGE_ROLES_BUTTON = "🔑 Управление ролями"

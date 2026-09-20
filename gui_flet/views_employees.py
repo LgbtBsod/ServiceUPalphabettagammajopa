@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import flet as ft
 
+from utils.messages import Msg
+
 from . import theme
 
 
@@ -45,7 +47,7 @@ class EmployeesView:
 
         if employees_api is None:
             return ft.Container(
-                ft.Text("Модуль сотрудников недоступен.", color=c["text_secondary"]),
+                ft.Text(Msg.EMPLOYEES_MODULE_UNAVAILABLE, color=c["text_secondary"]),
                 padding=30,
             )
 
@@ -68,7 +70,7 @@ class EmployeesView:
         def on_generate_login(_e) -> None:
             full_name = name_field.value.strip()
             if not full_name:
-                self.app.show_snackbar("Сначала введите ФИО", error=True)
+                self.app.show_snackbar(Msg.EMPLOYEE_NAME_REQUIRED_FOR_LOGIN, error=True)
                 return
             login_field.value = employees_api.suggest_login(full_name)
             self.app.page.update()
@@ -85,7 +87,7 @@ class EmployeesView:
             full_name = name_field.value.strip()
             login = login_field.value.strip()
             if not full_name or not login:
-                self.app.show_snackbar("Заполните ФИО и логин", error=True)
+                self.app.show_snackbar(Msg.EMPLOYEE_FIELDS_REQUIRED, error=True)
                 return None
             return full_name, login
 
@@ -113,7 +115,7 @@ class EmployeesView:
                 ok = employee is not None
                 if ok:
                     _sync_roles(employee.id)
-                message = "Сотрудник добавлен" if ok else "Не удалось добавить (логин уже занят?)"
+                message = Msg.EMPLOYEE_ADDED if ok else Msg.EMPLOYEE_ADD_FAILED
             else:
                 ok = employees_api.update_employee(
                     UpdateEmployeeCommand(
@@ -127,7 +129,7 @@ class EmployeesView:
                 )
                 if ok:
                     _sync_roles(selected.id)
-                message = "Сотрудник обновлён" if ok else "Не удалось обновить (логин уже занят?)"
+                message = Msg.EMPLOYEE_UPDATED if ok else Msg.EMPLOYEE_UPDATE_FAILED
 
             self.app.show_snackbar(message, error=not ok)
             if ok:
@@ -146,7 +148,7 @@ class EmployeesView:
             self.selected_employee_id = None
             self.selected_role_ids = set()
             self.app.show_snackbar(
-                "Сотрудник удалён" if ok else "Не удалось удалить сотрудника", error=not ok
+                Msg.EMPLOYEE_DELETED if ok else Msg.EMPLOYEE_DELETE_FAILED, error=not ok
             )
             self.app.rerender()
 
@@ -155,15 +157,13 @@ class EmployeesView:
 
         def on_delete_click(_e) -> None:
             if selected is None:
-                self.app.show_snackbar("Выберите сотрудника для удаления", error=True)
+                self.app.show_snackbar(Msg.EMPLOYEE_SELECT_TO_DELETE, error=True)
                 return
             self.app.page.show_dialog(
                 ft.AlertDialog(
                     modal=True,
                     title=ft.Text("Удаление"),
-                    content=ft.Text(
-                        "Удалить сотрудника? Записи, созданные им, сохранятся без привязки."
-                    ),
+                    content=ft.Text(Msg.EMPLOYEE_DELETE_CONFIRM),
                     actions=[
                         ft.TextButton("Отмена", on_click=on_delete_cancelled),
                         ft.TextButton("Удалить", on_click=on_delete_confirmed),
@@ -362,7 +362,7 @@ class EmployeesView:
 
             name = name_field.value.strip()
             if not name:
-                self.app.show_snackbar("Введите название роли", error=True)
+                self.app.show_snackbar(Msg.ROLE_NAME_REQUIRED, error=True)
                 return
             description = description_field.value.strip() or None
             if selected_role is None:
@@ -370,7 +370,7 @@ class EmployeesView:
                     CreateRoleCommand(name=name, description=description, permission_codes=_selected_codes())
                 )
                 ok = role is not None
-                message = "Роль добавлена" if ok else "Не удалось добавить (название уже занято?)"
+                message = Msg.ROLE_ADDED if ok else Msg.ROLE_ADD_FAILED
             else:
                 ok = roles_api.update_role(
                     UpdateRoleCommand(
@@ -378,7 +378,7 @@ class EmployeesView:
                         permission_codes=_selected_codes(),
                     )
                 )
-                message = "Роль обновлена" if ok else "Не удалось обновить (название уже занято?)"
+                message = Msg.ROLE_UPDATED if ok else Msg.ROLE_UPDATE_FAILED
             self.app.show_snackbar(message, error=not ok)
             if ok:
                 self._editing_role_id = None
@@ -395,7 +395,7 @@ class EmployeesView:
             ok = roles_api.delete_role(self._editing_role_id)
             self._editing_role_id = None
             self._role_permission_checks = {}
-            self.app.show_snackbar("Роль удалена" if ok else "Не удалось удалить роль", error=not ok)
+            self.app.show_snackbar(Msg.ROLE_DELETED if ok else Msg.ROLE_DELETE_FAILED, error=not ok)
             self.app.rerender()
 
         def on_delete_cancelled(_e) -> None:
@@ -403,13 +403,13 @@ class EmployeesView:
 
         def on_delete_click(_e) -> None:
             if selected_role is None:
-                self.app.show_snackbar("Выберите роль для удаления", error=True)
+                self.app.show_snackbar(Msg.ROLE_SELECT_TO_DELETE, error=True)
                 return
             self.app.page.show_dialog(
                 ft.AlertDialog(
                     modal=True,
                     title=ft.Text("Удаление"),
-                    content=ft.Text("Удалить роль? Она будет снята со всех сотрудников."),
+                    content=ft.Text(Msg.ROLE_DELETE_CONFIRM),
                     actions=[
                         ft.TextButton("Отмена", on_click=on_delete_cancelled),
                         ft.TextButton("Удалить", on_click=on_delete_confirmed),

@@ -12,6 +12,7 @@ from tkinter import messagebox
 from gui.dialogs.dictionaries import DictionariesManagerWindow
 from gui.dialogs.employees import EmployeesManagerWindow
 from gui.dialogs.settings import SettingsWindow
+from utils.messages import Msg
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class DialogsMixin:
     def open_employees_manager(self):
         """Открытие окна управления сотрудниками."""
         if not self.employees_api:
-            messagebox.showerror("Ошибка", "Модуль сотрудников недоступен")
+            messagebox.showerror("Ошибка", Msg.EMPLOYEES_MODULE_UNAVAILABLE)
             return
         EmployeesManagerWindow(
             self.root,

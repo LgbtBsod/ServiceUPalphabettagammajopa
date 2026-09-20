@@ -24,6 +24,7 @@ from plugins.employees.repository import SqlAlchemyEmployeeRepository
 from plugins.employees.roles import RoleService
 from plugins.employees.roles_repository import SqlAlchemyRoleRepository
 from tests.test_gui_flet import _FakePage, _find, _find_button
+from utils.messages import Msg
 
 
 @pytest.fixture
@@ -96,7 +97,7 @@ class TestEmployeesViewBasicCrud:
         _find_button(form, "➕ Добавить").on_click(None)
 
         assert [e.login for e in _all_employees(employee_service)] == ["ivanov"]
-        assert app.snackbars[-1] == ("Сотрудник добавлен", False)
+        assert app.snackbars[-1] == (Msg.EMPLOYEE_ADDED, False)
 
     def test_add_employee_rejects_empty_login(self, employee_service):
         app = _FakeApp(employee_service)

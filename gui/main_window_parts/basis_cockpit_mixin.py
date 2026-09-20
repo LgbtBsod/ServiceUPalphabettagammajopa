@@ -134,12 +134,7 @@ class BasisCockpitMixin:
         content = self._basis_section(parent, "🔐 Полномочия")
         ctk.CTkLabel(
             content,
-            text=(
-                "Роли и полномочия можно создавать и назначать сотрудникам "
-                "(кнопка ниже), но реального ограничения доступа ещё нет — "
-                "пока нет входа по паролю, любой может назначить себе любую "
-                "роль тем же диалогом. См. TODO_RBAC_ROADMAP.md."
-            ),
+            text=Msg.BASIS_PERMISSIONS_HINT,
             font=ctk.CTkFont(size=12),
             text_color=self.colors["text_secondary"],
             wraplength=500,
@@ -147,7 +142,7 @@ class BasisCockpitMixin:
         ).pack(anchor="w", pady=(0, 8))
         ctk.CTkButton(
             content,
-            text="🔑 Управление ролями",
+            text=Msg.BASIS_MANAGE_ROLES_BUTTON,
             command=self._open_roles_manager_from_basis,
             fg_color=self.colors["bg_tertiary"],
             text_color=self.colors["text_primary"],
@@ -157,7 +152,7 @@ class BasisCockpitMixin:
     def _open_roles_manager_from_basis(self):
         roles_api = getattr(self, "roles_api", None)
         if roles_api is None:
-            messagebox.showerror("Ошибка", "Модуль ролей недоступен")
+            messagebox.showerror("Ошибка", Msg.ROLES_MODULE_UNAVAILABLE)
             return
         from gui.dialogs.roles_manager import RolesManagerWindow
 
