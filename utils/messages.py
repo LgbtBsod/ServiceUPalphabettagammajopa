@@ -73,6 +73,9 @@ class Msg:
 
         ORDER_VERSION_CONFLICT = "Заказ изменён другим пользователем. Обновите данные и повторите."
         PHOTO_VERSION_CONFLICT = "Заказ изменён другим пользователем, повторите загрузку фото."
+        LOG_WORK_ITEMS_TOTAL_RECALC_FAILED = (
+            "Не удалось пересчитать total_price из work_items ({context})"
+        )
 
     class Settings:
         """Подписи настроек блокировок (gui/dialogs/settings.py,
@@ -204,8 +207,19 @@ class Msg:
         CREATED_WITH_ICON = "✅ Заказ #{order_number} создан!"
         CREATE_FAILED = "❌ Не удалось создать заказ"
         UPDATED = "✅ Заказ обновлен!"
+        SAVED = "Заказ №{order_number} сохранён"
         UPDATE_FAILED = "❌ Не удалось обновить заказ"
         SAVE_FAILED = "❌ Ошибка сохранения: {error}"
         VERSION_CONFLICT_TITLE = "Конфликт версий"
         VERSION_CONFLICT_REFRESH_PROMPT = "Обновить данные из базы сейчас?"
         LOG_SAVE_FAILED = "Ошибка сохранения: {error}"
+        LOG_CLIENT_NAME_LOOKUP_FAILED = "Не удалось выполнить автопоиск клиента по имени"
+
+    class Legacy:
+        """database/db_manager.py — легаси SQLite-слой, живой только как
+        источник для migrate_client_dbs() (одноразовая миграция старых
+        per-client БД в SQLAlchemy-схему), не основной путь записи."""
+
+        LOG_PRICE_DUAL_WRITE_FAILED = (
+            "Не удалось обновить числовые колонки цен для устройства {device_id}"
+        )

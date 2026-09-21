@@ -163,6 +163,43 @@ class TestEmployeeService:
         assert service.set_current_employee(employee.id) is False
         assert service.get_current_employee_id() is None
 
+    def test_delete_employee_removes_it(self, service):
+        employee = service.create_employee(
+            CreateEmployeeCommand(full_name="К удалению", login="to_delete1")
+        )
+        assert service.delete_employee(employee.id) is True
+        assert service.get_employee(GetEmployeeByIdQuery(employee_id=employee.id)) is None
+
+    def test_deleting_the_current_employee_clears_the_selection(self, service):
+        """delete_employee() сбрасывает self._current_employee_id, если
+        удаляемый сотрудник и был текущим — иначе get_current_employee_id()
+        продолжал бы возвращать id уже не существующей записи, а created_by/
+        updated_by на новых заказах молча ссылались бы на удалённого
+        сотрудника (см. plugins/employees/__init__.py, create_employee())."""
+        employee = service.create_employee(
+            CreateEmployeeCommand(full_name="Текущий на удаление", login="current_del1")
+        )
+        service.set_current_employee(employee.id)
+        assert service.get_current_employee_id() == employee.id
+
+        service.delete_employee(employee.id)
+        assert service.get_current_employee_id() is None
+
+    def test_deleting_a_non_current_employee_keeps_the_selection(self, service):
+        current = service.create_employee(
+            CreateEmployeeCommand(full_name="Остаётся текущим", login="stays_current1")
+        )
+        other = service.create_employee(
+            CreateEmployeeCommand(full_name="Удаляемый", login="other_del1")
+        )
+        service.set_current_employee(current.id)
+
+        service.delete_employee(other.id)
+        assert service.get_current_employee_id() == current.id
+
+    def test_deleting_a_nonexistent_employee_returns_false(self, service):
+        assert service.delete_employee(999999) is False
+
 
 class TestPluginDiscoveryIntegration:
     """Сквозной путь: core.initialize() -> discover('plugins', context=core) ->

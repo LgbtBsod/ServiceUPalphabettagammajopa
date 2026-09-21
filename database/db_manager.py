@@ -16,6 +16,7 @@ from domain.constants import (
     STATUS_REFUSED,
 )
 from utils.formatters import normalize_phone_digits, parse_price_to_float
+from utils.messages import Msg
 
 logger = logging.getLogger(__name__)
 
@@ -647,7 +648,7 @@ class Database:
                     (tp, pp, ex, device_id),
                 )
             except Exception:
-                pass
+                logger.warning(Msg.Legacy.LOG_PRICE_DUAL_WRITE_FAILED.format(device_id=device_id))
             # Dual-write: работы и фото в отдельные таблицы
             self.sync_work_items_to_db(
                 device_id, device_data.get("work_items_json", "")
@@ -1054,7 +1055,7 @@ class Database:
                     (tp, pp, ex, device_id),
                 )
             except Exception:
-                pass
+                logger.warning(Msg.Legacy.LOG_PRICE_DUAL_WRITE_FAILED.format(device_id=device_id))
             # Dual-write: работы и фото в отдельные таблицы
             self.sync_work_items_to_db(
                 device_id, device_data.get("work_items_json", "")

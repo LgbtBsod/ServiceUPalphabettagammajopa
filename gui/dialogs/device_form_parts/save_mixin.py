@@ -11,7 +11,7 @@ import logging
 from datetime import datetime
 from tkinter import messagebox
 
-from database.sqlalchemy_database import OptimisticLockError
+from database import OptimisticLockError
 from domain.constants import STATUS_ISSUED
 from utils.formatters import (
     format_order_number_for_display,

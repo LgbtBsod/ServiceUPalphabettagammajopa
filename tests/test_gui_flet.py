@@ -197,6 +197,18 @@ def db():
         os.remove(path)
 
 
+def _fill_required_order_fields(form) -> None:
+    """on_save() теперь требует тип устройства/модель/неисправность (см.
+    gui_flet/views_orders.py::on_save — parity с classic GUI's save_mixin.py,
+    workflow-найденный баг: раньше Flet принимал пустые тип/модель/дефект).
+    Тесты, которым эти поля не важны для проверяемого поведения, просто
+    заполняют их валидными значениями через этот хелпер, а не оставляют
+    пустыми."""
+    _find(form, label="Тип устройства").value = "Ноутбук"
+    _find(form, label="Модель").value = "TestBook X1"
+    _find(form, label="Неисправность").value = "Не включается"
+
+
 class TestOrderFormSave:
     """Регрессия: OrdersView._render_form()'s on_save() раньше строил
     device_data БЕЗ ключей work_items_json/photos/completeness/appearance/
@@ -247,6 +259,7 @@ class TestOrderFormSave:
             view = OrdersView(app)
             view.mode = "form"
             form = view._render_form()
+            _fill_required_order_fields(form)
             _find(form, label="Имя клиента").value = f"Клиент {i}"
             _find(form, label="Телефон").value = f"+7999000000{i}"
             _find_button(form, "Сохранить").on_click(None)
@@ -267,6 +280,7 @@ class TestOrderFormSave:
         view = OrdersView(app)
         view.mode = "form"
         form = view._render_form()
+        _fill_required_order_fields(form)
 
         _find(form, label="Имя клиента").value = "Клиент"
         _find(form, label="Телефон").value = "+79990000000"
@@ -307,6 +321,7 @@ class TestOrderFormDefectTags:
         view = OrdersView(app)
         view.mode = "form"
         form = view._render_form()
+        _fill_required_order_fields(form)
 
         _find(form, label="Имя клиента").value = "Иван"
         _find(form, label="Телефон").value = "+79990000000"
@@ -344,6 +359,7 @@ class TestOrderFormDefectTags:
         view = OrdersView(app)
         view.mode = "form"
         form = view._render_form()
+        _fill_required_order_fields(form)
 
         _find(form, label="Имя клиента").value = "Иван"
         _find(form, label="Телефон").value = "+79990000000"
@@ -385,6 +401,7 @@ class TestOrderFormDefectTags:
         view.mode = "form"
         view.editing_id = device_id
         form = view._render_form()
+        _fill_required_order_fields(form)
 
         tags_row = self._tags_row(form)
         assert len(tags_row.controls) == 2
@@ -509,6 +526,7 @@ class TestOrderFormWorkItems:
         view = OrdersView(app)
         view.mode = "form"
         form = view._render_form()
+        _fill_required_order_fields(form)
 
         _find(form, label="Имя клиента").value = "Иван"
         _find(form, label="Телефон").value = "+79990000000"
@@ -529,6 +547,7 @@ class TestOrderFormWorkItems:
         view = OrdersView(app)
         view.mode = "form"
         form = view._render_form()
+        _fill_required_order_fields(form)
 
         _find(form, label="Имя клиента").value = "Иван"
         _find(form, label="Телефон").value = "+79990000000"
@@ -579,6 +598,7 @@ class TestOrderFormWorkItems:
         view.mode = "form"
         view.editing_id = device_id
         form = view._render_form()
+        _fill_required_order_fields(form)
 
         rows = self._rows(form)
         assert len(rows) == 2
@@ -644,6 +664,7 @@ class TestOrderFormPhotos:
         view.mode = "form"
         view.editing_id = device_id
         form = view._render_form()
+        _fill_required_order_fields(form)
 
         buttons = self._delete_buttons(form)
         assert len(buttons) == 2
@@ -660,6 +681,7 @@ class TestOrderFormPhotos:
         view = OrdersView(app)
         view.mode = "form"
         form = view._render_form()
+        _fill_required_order_fields(form)
 
         _find(form, label="Имя клиента").value = "Иван"
         _find(form, label="Телефон").value = "+79990000000"
@@ -712,6 +734,7 @@ class TestOrderFormOrderTags:
         view = OrdersView(app)
         view.mode = "form"
         form = view._render_form()
+        _fill_required_order_fields(form)
 
         _find(form, label="Имя клиента").value = "Иван"
         _find(form, label="Телефон").value = "+79990000000"

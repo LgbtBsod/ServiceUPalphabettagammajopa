@@ -16,7 +16,7 @@ import tempfile
 
 import flet as ft
 
-from database.sqlalchemy_database import OptimisticLockError
+from database import OptimisticLockError
 from domain.constants import (
     PRIORITIES,
     STATUS_ISSUED,
@@ -24,7 +24,13 @@ from domain.constants import (
     WARRANTIES,
     models_dict_type,
 )
-from utils.formatters import generate_order_number, parse_price_to_float
+from utils.formatters import (
+    generate_order_number,
+    normalize_phone,
+    parse_price_to_float,
+)
+from utils.messages import Msg
+from utils.validators import validate_phone, validate_price
 
 from . import theme
 from .theme import PRIORITY_COLORS, STATUS_COLORS
@@ -991,32 +997,65 @@ class OrdersView:
             self.mode = "list"
             self.app.rerender()
 
+        def _fail(message: str) -> None:
+            error_text.value = message
+            self.app.page.update()
+
         def on_save(_e) -> None:
-            if not f_client_name.value.strip() or not f_phone.value.strip():
-                error_text.value = "Укажите имя клиента и телефон."
-                self.app.page.update()
+            # Та же обязательность/формат, что и классический GUI
+            # (gui/dialogs/device_form_parts/save_mixin.py::save()) — этот
+            # путь раньше требовал только имя клиента и телефон, позволяя
+            # создать заказ через Flet с пустыми типом/моделью/неисправностью
+            # и неотформатированным (не normalize_phone()) телефоном, чего
+            # классический GUI никогда не допускал (workflow-найденный баг).
+            model_value = _editable_dropdown_value(f_model, "нет в справочнике")
+            if not (f_device_type.value or "").strip():
+                _fail(Msg.Order.DEVICE_TYPE_REQUIRED)
+                return
+            if not model_value.strip():
+                _fail(Msg.Order.MODEL_REQUIRED)
+                return
+            if not (f_defect.value or "").strip():
+                _fail(Msg.Order.DEFECT_REQUIRED)
+                return
+            if not f_client_name.value.strip():
+                _fail(Msg.Order.CLIENT_NAME_REQUIRED)
+                return
+            if not f_phone.value.strip():
+                _fail(Msg.Order.PHONE_REQUIRED)
+                return
+            if not validate_phone(f_phone.value):
+                _fail(Msg.Order.PHONE_FORMAT_INVALID)
+                return
+
+            total_price_value = (
+                str(int(work_items_editor.total()))
+                if work_items_editor.items
+                else (f_price.value or "0")
+            )
+            if not validate_price(total_price_value):
+                _fail(Msg.Order.PRICE_FORMAT_INVALID)
+                return
+            if f_prepay.value and not validate_price(f_prepay.value):
+                _fail(Msg.Order.PREPAYMENT_FORMAT_INVALID)
                 return
 
             device_data = {
                 "order_number": order_preview,
                 "device_type": f_device_type.value,
                 "brand": f_brand.value,
-                "model": _editable_dropdown_value(f_model, "нет в справочнике"),
+                "model": model_value,
                 "serial_number": f_serial.value,
                 "defect": f_defect.value,
                 "defect_tags_json": defect_tag_editor.to_json(),
                 "order_tags_json": order_tag_editor.to_json(),
                 "client_name": f_client_name.value,
                 "client_status": (existing or {}).get("client_status", "Новый"),
-                "phone": f_phone.value,
+                "phone": normalize_phone(f_phone.value),
                 # Сумма по позициям работ приоритетнее ручного ввода — та же
                 # логика, что и в classic-GUI (save_mixin.py: wm_total > 0
                 # побеждает total_price_entry).
-                "total_price": (
-                    str(int(work_items_editor.total()))
-                    if work_items_editor.items
-                    else (f_price.value or "0")
-                ),
+                "total_price": total_price_value,
                 "prepayment": f_prepay.value or "0",
                 "status": f_status.value,
                 "priority": f_priority.value,
@@ -1040,14 +1079,16 @@ class OrdersView:
                 try:
                     ok = db.update_device(self.editing_id, device_data)
                 except OptimisticLockError as exc:
-                    error_text.value = str(exc)
-                    self.app.page.update()
+                    # Та же объясняющая формулировка, что классический GUI
+                    # показывает при том же конфликте (save_mixin.py) — не
+                    # только сырой текст исключения, который сам по себе не
+                    # объясняет пользователю, что вообще произошло.
+                    _fail(f"{Msg.Lock.OPTIMISTIC_CONFLICT}\n\n{exc}")
                     return
                 if ok:
-                    self.app.show_snackbar(f"Заказ №{order_preview} сохранён")
+                    self.app.show_snackbar(Msg.Order.SAVED.format(order_number=order_preview))
                 else:
-                    error_text.value = "Не удалось сохранить изменения."
-                    self.app.page.update()
+                    _fail(Msg.Order.UPDATE_FAILED)
                     return
             else:
                 # order_preview — это peek_next_order_number() (для превью в
@@ -1064,10 +1105,9 @@ class OrdersView:
                 device_data["completion_date"] = ""
                 new_id = db.add_device(device_data)
                 if new_id is None:
-                    error_text.value = "Не удалось создать заказ."
-                    self.app.page.update()
+                    _fail(Msg.Order.CREATE_FAILED)
                     return
-                self.app.show_snackbar(f"Заказ №{real_order_number} создан")
+                self.app.show_snackbar(Msg.Order.CREATED.format(order_number=real_order_number))
 
             self.mode = "list"
             self.app.rerender()

@@ -171,6 +171,31 @@ class TestRoleService:
         assert updated.description == "новое"
         assert updated.permission_codes == {"A.read"}
 
+    def test_update_role_rejects_rename_to_another_roles_name(self, role_service):
+        """update_role() должен отклонить переименование в имя, уже занятое
+        ДРУГОЙ ролью (get_role_by_name() иначе стал бы неоднозначным —
+        см. plugins/employees/roles.py::update_role, существующий != role.id)."""
+        role_a = role_service.create_role(CreateRoleCommand(name="a"))
+        role_b = role_service.create_role(CreateRoleCommand(name="b"))
+
+        ok = role_service.update_role(UpdateRoleCommand(role_id=role_b.id, name="a"))
+
+        assert ok is False
+        assert role_service.get_role(role_b.id).name == "b"
+        assert role_service.get_role(role_a.id).name == "a"
+
+    def test_update_role_allows_renaming_to_its_own_current_name(self, role_service):
+        """Не должно ложно сработать как 'коллизия' — существующий с тем же
+        именем это ОНА ЖЕ роль (existing.id == role.id, см. update_role)."""
+        role = role_service.create_role(CreateRoleCommand(name="same"))
+
+        ok = role_service.update_role(
+            UpdateRoleCommand(role_id=role.id, name="same", description="обновлено")
+        )
+
+        assert ok is True
+        assert role_service.get_role(role.id).description == "обновлено"
+
     def test_has_permission_true_when_role_grants_it(self, role_service, employee_repository):
         from plugins.employees import EmployeeEntity
 

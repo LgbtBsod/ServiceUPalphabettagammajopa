@@ -30,9 +30,13 @@ from flask import Flask, jsonify, request, send_file, send_from_directory
 
 # Импорты приложения (пути уже настроены в config.py)
 from config import PHOTOS_DIR
-from database import ClientDatabaseManager, WorkItemsManager
+from database import (
+    ClientDatabaseManager,
+    Database,
+    OptimisticLockError,
+    WorkItemsManager,
+)
 from database.models import WorkItem
-from database.sqlalchemy_database import Database, OptimisticLockError
 from domain.constants import (
     CLIENT_STATUSES,
     PRIORITIES,
@@ -390,7 +394,11 @@ def create_flask_app():
                             )
                     total_price = str(int(wm.get_total_price()))
                 except Exception:
-                    pass
+                    logger.warning(
+                        Msg.Pwa.LOG_WORK_ITEMS_TOTAL_RECALC_FAILED.format(
+                            context=f"новый заказ {order_number}"
+                        )
+                    )
 
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             device_data = {
@@ -498,7 +506,11 @@ def create_flask_app():
                             )
                     total_price = str(int(wm.get_total_price()))
                 except Exception:
-                    pass
+                    logger.warning(
+                        Msg.Pwa.LOG_WORK_ITEMS_TOTAL_RECALC_FAILED.format(
+                            context=f"заказ {device_id}"
+                        )
+                    )
 
             order_number = existing.get("order_number", "")
 

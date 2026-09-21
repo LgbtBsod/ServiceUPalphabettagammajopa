@@ -78,6 +78,33 @@ class TestSqlAlchemyClientRepository:
         assert found is not None
         assert found.full_name == "Пётр Петров"
 
+    def test_save_returns_false_on_duplicate_phone_unique_constraint(self, repository):
+        """Client.phone — unique=True (database/sqlalchemy_models.py). save()
+        оборачивает IntegrityError в try/except и возвращает False — но
+        единственный существующий тест дублей (test_create_client_
+        deduplicates_by_phone) проверяет service-уровневый пред-чек
+        (get_by_phone до save), не сам constraint-путь репозитория.
+        Пред-чек — не атомарная защита (TOCTOU: два почти одновременных
+        create_client с одним новым номером оба проходят пред-чек до того,
+        как первый закоммитится) — на практике от гонки спасает именно
+        то, что второй save() падает на constraint и возвращает False,
+        а не бросает наружу."""
+        from plugins.clients import ClientEntity
+
+        first = ClientEntity(id=0, full_name="Первый", phone="+79995554433")
+        assert repository.save(first) is True
+
+        # ClientEntity.__post_init__ normalizes the phone (see test_get_by_phone
+        # above) — save(second) must collide on the SAME normalized value.
+        second = ClientEntity(id=0, full_name="Второй", phone="+79995554433")
+        assert second.phone == first.phone
+        assert repository.save(second) is False
+
+        # Оригинальная запись не пострадала.
+        original = repository.get_by_phone(first.phone)
+        assert original is not None
+        assert original.full_name == "Первый"
+
     def test_hard_delete_removes_the_client(self, repository):
         from plugins.clients import ClientEntity
 

@@ -11,8 +11,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import threading
 import tkinter as tk
 from datetime import datetime
 from typing import Any
@@ -31,6 +33,7 @@ from gui.dialogs.client_history import ClientHistoryWindow
 from gui.widgets.modern import ModernCard
 from gui.widgets.work_table import WorkItemsTable
 from utils.formatters import format_order_number_for_display, format_price
+from utils.messages import Msg
 
 logger = logging.getLogger(__name__)
 
@@ -125,14 +128,54 @@ class DeviceWidgetsMixin:
 
 
     def _on_client_name_input(self, event=None):
-        """Автозаполнение: при вводе имени клиента ищет существующих в БД."""
+        """Автозаполнение: при вводе имени клиента ищет существующих в БД.
+
+        Раньше делало self.db.get_all_devices(...) СИНХРОННО на каждый
+        KeyRelease прямо на главном потоке Tk — на истории заказов зрелого
+        сервисного центра (сотни/тысячи записей) каждая напечатанная буква
+        заметно подвисала форму, а это самый часто используемый диалог
+        приложения (workflow-найденный баг). Теперь: debounce 250мс (не
+        запускаем поиск на каждую букву, только после паузы в наборе) + сам
+        запрос идёт в фоновом потоке, применение результата — через
+        self.after(0, ...) на главном потоке (тот же принцип безопасности,
+        что AsyncLoadMixin._run_async() у главного окна, но без завязки на
+        его table/skeleton-специфичный API — этот диалог им не пользуется).
+        """
         if not self.db:
             return
+        if self._client_name_debounce_job is not None:
+            self.after_cancel(self._client_name_debounce_job)
+        self._client_name_debounce_job = self.after(250, self._run_client_name_lookup)
+
+    def _run_client_name_lookup(self) -> None:
+        self._client_name_debounce_job = None
+        name = self.client_name_entry.get().strip().lower()
+        if len(name) < 2:
+            return
+        # Токен поколения — пока фоновый запрос летит, пользователь мог
+        # напечатать ещё что-то (или закрыть диалог); применяем результат,
+        # только если это всё ещё САМЫЙ СВЕЖИЙ запрос на ещё живом диалоге.
+        self._client_name_lookup_token += 1
+        token = self._client_name_lookup_token
+
+        def _fetch() -> None:
+            try:
+                devices = self.db.get_all_devices(include_completed=True)
+            except Exception:
+                logger.exception(Msg.Order.LOG_CLIENT_NAME_LOOKUP_FAILED)
+                devices = []
+            with contextlib.suppress(Exception):
+                # Диалог мог успеть закрыться, пока запрос летел в фоновом
+                # потоке — self.after() на уже уничтоженном окне бросает.
+                self.after(0, lambda: self._apply_client_name_lookup(token, name, devices))
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _apply_client_name_lookup(self, token: int, name: str, devices: list[dict]) -> None:
+        if token != self._client_name_lookup_token or not self.winfo_exists():
+            return
         try:
-            name = self.client_name_entry.get().strip().lower()
-            if len(name) < 2:
-                return
-            for device in self.db.get_all_devices(include_completed=True):
+            for device in devices:
                 existing_name = (device.get("client_name") or "").lower()
                 if name in existing_name:
                     phone = device.get("phone", "")

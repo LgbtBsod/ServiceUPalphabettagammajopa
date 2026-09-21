@@ -17,8 +17,12 @@ from typing import Any
 
 import customtkinter as ctk
 
-from database import ClientDatabaseManager, Database, WorkItemsManager
-from database.sqlalchemy_database import OptimisticLockError
+from database import (
+    ClientDatabaseManager,
+    Database,
+    OptimisticLockError,
+    WorkItemsManager,
+)
 from gui.dialogs.device_form_parts.acts_mixin import DeviceActsMixin
 from gui.dialogs.device_form_parts.locking_mixin import (
     SCALAR_FIELD_NAMES as _SCALAR_FIELD_NAMES,
@@ -98,6 +102,10 @@ class DeviceFormDialog(
         self._holding_lock = False
         self._heartbeat_job: str | None = None
         self._lock_banner: ctk.CTkFrame | None = None
+        # Автозаполнение по имени клиента (DeviceWidgetsMixin) — debounce-
+        # job и токен поколения запроса, см. _on_client_name_input().
+        self._client_name_debounce_job: str | None = None
+        self._client_name_lookup_token = 0
 
         # Загружаем существующие фото и работы
         if not is_new and device_data:
