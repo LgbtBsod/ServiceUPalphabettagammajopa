@@ -103,21 +103,19 @@ class EventBus(LoggableMixin):
     - Синхронные и асинхронные обработчики
     - Приоритеты обработчиков
     - Фильтрацию событий
-    - Dead Letter Queue для ошибочных событий
     """
 
     def __init__(self):
         super().__init__()
         self._subscriptions: dict[str, list[Subscription]] = {}
-        self._dead_letter_queue: list[dict[str, Any]] = []
         self._event_history: list[Event] = []
         self._max_history_size = 1000
         self._is_running = False
         # RLock (не Lock) — обработчик, вызванный из publish(), может сам
         # обратиться к subscribe()/publish() этой же шины на том же потоке
         # (например, опубликовать следующее событие в цепочке). Раньше
-        # _subscriptions/_event_history/_dead_letter_queue были обычными
-        # dict/list БЕЗ какой-либо блокировки — в отличие от всех соседних
+        # _subscriptions/_event_history были обычными dict/list БЕЗ
+        # какой-либо блокировки — в отличие от всех соседних
         # общих классов в этом слое (ModuleCache/ModuleRegistrySingleton в
         # core/module_manager.py, ThreadManager/WorkerPool/TaskScheduler в
         # core/threading/*), которые оборачивают своё состояние в RLock
@@ -234,7 +232,6 @@ class EventBus(LoggableMixin):
                 self.logger.exception(
                     f"Error in event handler {subscription.handler.__name__}: {e}"
                 )
-                self._add_to_dead_letter(event, subscription, e)
 
     async def publish_async(self, event: Event) -> None:
         """Асинхронная публикация события."""
@@ -264,7 +261,6 @@ class EventBus(LoggableMixin):
 
             except Exception as e:
                 self.logger.exception(f"Error preparing event handler: {e}")
-                self._add_to_dead_letter(event, subscription, e)
 
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -293,39 +289,6 @@ class EventBus(LoggableMixin):
             await handler(event)
         else:
             handler(event)
-
-    def _add_to_dead_letter(
-        self,
-        event: Event,
-        subscription: Subscription,
-        error: Exception,
-    ) -> None:
-        """Добавляет событие в Dead Letter Queue."""
-        with self._lock:
-            self._dead_letter_queue.append(
-                {
-                    "event": event,
-                    "subscription": subscription,
-                    "error": str(error),
-                    "timestamp": datetime.now(),
-                }
-            )
-
-            # Ограничиваем размер DLQ
-            if len(self._dead_letter_queue) > 100:
-                self._dead_letter_queue.pop(0)
-
-        self.logger.warning(f"Event {event.event_type} moved to DLQ: {error}")
-
-    def get_dead_letter_queue(self) -> list[dict[str, Any]]:
-        """Возвращает Dead Letter Queue."""
-        with self._lock:
-            return self._dead_letter_queue.copy()
-
-    def clear_dead_letter_queue(self) -> None:
-        """Очищает Dead Letter Queue."""
-        with self._lock:
-            self._dead_letter_queue.clear()
 
     def get_event_history(
         self,

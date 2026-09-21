@@ -135,12 +135,3 @@ class SqlAlchemyClientRepository(IClientRepository):
                 .limit(limit)
             ).scalars().all()
             return [_to_entity(c) for c in rows]
-
-    def get_with_order_history(
-        self, min_orders: int = 1, limit: int = 100
-    ) -> list[ClientEntity]:
-        with self._engine.get_session() as s:
-            rows = s.execute(
-                select(Client).where(Client.total_orders >= min_orders).limit(limit)
-            ).scalars().all()
-            return [_to_entity(c) for c in rows]

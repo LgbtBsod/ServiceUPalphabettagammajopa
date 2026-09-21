@@ -154,28 +154,6 @@ class WorkItemsTable:
 
         self.refresh_table()
 
-    def get_work_templates(self):
-        """Получение шаблонов работ из словаря БД (единый источник).
-
-        Возвращает список словарей {'description', 'price'}.
-        Раньше был захардкоженный список — теперь берём из БД, чтобы
-        шаблоны работ и словарь всегда были синхронизированы.
-        """
-        if not self.db:
-            return []
-        try:
-            items = self.db.get_all_dict_items("work")
-            return [
-                {
-                    "description": it.get("value", ""),
-                    "price": (it.get("additional_info") or "").strip(),
-                }
-                for it in items
-            ]
-        except Exception as e:
-            logger.error(f"Ошибка загрузки шаблонов работ: {e}", exc_info=True)
-            return []
-
     def add_from_template(self):
         """Добавление работы из шаблона через окно выбора.
 

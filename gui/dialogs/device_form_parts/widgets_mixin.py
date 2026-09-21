@@ -16,7 +16,6 @@ import json
 import logging
 import threading
 import tkinter as tk
-from datetime import datetime
 from typing import Any
 
 import customtkinter as ctk
@@ -802,17 +801,6 @@ class DeviceWidgetsMixin:
     def _remove_order_tag(self, i: int) -> None:
         del self.order_tags_state[i]
         self._refresh_order_tags_frame()
-
-    def update_receipt_time(self):
-        """Обновление даты и времени приема на текущие"""
-        from tkinter import messagebox
-
-        current_datetime = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-        if hasattr(self, "receipt_datetime_label"):
-            self.receipt_datetime_label.configure(text=current_datetime)
-        messagebox.showinfo(
-            "Успех", f"Дата и время приема обновлены на {current_datetime}"
-        )
 
     def create_work_tab(self, parent, device_data):
         """Создание вкладки с работами"""

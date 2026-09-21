@@ -244,16 +244,11 @@ class DeviceSaveMixin:
                 self.work_manager.to_json() if hasattr(self, "work_manager") else ""
             )
 
-            # Получаем дату приема
-            if hasattr(self, "receipt_datetime_label"):
-                receipt_date_str = self.receipt_datetime_label.cget("text")
-                try:
-                    dt = datetime.strptime(receipt_date_str, "%d.%m.%Y %H:%M:%S")
-                    receipt_date = dt.strftime("%Y-%m-%d %H:%M:%S")
-                except (ValueError, TypeError):
-                    receipt_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            else:
-                receipt_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # Дата приёма — момент сохранения формы. receipt_datetime_label
+            # (кнопка "обновить дату приёма на текущую") была удалена как
+            # мёртвый код — виджет никогда не создавался ни в одной версии
+            # этой формы, см. update_receipt_time() (было в widgets_mixin.py).
+            receipt_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             # Валидация
             if not device_type:

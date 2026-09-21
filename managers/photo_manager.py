@@ -129,28 +129,6 @@ class PhotoManager:
             logger.error(f"Ошибка сохранения фото: {e}", exc_info=True)
             return None
 
-    def get_order_photos(
-        self, order_number: str, client_name: str, client_phone: str
-    ) -> list[str]:
-        """Получение фотографий для конкретного заказа"""
-        try:
-            client_dir = self.get_client_photos_dir(client_name, client_phone)
-            if not os.path.exists(client_dir):
-                return []
-
-            photos = []
-            for file in os.listdir(client_dir):
-                if file.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp")):
-                    if f"order_{order_number}" in file and not file.startswith(
-                        "thumb_"
-                    ):
-                        photos.append(os.path.join(client_dir, file))
-
-            return sorted(photos, reverse=True)
-        except Exception as e:
-            logger.error(f"Ошибка получения фотографий: {e}", exc_info=True)
-            return []
-
     def get_thumbnail(self, photo_path: str) -> Image.Image | None:
         """Получение миниатюры для фотографии"""
         try:

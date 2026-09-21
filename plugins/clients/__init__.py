@@ -179,12 +179,6 @@ class IClientRepository(BaseRepository[ClientEntity]):
     ) -> list[ClientEntity]:
         """Search clients by name, phone, or email."""
 
-    @abstractmethod
-    def get_with_order_history(
-        self, min_orders: int = 1, limit: int = 100
-    ) -> list[ClientEntity]:
-        """Get clients with order history."""
-
 
 # =============================================================================
 # SERVICES
@@ -352,21 +346,15 @@ class ClientService(BaseService):
         )
 
     def search_clients(self, query: SearchClientsQuery) -> list[ClientEntity]:
-        """Search clients."""
+        """Search clients — не вызывается ни из одного GUI (нет client-search
+        UI ни в classic, ни в Flet) — но остаётся: IClientRepository.search()
+        реально протестирован (tests/test_plugins_clients.py::test_search) и
+        это правдоподобная будущая фича, не забытый мёртвый код."""
         return self.safe_execute(
             self._client_repo.search,
             query.query,
             query.limit,
             query.active_only,
-            default=[],
-        )
-
-    def get_vip_clients(self, limit: int = 100) -> list[ClientEntity]:
-        """Get clients with order history."""
-        return self.safe_execute(
-            self._client_repo.get_with_order_history,
-            min_orders=1,
-            limit=limit,
             default=[],
         )
 
