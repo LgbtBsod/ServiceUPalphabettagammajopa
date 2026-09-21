@@ -73,25 +73,23 @@ class DeviceSaveMixin:
             # его как есть, минуя валидацию).
             if not device_type or not model or not defect or not client_name or not phone_raw:
                 if not silent:
-                    messagebox.showerror(
-                        "Ошибка", "Заполните тип устройства, модель, неисправность, имя и телефон!"
-                    )
+                    messagebox.showerror(Msg.Title.ERROR, Msg.Order.SILENT_FIELDS_REQUIRED)
                 return False
             if not validate_phone(phone_raw):
                 if not silent:
-                    messagebox.showerror("Ошибка", "Неверный формат телефона!")
+                    messagebox.showerror(Msg.Title.ERROR, Msg.Order.PHONE_FORMAT_INVALID)
                 return False
             if total_price_raw and not validate_price(total_price_raw):
                 if not silent:
-                    messagebox.showerror("Ошибка", "Неверный формат цены!")
+                    messagebox.showerror(Msg.Title.ERROR, Msg.Order.PRICE_FORMAT_INVALID)
                 return False
             if prepayment_raw and not validate_price(prepayment_raw):
                 if not silent:
-                    messagebox.showerror("Ошибка", "Неверный формат предоплаты!")
+                    messagebox.showerror(Msg.Title.ERROR, Msg.Order.PREPAYMENT_FORMAT_INVALID)
                 return False
             if expense_raw and not validate_price(expense_raw):
                 if not silent:
-                    messagebox.showerror("Ошибка", "Неверный формат затрат!")
+                    messagebox.showerror(Msg.Title.ERROR, Msg.Order.EXPENSE_FORMAT_INVALID)
                 return False
 
             phone = normalize_phone(phone_raw)
@@ -190,11 +188,13 @@ class DeviceSaveMixin:
                 self.device_data["id"] = device_id
                 self.result = device_data
                 if not silent:
-                    messagebox.showinfo("Успех", f"Заказ №{order_number} создан!")
+                    messagebox.showinfo(
+                        Msg.Title.SUCCESS, Msg.Order.CREATED.format(order_number=order_number)
+                    )
                 return True
             return False
         except Exception as e:
-            logger.error(f"Ошибка сохранения: {e}", exc_info=True)
+            logger.error(Msg.Order.LOG_SAVE_FAILED.format(error=e), exc_info=True)
             return False
 
     def save(self):
@@ -257,37 +257,35 @@ class DeviceSaveMixin:
 
             # Валидация
             if not device_type:
-                messagebox.showerror("Ошибка", "Выберите тип устройства!")
+                messagebox.showerror(Msg.Title.ERROR, Msg.Order.DEVICE_TYPE_REQUIRED)
                 return
             if not model:
-                messagebox.showerror("Ошибка", "Заполните модель устройства!")
+                messagebox.showerror(Msg.Title.ERROR, Msg.Order.MODEL_REQUIRED)
                 return
             if not defect:
-                messagebox.showerror("Ошибка", "Опишите неисправность!")
+                messagebox.showerror(Msg.Title.ERROR, Msg.Order.DEFECT_REQUIRED)
                 return
             if not client_name:
-                messagebox.showerror("Ошибка", "Заполните ФИО клиента!")
+                messagebox.showerror(Msg.Title.ERROR, Msg.Order.CLIENT_NAME_REQUIRED)
                 return
             if not phone_raw:
-                messagebox.showerror("Ошибка", "Заполните номер телефона!")
+                messagebox.showerror(Msg.Title.ERROR, Msg.Order.PHONE_REQUIRED)
                 return
 
             if not validate_phone(phone_raw):
-                messagebox.showerror(
-                    "Ошибка", "Неверный формат телефона!\nПример: +7 (123) 456-78-90"
-                )
+                messagebox.showerror(Msg.Title.ERROR, Msg.Order.PHONE_FORMAT_INVALID)
                 return
 
             if total_price and not validate_price(total_price):
-                messagebox.showerror("Ошибка", "Неверный формат цены!")
+                messagebox.showerror(Msg.Title.ERROR, Msg.Order.PRICE_FORMAT_INVALID)
                 return
 
             if prepayment and not validate_price(prepayment):
-                messagebox.showerror("Ошибка", "Неверный формат предоплаты!")
+                messagebox.showerror(Msg.Title.ERROR, Msg.Order.PREPAYMENT_FORMAT_INVALID)
                 return
 
             if expense and not validate_price(expense):
-                messagebox.showerror("Ошибка", "Неверный формат затрат!")
+                messagebox.showerror(Msg.Title.ERROR, Msg.Order.EXPENSE_FORMAT_INVALID)
                 return
 
             # Нормализуем телефон к единому каноничному виду.
@@ -345,11 +343,13 @@ class DeviceSaveMixin:
                     self.result = device_data
                     self._close_with_geometry()
                     messagebox.showinfo(
-                        "Успех",
-                        f"✅ Заказ #{format_order_number_for_display(order_number)} создан!",
+                        Msg.Title.SUCCESS,
+                        Msg.Order.CREATED_WITH_ICON.format(
+                            order_number=format_order_number_for_display(order_number)
+                        ),
                     )
                 else:
-                    messagebox.showerror("Ошибка", "❌ Не удалось создать заказ")
+                    messagebox.showerror(Msg.Title.ERROR, Msg.Order.CREATE_FAILED)
             else:
                 # Обновление существующего заказа
                 existing_order_number = self.device_data.get("order_number", "")
@@ -404,9 +404,9 @@ class DeviceSaveMixin:
                     update_ok = self.db.update_device(self.device_data.get("id"), device_data)
                 except OptimisticLockError as e:
                     if messagebox.askyesno(
-                        "Конфликт версий",
-                        f"{Msg.OPTIMISTIC_CONFLICT.format()}\n\n{e}\n\n"
-                        "Обновить данные из базы сейчас?",
+                        Msg.Order.VERSION_CONFLICT_TITLE,
+                        f"{Msg.Lock.OPTIMISTIC_CONFLICT}\n\n{e}\n\n"
+                        f"{Msg.Order.VERSION_CONFLICT_REFRESH_PROMPT}",
                     ):
                         self._rebind_from_fresh_data()
                     return
@@ -430,12 +430,10 @@ class DeviceSaveMixin:
 
                     self.result = device_data
                     self._close_with_geometry()
-                    messagebox.showinfo("Успех", "✅ Заказ обновлен!")
+                    messagebox.showinfo(Msg.Title.SUCCESS, Msg.Order.UPDATED)
                 else:
-                    messagebox.showerror("Ошибка", "❌ Не удалось обновить заказ")
+                    messagebox.showerror(Msg.Title.ERROR, Msg.Order.UPDATE_FAILED)
 
         except Exception as e:
-            messagebox.showerror("Ошибка", f"❌ Ошибка сохранения: {e!s}")
-            import traceback
-
-            traceback.print_exc()
+            messagebox.showerror(Msg.Title.ERROR, Msg.Order.SAVE_FAILED.format(error=e))
+            logger.error(Msg.Order.LOG_SAVE_FAILED.format(error=e), exc_info=True)

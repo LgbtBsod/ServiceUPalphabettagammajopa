@@ -75,8 +75,8 @@ class LoggableMixin:
         """Форматирует code-based сообщение (utils.messages.Msg.*) И сразу
         логирует его на нужном уровне — одним вызовом вместо двух:
 
-            self.msg(Msg.LOGIN_TAKEN, level="warning", login=command.login)
-            # вместо self.logger.warning(Msg.LOGIN_TAKEN.format(login=...))
+            self.msg(Msg.Employee.LOGIN_GENERATION_FAILED, level="warning", error=exc)
+            # вместо self.logger.warning(Msg.Employee.LOGIN_GENERATION_FAILED.format(error=exc))
 
         Возвращает отформатированный текст — пригодится там, где помимо
         лога нужно ещё и показать сообщение пользователю (messagebox/jsonify),

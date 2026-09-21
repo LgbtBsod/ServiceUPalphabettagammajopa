@@ -131,7 +131,7 @@ class DeviceLockingMixin:
                         # проблеме (workflow-найденный баг).
                         from managers.locking import LockResult
 
-                        result = LockResult(ok=False, holder_label=Msg.LOCK_CHECK_FAILED)
+                        result = LockResult(ok=False, holder_label=Msg.Lock.CHECK_FAILED)
                     if not result.ok:
                         self._render_lock_banner(result)
                         self._set_widgets_enabled(self.tabview, False)
@@ -164,7 +164,7 @@ class DeviceLockingMixin:
         блокировка к тому моменту снята, диалог переходит в редактирование
         БЕЗ пересоздания виджетов (см. _retry_lock_acquire). still_held=True
         — это повторный отказ (после клика "Обновить"), не первое
-        обнаружение блокировки — текст короче (Msg.LOCK_STILL_HELD)."""
+        обнаружение блокировки — текст короче (Msg.Lock.STILL_HELD)."""
         started = result.started_at
         time_str = started.strftime("%H:%M") if hasattr(started, "strftime") else "?"
         holder = result.holder_label or result.holder_key or "?"
@@ -172,9 +172,9 @@ class DeviceLockingMixin:
         # объяснение "можно смотреть, но не сохранить" при каждом клике
         # "Обновить", если блокировка так и не освободилась.
         text = (
-            Msg.LOCK_STILL_HELD.format(holder=holder)
+            Msg.Lock.STILL_HELD.format(holder=holder)
             if still_held
-            else Msg.LOCK_HELD_BY_OTHER.format(holder=holder, time=time_str)
+            else Msg.Lock.HELD_BY_OTHER.format(holder=holder, time=time_str)
         )
 
         if self._lock_banner is not None:
@@ -217,7 +217,7 @@ class DeviceLockingMixin:
             self._set_widgets_enabled(self.tabview, True)
             with contextlib.suppress(Exception):
                 self.save_btn.configure(state="normal")
-            logger.info(Msg.LOCK_REACQUIRED)
+            logger.info(Msg.Lock.REACQUIRED)
         else:
             self._render_lock_banner(result, still_held=True)
 
@@ -284,7 +284,7 @@ class DeviceLockingMixin:
             return
         fresh = self.db.get_device(device_id)
         if fresh is None:
-            messagebox.showerror("Ошибка", "❌ Заказ больше не существует (возможно, удалён).")
+            messagebox.showerror(Msg.Title.ERROR, Msg.Lock.DEVICE_NOT_FOUND)
             self.destroy()
             return
         self.device_data = fresh

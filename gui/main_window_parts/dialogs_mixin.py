@@ -32,10 +32,8 @@ class DialogsMixin:
             dialog = ActivationDialog(self.root, lic, self.colors)
             self.root.wait_window(dialog)
         except Exception as e:
-            import traceback
-
-            traceback.print_exc()
-            messagebox.showerror("Ошибка", f"Не удалось открыть активацию: {e}")
+            logger.exception(Msg.Activation.LOG_OPEN_FAILED)
+            messagebox.showerror(Msg.Title.ERROR, Msg.Activation.OPEN_FAILED.format(error=e))
 
     def open_settings(self):
         """Открытие окна настроек"""
@@ -50,7 +48,7 @@ class DialogsMixin:
     def open_employees_manager(self):
         """Открытие окна управления сотрудниками."""
         if not self.employees_api:
-            messagebox.showerror("Ошибка", Msg.EMPLOYEES_MODULE_UNAVAILABLE)
+            messagebox.showerror(Msg.Title.ERROR, Msg.Employee.MODULE_UNAVAILABLE)
             return
         EmployeesManagerWindow(
             self.root,
@@ -102,7 +100,4 @@ class DialogsMixin:
 
             ReportEditor(self.root, self.colors, settings=self.settings)
         except ImportError as e:
-            messagebox.showerror(
-                "Ошибка",
-                f"Не удалось загрузить редактор: {e}\n\nУстановите reportlab: pip install reportlab",
-            )
+            messagebox.showerror(Msg.Title.ERROR, Msg.Report.EDITOR_LOAD_FAILED.format(error=e))

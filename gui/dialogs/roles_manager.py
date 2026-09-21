@@ -9,12 +9,15 @@
 управление сотрудниками, отдельная кнопка в шапке главного окна не нужна.
 """
 
+import logging
 from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
 from gui.widgets.premium import PremiumCard
 from utils.messages import Msg
+
+logger = logging.getLogger(__name__)
 
 
 class RolesManagerWindow(ctk.CTkToplevel):
@@ -28,6 +31,13 @@ class RolesManagerWindow(ctk.CTkToplevel):
         self.settings = settings
         self.current_role_id: int | None = None
         self.permission_vars: dict[str, ctk.BooleanVar] = {}
+        # False только если build_permissions_checklist() не смог прочитать
+        # список полномочий — save_role()/add_role() тогда не должны
+        # передавать пустой/неполный набор кодов как "то, что выбрал
+        # пользователь", иначе первое же сохранение любой роли молча сотрёт
+        # её реальные полномочия (тот же класс бага, что и в
+        # gui/dialogs/employees.py::_load_employee_roles).
+        self._permissions_loaded_ok = True
 
         self.title("Управление ролями")
         from utils.window_state import restore_window_geometry
@@ -180,8 +190,11 @@ class RolesManagerWindow(ctk.CTkToplevel):
         один раз при открытии."""
         try:
             permissions = self.roles_api.list_permissions()
+            self._permissions_loaded_ok = True
         except Exception:
+            logger.exception(Msg.Role.LOG_PERMISSIONS_LIST_LOAD_FAILED)
             permissions = []
+            self._permissions_loaded_ok = False
 
         groups: dict[str, list] = {}
         for perm in permissions:
@@ -250,7 +263,7 @@ class RolesManagerWindow(ctk.CTkToplevel):
 
         name = self.name_entry.get().strip()
         if not name:
-            messagebox.showerror("Ошибка", Msg.ROLE_NAME_REQUIRED)
+            messagebox.showerror(Msg.Title.ERROR, Msg.Role.NAME_REQUIRED)
             return
 
         role = self.roles_api.create_role(
@@ -261,22 +274,22 @@ class RolesManagerWindow(ctk.CTkToplevel):
             )
         )
         if role:
-            messagebox.showinfo("Успех", Msg.ROLE_ADDED)
+            messagebox.showinfo(Msg.Title.SUCCESS, Msg.Role.ADDED)
             self.load_roles()
             self.clear_form()
         else:
-            messagebox.showerror("Ошибка", Msg.ROLE_ADD_FAILED)
+            messagebox.showerror(Msg.Title.ERROR, Msg.Role.ADD_FAILED)
 
     def save_role(self):
         from plugins.employees.roles import UpdateRoleCommand
 
         if not self.current_role_id:
-            messagebox.showwarning("Предупреждение", Msg.ROLE_SELECT_FIRST)
+            messagebox.showwarning(Msg.Title.WARNING, Msg.Role.SELECT_FIRST)
             return
 
         name = self.name_entry.get().strip()
         if not name:
-            messagebox.showerror("Ошибка", Msg.ROLE_NAME_REQUIRED)
+            messagebox.showerror(Msg.Title.ERROR, Msg.Role.NAME_REQUIRED)
             return
 
         ok = self.roles_api.update_role(
@@ -284,28 +297,38 @@ class RolesManagerWindow(ctk.CTkToplevel):
                 role_id=self.current_role_id,
                 name=name,
                 description=self.description_entry.get().strip() or None,
-                permission_codes=self._selected_permission_codes(),
+                # None — "не трогать набор" (см. UpdateRoleCommand) — если
+                # список полномочий не загрузился, чекбоксы сейчас пустые и
+                # не отражают реальный набор роли, поэтому вместо
+                # self._selected_permission_codes() (стёрло бы всё) не
+                # передаём его вообще.
+                permission_codes=(
+                    self._selected_permission_codes() if self._permissions_loaded_ok else None
+                ),
             )
         )
         if ok:
-            messagebox.showinfo("Успех", Msg.ROLE_UPDATED)
+            if self._permissions_loaded_ok:
+                messagebox.showinfo(Msg.Title.SUCCESS, Msg.Role.UPDATED)
+            else:
+                messagebox.showwarning(Msg.Title.WARNING, Msg.Role.PERMISSIONS_NOT_SAVED)
             self.load_roles()
             self.clear_form()
         else:
-            messagebox.showerror("Ошибка", Msg.ROLE_UPDATE_FAILED)
+            messagebox.showerror(Msg.Title.ERROR, Msg.Role.UPDATE_FAILED)
 
     def delete_role(self):
         if not self.current_role_id:
-            messagebox.showwarning("Предупреждение", Msg.ROLE_SELECT_TO_DELETE)
+            messagebox.showwarning(Msg.Title.WARNING, Msg.Role.SELECT_TO_DELETE)
             return
-        if not messagebox.askyesno("Подтверждение", Msg.ROLE_DELETE_CONFIRM):
+        if not messagebox.askyesno(Msg.Title.CONFIRM, Msg.Role.DELETE_CONFIRM):
             return
         if self.roles_api.delete_role(self.current_role_id):
-            messagebox.showinfo("Успех", Msg.ROLE_DELETED)
+            messagebox.showinfo(Msg.Title.SUCCESS, Msg.Role.DELETED)
             self.load_roles()
             self.clear_form()
         else:
-            messagebox.showerror("Ошибка", Msg.ROLE_DELETE_FAILED)
+            messagebox.showerror(Msg.Title.ERROR, Msg.Role.DELETE_FAILED)
 
     def clear_form(self):
         self.name_entry.delete(0, "end")

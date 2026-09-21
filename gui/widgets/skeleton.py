@@ -112,7 +112,7 @@ class BusyIndicator(ctk.CTkFrame):
         self._bar.pack(side="left")
         self.pack_forget()  # скрыт по умолчанию — видимость включает start()
 
-    def start(self, text: str = Msg.LOADING_GENERIC) -> None:
+    def start(self, text: str = Msg.Loading.GENERIC) -> None:
         """Показывает индикатор и запускает анимацию."""
         self.stage = LoadingStage.LOADING
         self._label.configure(text=text)
@@ -153,7 +153,7 @@ class LoadingOverlay(ctk.CTkFrame):
         self._busy = BusyIndicator(center, colors, label_font_size=12)
         self._busy.pack(pady=(10, 0))
 
-    def start(self, text: str = Msg.LOADING_GENERIC) -> None:
+    def start(self, text: str = Msg.Loading.GENERIC) -> None:
         """Показывает оверлей поверх родителя и запускает анимацию."""
         self.stage = LoadingStage.LOADING
         self.place(relx=0, rely=0, relwidth=1, relheight=1)

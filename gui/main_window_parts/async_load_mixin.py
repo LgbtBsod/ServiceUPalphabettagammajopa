@@ -36,7 +36,7 @@ class AsyncLoadMixin:
         *,
         on_error: Callable[[Exception], None] | None = None,
         busy_indicator=None,
-        busy_text: str = Msg.LOADING_GENERIC,
+        busy_text: str = Msg.Loading.GENERIC,
     ) -> None:
         """Выполняет fetch_fn() в фоновом потоке; по готовности вызывает
         on_success(result) либо on_error(exc) — всегда на главном потоке

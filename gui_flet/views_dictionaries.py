@@ -13,6 +13,7 @@ from __future__ import annotations
 import flet as ft
 
 from domain.constants import DICTIONARY_TYPES, models_dict_type
+from utils.messages import Msg
 
 from . import theme
 
@@ -162,7 +163,7 @@ class DictionariesView:
             self.app.page.show_dialog(
                 ft.AlertDialog(
                     modal=True,
-                    title=ft.Text("Удаление"),
+                    title=ft.Text(Msg.Title.DELETE),
                     content=ft.Text("Удалить выбранный элемент справочника?"),
                     actions=[
                         ft.TextButton("Отмена", on_click=on_delete_cancelled),

@@ -118,7 +118,7 @@ class LockManager(BaseService):
             # record_locks ничего не записалось) — единственный метод класса,
             # у которого раньше было наоборот (see AUDIT_REPORT_v25.md).
             self.logger.exception(f"acquire_lock не выполнен: {e}")
-            return LockResult(ok=False, holder_label=Msg.LOCK_CHECK_FAILED)
+            return LockResult(ok=False, holder_label=Msg.Lock.CHECK_FAILED)
 
         started_at = raw.get("started_at")
         if isinstance(started_at, str):

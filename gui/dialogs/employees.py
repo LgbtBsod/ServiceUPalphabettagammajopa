@@ -8,12 +8,15 @@
 """
 
 import contextlib
+import logging
 from tkinter import EventType, messagebox, ttk
 
 import customtkinter as ctk
 
 from gui.widgets.premium import PremiumCard
 from utils.messages import Msg
+
+logger = logging.getLogger(__name__)
 
 
 class EmployeesManagerWindow(ctk.CTkToplevel):
@@ -33,6 +36,13 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         self.settings = settings
         self.current_employee_id: int | None = None
         self.role_vars: dict[int, ctk.BooleanVar] = {}
+        # False только когда _load_employee_roles() реально не смог прочитать
+        # роли сотрудника (см. ниже) — save_employee() сверяется с этим,
+        # чтобы транзитная ошибка чтения не превратилась в молчаливое
+        # затирание реальных ролей пустым набором при сохранении (workflow-
+        # найденный баг: чекбоксы после сбоя выглядят как "ролей нет", и
+        # обычное сохранение стирало бы их взаправду).
+        self._roles_loaded_ok = True
 
         self.title("Управление сотрудниками")
         from utils.window_state import restore_window_geometry
@@ -222,6 +232,7 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         try:
             roles = self.roles_api.list_roles()
         except Exception:
+            logger.exception(Msg.Employee.LOG_ROLES_LIST_LOAD_FAILED)
             roles = []
         if not roles:
             ctk.CTkLabel(
@@ -249,8 +260,11 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
     def _load_employee_roles(self, employee_id: int) -> None:
         try:
             assigned_ids = {r.id for r in self.roles_api.get_employee_roles(employee_id)}
+            self._roles_loaded_ok = True
         except Exception:
+            logger.exception(Msg.Employee.LOG_ROLES_LOAD_FAILED.format(employee_id=employee_id))
             assigned_ids = set()
+            self._roles_loaded_ok = False
         for role_id, var in self.role_vars.items():
             var.set(role_id in assigned_ids)
 
@@ -267,12 +281,12 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         """Предлагает логин по введённому ФИО (кнопка 🎲)."""
         full_name = self.name_entry.get().strip()
         if not full_name:
-            messagebox.showwarning("Предупреждение", Msg.EMPLOYEE_NAME_REQUIRED_FOR_LOGIN)
+            messagebox.showwarning(Msg.Title.WARNING, Msg.Employee.NAME_REQUIRED_FOR_LOGIN)
             return
         try:
             login = self.employees_api.suggest_login(full_name)
         except Exception as e:
-            messagebox.showerror("Ошибка", Msg.EMPLOYEE_LOGIN_GENERATION_FAILED.format(error=e))
+            messagebox.showerror(Msg.Title.ERROR, Msg.Employee.LOGIN_GENERATION_FAILED.format(error=e))
             return
         self.login_entry.delete(0, "end")
         self.login_entry.insert(0, login)
@@ -417,7 +431,7 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         full_name = self.name_entry.get().strip()
         login = self.login_entry.get().strip()
         if not full_name or not login:
-            messagebox.showerror("Ошибка", Msg.EMPLOYEE_FIELDS_REQUIRED)
+            messagebox.showerror(Msg.Title.ERROR, Msg.Employee.FIELDS_REQUIRED)
             return
 
         employee = self.employees_api.create_employee(
@@ -431,24 +445,24 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         if employee:
             if self.roles_api is not None:
                 self.roles_api.set_employee_roles(employee.id, self._selected_role_ids())
-            messagebox.showinfo("Успех", Msg.EMPLOYEE_ADDED)
+            messagebox.showinfo(Msg.Title.SUCCESS, Msg.Employee.ADDED)
             self.load_employees()
             self.clear_form()
             self._refresh_main_window_selector()
         else:
-            messagebox.showerror("Ошибка", Msg.EMPLOYEE_ADD_FAILED)
+            messagebox.showerror(Msg.Title.ERROR, Msg.Employee.ADD_FAILED)
 
     def save_employee(self):
         from plugins.employees import UpdateEmployeeCommand
 
         if not self.current_employee_id:
-            messagebox.showwarning("Предупреждение", Msg.EMPLOYEE_SELECT_FIRST)
+            messagebox.showwarning(Msg.Title.WARNING, Msg.Employee.SELECT_FIRST)
             return
 
         full_name = self.name_entry.get().strip()
         login = self.login_entry.get().strip()
         if not full_name or not login:
-            messagebox.showerror("Ошибка", Msg.EMPLOYEE_FIELDS_REQUIRED)
+            messagebox.showerror(Msg.Title.ERROR, Msg.Employee.FIELDS_REQUIRED)
             return
 
         ok = self.employees_api.update_employee(
@@ -463,31 +477,38 @@ class EmployeesManagerWindow(ctk.CTkToplevel):
         )
         if ok:
             if self.roles_api is not None:
-                self.roles_api.set_employee_roles(
-                    self.current_employee_id, self._selected_role_ids()
-                )
-            messagebox.showinfo("Успех", Msg.EMPLOYEE_UPDATED)
+                if self._roles_loaded_ok:
+                    self.roles_api.set_employee_roles(
+                        self.current_employee_id, self._selected_role_ids()
+                    )
+                else:
+                    # Роли сотрудника не удалось прочитать при открытии формы
+                    # (см. _load_employee_roles) — чекбоксы сейчас не отражают
+                    # реальное назначение, сохранять их как есть означало бы
+                    # молча стереть настоящие роли пустым/неполным набором.
+                    messagebox.showwarning(Msg.Title.WARNING, Msg.Employee.ROLES_NOT_SAVED)
+            messagebox.showinfo(Msg.Title.SUCCESS, Msg.Employee.UPDATED)
             self.load_employees()
             self.clear_form()
             self.current_employee_id = None
             self._refresh_main_window_selector()
         else:
-            messagebox.showerror("Ошибка", Msg.EMPLOYEE_UPDATE_FAILED)
+            messagebox.showerror(Msg.Title.ERROR, Msg.Employee.UPDATE_FAILED)
 
     def delete_employee(self):
         if not self.current_employee_id:
-            messagebox.showwarning("Предупреждение", Msg.EMPLOYEE_SELECT_TO_DELETE)
+            messagebox.showwarning(Msg.Title.WARNING, Msg.Employee.SELECT_TO_DELETE)
             return
-        if not messagebox.askyesno("Подтверждение", Msg.EMPLOYEE_DELETE_CONFIRM):
+        if not messagebox.askyesno(Msg.Title.CONFIRM, Msg.Employee.DELETE_CONFIRM):
             return
         if self.employees_api.delete_employee(self.current_employee_id):
-            messagebox.showinfo("Успех", Msg.EMPLOYEE_DELETED)
+            messagebox.showinfo(Msg.Title.SUCCESS, Msg.Employee.DELETED)
             self.load_employees()
             self.clear_form()
             self.current_employee_id = None
             self._refresh_main_window_selector()
         else:
-            messagebox.showerror("Ошибка", Msg.EMPLOYEE_DELETE_FAILED)
+            messagebox.showerror(Msg.Title.ERROR, Msg.Employee.DELETE_FAILED)
 
     def clear_form(self):
         self.name_entry.delete(0, "end")

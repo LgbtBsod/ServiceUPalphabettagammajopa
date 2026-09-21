@@ -97,7 +97,7 @@ class TestEmployeesViewBasicCrud:
         _find_button(form, "➕ Добавить").on_click(None)
 
         assert [e.login for e in _all_employees(employee_service)] == ["ivanov"]
-        assert app.snackbars[-1] == (Msg.EMPLOYEE_ADDED, False)
+        assert app.snackbars[-1] == (Msg.Employee.ADDED, False)
 
     def test_add_employee_rejects_empty_login(self, employee_service):
         app = _FakeApp(employee_service)

@@ -189,7 +189,7 @@ class DevicesTableMixin:
         строки (заменить их нечем) и показывает сообщение через реестр
         Msg, см. utils/messages.py."""
         clear_skeleton_rows(self.tree)
-        messagebox.showerror("Ошибка", Msg.LOAD_ORDERS_FAILED.format(error=error))
+        messagebox.showerror(Msg.Title.ERROR, Msg.Loading.ORDERS_FAILED.format(error=error))
 
     def apply_filters(self):
         """Применение фильтров — запрос к БД идёт в фоновом потоке
@@ -213,7 +213,7 @@ class DevicesTableMixin:
                 self._clear_tree_and_populate,
                 on_error=self._on_devices_load_error,
                 busy_indicator=getattr(self, "busy_indicator", None),
-                busy_text=Msg.LOADING_ORDERS,
+                busy_text=Msg.Loading.ORDERS,
             )
         except Exception as e:
             logger.exception(f"Ошибка применения фильтров: {e}")
@@ -231,7 +231,7 @@ class DevicesTableMixin:
                 self._clear_tree_and_populate,
                 on_error=self._on_devices_load_error,
                 busy_indicator=getattr(self, "busy_indicator", None),
-                busy_text=Msg.LOADING_ORDERS,
+                busy_text=Msg.Loading.ORDERS,
             )
         except Exception as e:
             logger.exception(f"Ошибка загрузки устройств: {e}")
@@ -242,7 +242,7 @@ class DevicesTableMixin:
         if not selected:
             return
         if self.settings.get("confirm_delete", True):
-            if not messagebox.askyesno("Удаление", "Удалить выбранный заказ?"):
+            if not messagebox.askyesno(Msg.Title.DELETE, "Удалить выбранный заказ?"):
                 return
         order_number_display = self.tree.item(selected[0])["values"][0]
         device_id = self.get_device_id_by_order_number(order_number_display)
@@ -256,10 +256,10 @@ class DevicesTableMixin:
                     self.update_finance_display()
                     self.update_status_bar(f"Заказ #{order_number_display} удалён")
                 else:
-                    messagebox.showerror("Ошибка", "Не удалось удалить заказ")
+                    messagebox.showerror(Msg.Title.ERROR, "Не удалось удалить заказ")
             except Exception as e:
                 logger.exception(f"Ошибка удаления: {e}")
-                messagebox.showerror("Ошибка", f"Не удалось удалить заказ: {e}")
+                messagebox.showerror(Msg.Title.ERROR, f"Не удалось удалить заказ: {e}")
 
     def refresh_orders(self):
         """Ручное обновление списка заказов из БД (кнопка «🔄 Обновить»).
@@ -331,7 +331,7 @@ class DevicesTableMixin:
                 _apply,
                 on_error=self._on_devices_load_error,
                 busy_indicator=getattr(self, "busy_indicator", None),
-                busy_text=Msg.LOADING_ORDERS,
+                busy_text=Msg.Loading.ORDERS,
             )
         except Exception as e:
             logger.exception(f"Ошибка фильтра «сегодня»: {e}")
@@ -369,7 +369,7 @@ class DevicesTableMixin:
                 _apply,
                 on_error=self._on_devices_load_error,
                 busy_indicator=getattr(self, "busy_indicator", None),
-                busy_text=Msg.LOADING_ORDERS,
+                busy_text=Msg.Loading.ORDERS,
             )
         except Exception as e:
             logger.exception(f"Ошибка фильтра «неделя»: {e}")
@@ -400,7 +400,7 @@ class DevicesTableMixin:
                 _apply,
                 on_error=self._on_devices_load_error,
                 busy_indicator=getattr(self, "busy_indicator", None),
-                busy_text=Msg.LOADING_SEARCH,
+                busy_text=Msg.Loading.SEARCH,
             )
         except Exception as e:
             logger.exception(f"Ошибка поиска: {e}")
@@ -492,7 +492,7 @@ class DevicesTableMixin:
         """Редактирование устройства"""
         selected = self.tree.selection()
         if not selected:
-            messagebox.showwarning("Предупреждение", "Выберите заказ")
+            messagebox.showwarning(Msg.Title.WARNING, "Выберите заказ")
             return
 
         order_number_display = self.tree.item(selected[0])["values"][0]
@@ -500,7 +500,7 @@ class DevicesTableMixin:
 
         if not device_id:
             messagebox.showerror(
-                "Ошибка",
+                Msg.Title.ERROR,
                 f"Не удалось найти устройство с номером {order_number_display}",
             )
             return
@@ -510,7 +510,7 @@ class DevicesTableMixin:
         if device:
             self.open_edit_device_window(device)
         else:
-            messagebox.showerror("Ошибка", "Не удалось загрузить данные")
+            messagebox.showerror(Msg.Title.ERROR, "Не удалось загрузить данные")
 
     def format_datetime_for_display(self, date_str):
         """Форматирование даты и времени для отображения"""

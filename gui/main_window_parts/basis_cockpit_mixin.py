@@ -96,11 +96,11 @@ class BasisCockpitMixin:
         ~1 час, см. database/db_core.py, AUDIT_REPORT_v25.md Task W. Общий
         на процесс (не per-пользователь) — обычное окно и мобильная версия
         (PWA) работают с одним и тем же self.db в одном процессе."""
-        content = self._basis_section(parent, "🗃️ " + Msg.BASIS_QUERY_CACHE_LABEL)
+        content = self._basis_section(parent, "🗃️ " + Msg.Basis.QUERY_CACHE_LABEL)
 
         ctk.CTkLabel(
             content,
-            text=Msg.BASIS_QUERY_CACHE_HINT,
+            text=Msg.Basis.QUERY_CACHE_HINT,
             font=ctk.CTkFont(size=12),
             text_color=self.colors["text_secondary"],
             wraplength=500,
@@ -109,7 +109,7 @@ class BasisCockpitMixin:
 
         ctk.CTkButton(
             content,
-            text=Msg.BASIS_REFRESH_CACHE_BUTTON,
+            text=Msg.Basis.REFRESH_CACHE_BUTTON,
             command=self._refresh_query_cache,
             fg_color=self.colors["bg_tertiary"],
             text_color=self.colors["text_primary"],
@@ -121,9 +121,9 @@ class BasisCockpitMixin:
             count = self.db.refresh_query_cache()
         except Exception as e:
             logger.error(f"Не удалось обновить кэш запросов: {e}", exc_info=True)
-            messagebox.showerror("Ошибка", str(e))
+            messagebox.showerror(Msg.Title.ERROR, str(e))
             return
-        messagebox.showinfo("Базис", Msg.BASIS_CACHE_REFRESHED.format(count=count))
+        messagebox.showinfo(Msg.Title.BASIS, Msg.Basis.CACHE_REFRESHED.format(count=count))
 
     def _create_permissions_section(self, parent):
         """Полномочия/RBAC — схема ролей/полномочий и реальный
@@ -134,7 +134,7 @@ class BasisCockpitMixin:
         content = self._basis_section(parent, "🔐 Полномочия")
         ctk.CTkLabel(
             content,
-            text=Msg.BASIS_PERMISSIONS_HINT,
+            text=Msg.Basis.PERMISSIONS_HINT,
             font=ctk.CTkFont(size=12),
             text_color=self.colors["text_secondary"],
             wraplength=500,
@@ -142,7 +142,7 @@ class BasisCockpitMixin:
         ).pack(anchor="w", pady=(0, 8))
         ctk.CTkButton(
             content,
-            text=Msg.BASIS_MANAGE_ROLES_BUTTON,
+            text=Msg.Basis.MANAGE_ROLES_BUTTON,
             command=self._open_roles_manager_from_basis,
             fg_color=self.colors["bg_tertiary"],
             text_color=self.colors["text_primary"],
@@ -152,7 +152,7 @@ class BasisCockpitMixin:
     def _open_roles_manager_from_basis(self):
         roles_api = getattr(self, "roles_api", None)
         if roles_api is None:
-            messagebox.showerror("Ошибка", Msg.ROLES_MODULE_UNAVAILABLE)
+            messagebox.showerror(Msg.Title.ERROR, Msg.Role.MODULE_UNAVAILABLE)
             return
         from gui.dialogs.roles_manager import RolesManagerWindow
 
@@ -180,14 +180,14 @@ class BasisCockpitMixin:
         )
         ctk.CTkCheckBox(
             content,
-            text=Msg.SETTINGS_PESSIMISTIC_LOCK_LABEL,
+            text=Msg.Settings.PESSIMISTIC_LOCK_LABEL,
             variable=self.basis_pessimistic_lock_var,
             fg_color=self.colors["accent"],
         ).pack(anchor="w", pady=3)
 
         ttl_row = ctk.CTkFrame(content, fg_color="transparent")
         ttl_row.pack(fill="x", pady=5)
-        ctk.CTkLabel(ttl_row, text=Msg.SETTINGS_LOCK_TTL_LABEL).pack(side="left")
+        ctk.CTkLabel(ttl_row, text=Msg.Settings.LOCK_TTL_LABEL).pack(side="left")
         self.basis_lock_ttl_entry = ctk.CTkEntry(ttl_row, width=60)
         self.basis_lock_ttl_entry.insert(
             0, str(self.settings.get("lock_ttl_seconds", 300))
@@ -226,4 +226,4 @@ class BasisCockpitMixin:
         )
         self.settings.set("lock_ttl_seconds", ttl)
         self.settings.save_settings()
-        messagebox.showinfo("Базис", "Настройки блокировок сохранены")
+        messagebox.showinfo(Msg.Title.BASIS, Msg.Basis.LOCKING_SAVED)

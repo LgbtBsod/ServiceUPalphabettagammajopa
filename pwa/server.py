@@ -545,7 +545,7 @@ def create_flask_app():
             except OptimisticLockError:
                 return jsonify(
                     {
-                        "error": Msg.PWA_ORDER_VERSION_CONFLICT,
+                        "error": Msg.Pwa.ORDER_VERSION_CONFLICT,
                         "code": "version_conflict",
                     }
                 ), 409
@@ -813,7 +813,7 @@ def create_flask_app():
                 # к записи сейчас нельзя без риска затереть ту чужую правку.
                 return jsonify(
                     {
-                        "error": Msg.PWA_PHOTO_VERSION_CONFLICT,
+                        "error": Msg.Pwa.PHOTO_VERSION_CONFLICT,
                         "code": "version_conflict",
                     }
                 ), 409

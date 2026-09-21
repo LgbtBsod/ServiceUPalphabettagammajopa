@@ -219,7 +219,7 @@ class FinanceMixin:
 
         def _on_error(error):
             logger.exception(f"Ошибка фоновой загрузки финансов: {error}")
-            messagebox.showerror("Ошибка", Msg.LOAD_FINANCE_FAILED.format(error=error))
+            messagebox.showerror(Msg.Title.ERROR, Msg.Loading.FINANCE_FAILED.format(error=error))
 
         self._run_async(
             "finance_tab",
@@ -227,7 +227,7 @@ class FinanceMixin:
             _apply,
             on_error=_on_error,
             busy_indicator=getattr(self, "_finance_overlay", None),
-            busy_text=Msg.LOADING_FINANCE,
+            busy_text=Msg.Loading.FINANCE,
         )
 
     def edit_expense(self, event):
@@ -286,11 +286,11 @@ class FinanceMixin:
                 if self.db.update_finance_expense(order_number, expense):
                     dialog.destroy()
                     self.update_finance_display()
-                    messagebox.showinfo("Успех", "Расход обновлён")
+                    messagebox.showinfo(Msg.Title.SUCCESS, "Расход обновлён")
                 else:
-                    messagebox.showerror("Ошибка", "Не удалось обновить расход")
+                    messagebox.showerror(Msg.Title.ERROR, "Не удалось обновить расход")
             except ValueError:
-                messagebox.showerror("Ошибка", "Введите корректное число")
+                messagebox.showerror(Msg.Title.ERROR, "Введите корректное число")
 
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
         btn_frame.pack(pady=20)
