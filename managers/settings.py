@@ -63,11 +63,21 @@ class SettingsManager:
         return value
 
     def set(self, key: str, value: Any) -> None:
-        """Установка значения настройки"""
+        """Установка значения настройки (поддерживает dotted-path, например
+        "pwa.port").
+
+        Промежуточный сегмент пути, уже занятый НЕ-словарём (устаревший
+        или повреждённый config.json, где та же точка раньше хранила
+        скаляр), раньше приводил к TypeError на следующей строке (`target =
+        target[k]` -> скаляр -> `target[keys[-1]] = value` не поддерживает
+        индексацию) — set() ронял вызывающий код вместо того, чтобы
+        записать настройку. Теперь такой сегмент молча замещается пустым
+        словарём: то, что реально пишется прямо сейчас, важнее случайно
+        оставшегося там скаляра."""
         keys = key.split(".")
         target = self.settings
         for k in keys[:-1]:
-            if k not in target:
+            if not isinstance(target.get(k), dict):
                 target[k] = {}
             target = target[k]
         target[keys[-1]] = value
