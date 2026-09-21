@@ -413,6 +413,27 @@ class TestUpdateDeviceStatus:
         assert len(finances) == 1
 
 
+class TestGetFinanceByOrderNumber:
+    """Точечный поиск одной финзаписи — заменяет get_finances("all") +
+    питон-цикл в gui/main_window_parts/finance_mixin.py::edit_expense()
+    (workflow-найденный баг: полный синхронный скан на каждый двойной
+    клик по таблице финансов)."""
+
+    def test_returns_the_matching_record(self, db):
+        device_id = db.add_device(_sample_device(total_price="1500", expense="300"))
+        db.update_device_status(device_id, "Выдан клиенту")
+
+        record = db.get_finance_by_order_number("00001")
+
+        assert record is not None
+        assert record["order_number"] == "00001"
+        assert record["income"] == 1500.0
+        assert record["expense"] == 300.0
+
+    def test_returns_none_for_an_unknown_order_number(self, db):
+        assert db.get_finance_by_order_number("99999") is None
+
+
 class TestUpdateDeviceStatusWithLegacyTextTotalPrice:
     """Regression — found via a live run of the app (create an order in the
     Flet GUI, print the completion act, confirm "Выдан клиенту"): real

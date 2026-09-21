@@ -288,16 +288,37 @@ class DevicesTableMixin:
 
     def show_overdue_orders(self):
         """Показ просроченных заказов (по умолчанию >14 дней в ремонте,
-        настраивается в Настройках)."""
+        настраивается в Настройках) — запрос идёт в фоновом потоке, как и
+        соседние show_today_orders/show_week_orders (см. их докстринги,
+        Task O). Раньше был единственным методом-фильтром в файле, не
+        переведённым на этот паттерн — блокировал Tk на время SQL-агрегации
+        (calculate() делает JOIN + сортировку по всей таблице устройств),
+        хотя вызывается из двух кликабельных мест (карточка дашборда
+        "Просрочены" и кнопка тулбара)."""
         try:
             threshold = self.settings.get("overdue_days", 14)
-            # SQL-агрегация вместо питон-цикла по всем устройствам — закрывает
-            # находку про 3-кратное дублирование этого фильтра (см. AUDIT_REPORT_v21.md)
-            overdue = self.db.calculate("overdue_orders", threshold_days=threshold)
-            self._clear_tree_and_populate(
-                overdue, count_label_text=f"Просроченных: {len(overdue)}"
+
+            def _fetch():
+                # SQL-агрегация вместо питон-цикла по всем устройствам —
+                # закрывает находку про 3-кратное дублирование этого
+                # фильтра (см. AUDIT_REPORT_v21.md)
+                return self.db.calculate("overdue_orders", threshold_days=threshold)
+
+            def _apply(overdue):
+                self._clear_tree_and_populate(
+                    overdue, count_label_text=f"Просроченных: {len(overdue)}"
+                )
+                self.update_status_bar(f"⏰ Просроченных заказов: {len(overdue)}")
+
+            insert_skeleton_rows(self.tree)
+            self._run_async(
+                "devices_table",
+                _fetch,
+                _apply,
+                on_error=self._on_devices_load_error,
+                busy_indicator=getattr(self, "busy_indicator", None),
+                busy_text=Msg.Loading.ORDERS,
             )
-            self.update_status_bar(f"⏰ Просроченных заказов: {len(overdue)}")
         except Exception as e:
             logger.exception(f"Ошибка фильтра просроченных: {e}")
 

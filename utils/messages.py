@@ -184,6 +184,13 @@ class Msg:
             "Не удалось загрузить редактор: {error}\n\nУстановите reportlab: pip install reportlab"
         )
 
+    class Finance:
+        """Редактирование расхода по заказу (gui/main_window_parts/finance_mixin.py)."""
+
+        EXPENSE_UPDATED = "Расход обновлён"
+        EXPENSE_UPDATE_FAILED = "Не удалось обновить расход"
+        INVALID_NUMBER = "Введите корректное число"
+
     class Order:
         """Валидация и сохранение заказа
         (gui/dialogs/device_form_parts/save_mixin.py) — save()

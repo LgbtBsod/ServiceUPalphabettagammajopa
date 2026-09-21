@@ -38,6 +38,29 @@ class FinanceMixin:
                 for r in s.execute(stmt).scalars().all()
             ]
 
+    def get_finance_by_order_number(self, order_number: str) -> dict[str, Any] | None:
+        """Точечный поиск одной финзаписи по номеру заказа — используется
+        gui/main_window_parts/finance_mixin.py::edit_expense() вместо
+        get_finances("all") + питон-цикл по ВСЕЙ (растущей без ограничения)
+        истории финансов ради одной записи на каждый двойной клик по
+        таблице (workflow-найденный баг: тот же класс проблемы, что
+        get_all_devices()-сканы, которые уже переведены на AsyncLoadMixin/
+        точечные запросы в других местах приложения)."""
+        with self._session() as s:
+            record = s.execute(
+                select(FinanceRecord).where(FinanceRecord.order_number == order_number)
+            ).scalar_one_or_none()
+            if record is None:
+                return None
+            return {
+                "id": record.id,
+                "order_number": record.order_number,
+                "completion_date": record.completion_date,
+                "income": record.income,
+                "expense": record.expense,
+                "profit": record.profit,
+            }
+
     def get_finance_summary(self, period: str = "all") -> dict[str, float]:
         with self._session() as s:
             stmt = select(

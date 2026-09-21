@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 """Regression test for gui/main_window_parts/devices_table_mixin.py's
-show_today_orders()/show_week_orders() — Workflow-found bug: unlike their
-sibling filter methods in the same class/file (load_devices, apply_filters,
-search_devices), these two fetched the WHOLE devices table and filtered it
-in a plain Python loop directly on the calling (GUI) thread, freezing the
+show_today_orders()/show_week_orders()/show_overdue_orders() — Workflow-found
+bug: unlike their sibling filter methods in the same class/file
+(load_devices, apply_filters, search_devices), these fetched/computed the
+WHOLE devices table synchronously on the calling (GUI) thread, freezing the
 window for the duration of the query as order history grows. Fixed by
 routing them through the same AsyncLoadMixin._run_async() pattern the
 sibling methods already use.
@@ -183,3 +183,55 @@ class TestShowWeekOrdersUsesAsyncLoad:
         rows = [host.tree.item(i)["values"] for i in host.tree.get_children()]
         names = {r[5] for r in rows}
         assert names == {"Недавно"}
+
+
+class TestShowOverdueOrdersUsesAsyncLoad:
+    def test_fetch_runs_through_run_async_not_synchronously(self, db, host):
+        db.add_device(
+            {
+                "order_number": "1",
+                "client_name": "Просрочен",
+                "phone": "+79990000000",
+                "receipt_date": (datetime.now() - timedelta(days=30)).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
+            }
+        )
+
+        host.show_overdue_orders()
+        assert all(
+            SKELETON_TAG in host.tree.item(i, "tags")
+            for i in host.tree.get_children()
+        )
+
+        host.root.run_pending()
+
+        assert len(host.tree.get_children()) == 1
+        assert any("Просроченных" in m for m in host.status_bar_messages)
+
+    def test_orders_within_the_threshold_are_excluded(self, db, host):
+        db.add_device(
+            {
+                "order_number": "1",
+                "client_name": "Недавно",
+                "phone": "+79990000001",
+                "receipt_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+        db.add_device(
+            {
+                "order_number": "2",
+                "client_name": "Давно",
+                "phone": "+79990000002",
+                "receipt_date": (datetime.now() - timedelta(days=30)).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
+            }
+        )
+
+        host.show_overdue_orders()
+        host.root.run_pending()
+
+        rows = [host.tree.item(i)["values"] for i in host.tree.get_children()]
+        names = {r[5] for r in rows}
+        assert names == {"Давно"}

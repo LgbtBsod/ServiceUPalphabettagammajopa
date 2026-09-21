@@ -243,13 +243,12 @@ class FinanceMixin:
         # Получаем номер заказа для БД
         order_number = format_order_number_for_db(order_number_display)
 
-        # Находим запись в финансах
-        finances = self.db.get_finances("all")
-        finance_record = None
-        for f in finances:
-            if f.get("order_number") == order_number:
-                finance_record = f
-                break
+        # Точечный запрос вместо get_finances("all") + питон-цикл по ВСЕЙ
+        # истории финансов на каждый двойной клик — см.
+        # database/facade/finance_mixin.py::get_finance_by_order_number()
+        # (workflow-найденный баг: синхронный полный скан на главном потоке
+        # на самое рядовое действие в этой вкладке).
+        finance_record = self.db.get_finance_by_order_number(order_number)
 
         if not finance_record:
             return
@@ -286,11 +285,11 @@ class FinanceMixin:
                 if self.db.update_finance_expense(order_number, expense):
                     dialog.destroy()
                     self.update_finance_display()
-                    messagebox.showinfo(Msg.Title.SUCCESS, "Расход обновлён")
+                    messagebox.showinfo(Msg.Title.SUCCESS, Msg.Finance.EXPENSE_UPDATED)
                 else:
-                    messagebox.showerror(Msg.Title.ERROR, "Не удалось обновить расход")
+                    messagebox.showerror(Msg.Title.ERROR, Msg.Finance.EXPENSE_UPDATE_FAILED)
             except ValueError:
-                messagebox.showerror(Msg.Title.ERROR, "Введите корректное число")
+                messagebox.showerror(Msg.Title.ERROR, Msg.Finance.INVALID_NUMBER)
 
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
         btn_frame.pack(pady=20)
