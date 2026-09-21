@@ -7,6 +7,7 @@ from tkinter import messagebox
 import customtkinter as ctk
 
 from gui.widgets.premium import PremiumEntry, PremiumLabel
+from utils.messages import Msg
 from utils.validators import validate_price
 
 
@@ -185,15 +186,15 @@ class WorkItemDialog(ctk.CTkToplevel):
         price = self.price_entry.get().strip()
 
         if not description:
-            messagebox.showerror("Ошибка", "Введите описание работы!")
+            messagebox.showerror(Msg.Title.ERROR, Msg.WorkItem.DESCRIPTION_REQUIRED)
             return
 
         if not price:
-            messagebox.showerror("Ошибка", "Введите цену!")
+            messagebox.showerror(Msg.Title.ERROR, Msg.WorkItem.PRICE_REQUIRED)
             return
 
         if not validate_price(price):
-            messagebox.showerror("Ошибка", "Неверный формат цены!")
+            messagebox.showerror(Msg.Title.ERROR, Msg.WorkItem.PRICE_FORMAT_INVALID)
             return
 
         # Безопасное чтение quantity (поле может быть пустым)
@@ -203,7 +204,7 @@ class WorkItemDialog(ctk.CTkToplevel):
             quantity = 1
 
         if quantity < 1:
-            messagebox.showerror("Ошибка", "Количество должно быть не менее 1!")
+            messagebox.showerror(Msg.Title.ERROR, Msg.WorkItem.QUANTITY_MIN_ONE)
             return
 
         self.result = {"description": description, "price": price, "quantity": quantity}

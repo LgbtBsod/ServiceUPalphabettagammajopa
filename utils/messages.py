@@ -191,6 +191,22 @@ class Msg:
         EXPENSE_UPDATE_FAILED = "Не удалось обновить расход"
         INVALID_NUMBER = "Введите корректное число"
 
+    class WorkItem:
+        """Позиции выполненных работ (database/models.py::WorkItem/
+        WorkItemsManager, gui/dialogs/work_item_dialog.py,
+        gui_flet/views_orders.py::_WorkItemsEditor) — общий текст для
+        обеих оболочек на интерактивном пути добавления, и для модели
+        данных на пути чтения уже сохранённых work_items."""
+
+        DESCRIPTION_REQUIRED = "Введите описание работы!"
+        PRICE_REQUIRED = "Введите цену!"
+        PRICE_FORMAT_INVALID = "Неверный формат цены!"
+        QUANTITY_MIN_ONE = "Количество должно быть не менее 1!"
+        LOG_QUANTITY_CLAMPED = (
+            "Количество работы {quantity} <= 0 — округлено до 1 при чтении "
+            "(0/отрицательное количество не имеет смысла)"
+        )
+
     class Order:
         """Валидация и сохранение заказа
         (gui/dialogs/device_form_parts/save_mixin.py) — save()

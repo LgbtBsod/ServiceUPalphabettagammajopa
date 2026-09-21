@@ -17,6 +17,7 @@ import tempfile
 import flet as ft
 
 from database import OptimisticLockError
+from database.models import WorkItem
 from domain.constants import (
     PRIORITIES,
     STATUS_ISSUED,
@@ -188,15 +189,20 @@ class _WorkItemsEditor:
             for it in _items:
                 if not isinstance(it, dict):
                     continue
-                desc = str(it.get("description", "")).strip()
+                # WorkItem.from_dict() — общий с classic GUI разбор
+                # quantity (см. database/models.py::_safe_int/_clamp_quantity):
+                # раньше здесь был независимый parse, который клэмпил
+                # 0/отрицательное количество к 1 молча и БЕЗ ЛОГА при каждой
+                # загрузке формы, тогда как classic GUI (WorkItem.total_price())
+                # считал такую позицию как 0 ₽ — один и тот же сохранённый
+                # заказ показывал разный итог в зависимости от того, в каком
+                # интерфейсе он открыт (workflow-найденное расхождение).
+                parsed = WorkItem.from_dict(it)
+                desc = parsed.description.strip()
                 if not desc:
                     continue
-                try:
-                    qty = max(int(it.get("quantity", 1)), 1)
-                except (ValueError, TypeError):
-                    qty = 1
                 self.items.append(
-                    {"description": desc, "price": str(it.get("price", "")).strip(), "quantity": qty}
+                    {"description": desc, "price": str(parsed.price).strip(), "quantity": parsed.quantity}
                 )
 
         self.rows_column = ft.Column(spacing=4)
@@ -248,14 +254,28 @@ class _WorkItemsEditor:
         self.app.page.update()
 
     def add(self, _e=None) -> None:
+        # Та же валидация, что classic GUI's WorkItemDialog.save() — раньше
+        # эта форма молча клэмпила пустое/некорректное количество к 1 и не
+        # проверяла цену вообще, вместо того чтобы явно отказать, как уже
+        # делает classic (workflow-найденное расхождение).
         desc = (self.desc_field.value or "").strip()
         if not desc:
+            self.app.show_snackbar(Msg.WorkItem.DESCRIPTION_REQUIRED, error=True)
             return
         price = (self.price_field.value or "").strip()
+        if not price:
+            self.app.show_snackbar(Msg.WorkItem.PRICE_REQUIRED, error=True)
+            return
+        if not validate_price(price):
+            self.app.show_snackbar(Msg.WorkItem.PRICE_FORMAT_INVALID, error=True)
+            return
         try:
-            qty = max(int((self.qty_field.value or "1").strip()), 1)
+            qty = int((self.qty_field.value or "1").strip())
         except ValueError:
-            qty = 1
+            qty = 0  # ниже отклонится тем же путём, что и явный 0/отрицательный ввод
+        if qty < 1:
+            self.app.show_snackbar(Msg.WorkItem.QUANTITY_MIN_ONE, error=True)
+            return
         self.items.append({"description": desc, "price": price, "quantity": qty})
         self.desc_field.value = ""
         self.price_field.value = ""

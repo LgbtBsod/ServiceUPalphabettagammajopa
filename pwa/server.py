@@ -385,13 +385,8 @@ def create_flask_app():
                         wm.from_json(items_data)
                     elif isinstance(items_data, list):
                         for it in items_data:
-                            wm.add_item(
-                                WorkItem(
-                                    description=it.get("description", ""),
-                                    price=it.get("price", ""),
-                                    quantity=it.get("quantity", 1),
-                                )
-                            )
+                            if isinstance(it, dict):
+                                wm.add_item(WorkItem.from_dict(it))
                     total_price = str(int(wm.get_total_price()))
                 except Exception:
                     logger.warning(
@@ -497,13 +492,8 @@ def create_flask_app():
                         wm.from_json(items_data)
                     elif isinstance(items_data, list):
                         for it in items_data:
-                            wm.add_item(
-                                WorkItem(
-                                    description=it.get("description", ""),
-                                    price=it.get("price", ""),
-                                    quantity=it.get("quantity", 1),
-                                )
-                            )
+                            if isinstance(it, dict):
+                                wm.add_item(WorkItem.from_dict(it))
                     total_price = str(int(wm.get_total_price()))
                 except Exception:
                     logger.warning(
@@ -963,30 +953,28 @@ def _validate_order_fields(data: dict[str, Any], *, require_client: bool) -> str
 
 
 def _work_items_to_json(work_items) -> str:
-    """Преобразует work_items (строка JSON / список / None) в JSON-строку."""
+    """Преобразует work_items (строка JSON / список / None) в JSON-строку.
+
+    Разбор каждого элемента — через WorkItem.from_dict() (database/
+    models.py), а не независимый парсинг quantity: раньше это была ТРЕТЬЯ
+    отдельная реализация нормализации quantity (помимо classic GUI и
+    gui_flet/views_orders.py::_WorkItemsEditor, которые теперь тоже делят
+    один и тот же _safe_int()) — делала только int(qty) без пола в 1, так
+    что API-клиент мог напрямую записать quantity=0/отрицательное в
+    work_items_json в обход валидации, которую оба интерфейса уже
+    навязывают на интерактивном пути добавления (workflow-найденное
+    расхождение)."""
     if not work_items:
         return ""
     if isinstance(work_items, str):
         return work_items
     if isinstance(work_items, list):
-        import json as _json
-
-        result = []
-        for it in work_items:
-            if isinstance(it, dict):
-                qty = it.get("quantity", 1)
-                try:
-                    qty = int(qty)
-                except (ValueError, TypeError):
-                    qty = 1
-                result.append(
-                    {
-                        "description": it.get("description", ""),
-                        "price": str(it.get("price", "")),
-                        "quantity": qty,
-                    }
-                )
-        return _json.dumps(result, ensure_ascii=False)
+        result = [
+            WorkItem.from_dict(it).to_dict()
+            for it in work_items
+            if isinstance(it, dict)
+        ]
+        return json.dumps(result, ensure_ascii=False)
     return ""
 
 

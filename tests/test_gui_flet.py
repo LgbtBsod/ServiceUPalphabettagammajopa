@@ -521,6 +521,54 @@ class TestOrderFormWorkItems:
         rows = self._rows(form)
         assert len(rows) == 1
 
+    def test_adding_with_empty_description_is_rejected_not_silently_dropped(self, db):
+        """Раньше: пустое описание просто return'илось без объяснения.
+        Теперь — та же явная валидация, что classic GUI's WorkItemDialog."""
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        self._price_field(form).value = "1500"
+        self._add_button(form).on_click(None)
+
+        assert self._rows(form) == []
+        assert app.snackbars and app.snackbars[-1][1] is True
+
+    def test_adding_with_zero_quantity_is_rejected_not_silently_clamped(self, db):
+        """Workflow-найденное расхождение: раньше qty<=0 молча клэмпился к
+        1 без единого сигнала пользователю, в отличие от classic GUI,
+        которое явно отказывает ("Количество должно быть не менее 1!").
+        Flet теперь делает то же самое — отказывает, а не тихо подменяет
+        введённое значение."""
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        self._desc_field(form).value = "Замена экрана"
+        self._price_field(form).value = "1500"
+        self._qty_field(form).value = "0"
+        self._add_button(form).on_click(None)
+
+        assert self._rows(form) == []
+        assert app.snackbars and app.snackbars[-1][1] is True
+
+    def test_adding_with_invalid_price_is_rejected(self, db):
+        """Раньше цена вообще не проверялась в Flet — любой текст (в т.ч.
+        пустой или нечисловой) принимался как есть."""
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        form = view._render_form()
+
+        self._desc_field(form).value = "Замена экрана"
+        self._price_field(form).value = "не число"
+        self._add_button(form).on_click(None)
+
+        assert self._rows(form) == []
+        assert app.snackbars and app.snackbars[-1][1] is True
+
     def test_saving_persists_work_items_and_computes_total_price(self, db):
         app = _FakeApp(db)
         view = OrdersView(app)
@@ -577,6 +625,33 @@ class TestOrderFormWorkItems:
         form = view._render_form()
 
         assert len(self._rows(form)) == 1
+        assert _find(form, label="Стоимость").value == "500"
+
+    def test_editing_a_device_with_stored_zero_quantity_loads_it_clamped_to_one(self, db):
+        """Workflow-найденное расхождение: заказ, сохранённый (например,
+        через PWA API без валидации) с quantity=0, раньше показывал разную
+        стоимость в classic GUI (0 ₽ за эту позицию) и Flet (тихо
+        подменяло на 1 ₽×цена при каждой загрузке формы). Теперь оба идут
+        через один и тот же WorkItem.from_dict() — сумма стабильна и
+        видна в обоих интерфейсах одинаково."""
+        device_id = db.add_device(
+            {
+                "order_number": "1",
+                "client_name": "Иван",
+                "phone": "+79990000000",
+                "work_items_json": json.dumps(
+                    [{"description": "Диагностика", "price": "500", "quantity": 0}]
+                ),
+            }
+        )
+        app = _FakeApp(db)
+        view = OrdersView(app)
+        view.mode = "form"
+        view.editing_id = device_id
+        form = view._render_form()
+
+        assert len(self._rows(form)) == 1
+        # Итог посчитан с quantity=1 (клэмпнуто), не 0.
         assert _find(form, label="Стоимость").value == "500"
 
     def test_removing_a_work_item_and_saving_drops_it(self, db):

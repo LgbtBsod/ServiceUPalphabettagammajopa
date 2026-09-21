@@ -7,6 +7,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from utils.messages import Msg
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,20 +31,42 @@ def _safe_price_to_float(price) -> float:
 
 
 def _safe_int(value, default=1) -> int:
-    """Надёжное приведение к int (устойчиво к строкам вроде '2')."""
+    """Надёжное приведение количества выполненной работы к int (устойчиво к
+    строкам вроде '2') — единственный потребитель этого хелпера —
+    WorkItem.quantity, результат всегда >= 1.
+
+    Количество выполненных работ 0/отрицательное не имеет смысла — тот же
+    принцип, что WorkItemDialog.save() уже enforced интерактивно (quantity
+    < 1 отклоняется с ошибкой при ручном добавлении). Раньше это правило
+    жило только в диалоге добавления, а тут, на чтении уже сохранённых
+    данных, 0/отрицательное значение сохранялось как есть — total_price()
+    считало такую позицию как 0 ₽. Flet-редактор (_WorkItemsEditor)
+    независимо клэмпил такое значение до 1 при ЗАГРУЗКЕ, но молча — то же
+    сохранённое значение показывало разный итог в зависимости от того, в
+    каком интерфейсе открыт заказ, а пересохранение из Flet тихо
+    переписывало 0 на 1 без единой строчки в логе (workflow-найденное
+    расхождение). Клэмп теперь общий для обеих оболочек (через этот
+    хелпер) и логируется, когда реально применяется."""
     if value is None:
         return default
     if isinstance(value, bool):
-        return int(value)
+        return max(int(value), 1)
     if isinstance(value, int):
-        return value
+        return _clamp_quantity(value)
     try:
-        return int(str(value).strip())
+        return _clamp_quantity(int(str(value).strip()))
     except (ValueError, TypeError):
         try:
-            return int(float(str(value).strip()))
+            return _clamp_quantity(int(float(str(value).strip())))
         except (ValueError, TypeError):
             return default
+
+
+def _clamp_quantity(value: int) -> int:
+    if value < 1:
+        logger.warning(Msg.WorkItem.LOG_QUANTITY_CLAMPED.format(quantity=value))
+        return 1
+    return value
 
 
 @dataclass

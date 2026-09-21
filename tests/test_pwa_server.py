@@ -183,6 +183,50 @@ class TestOrderVersionRoundTrip:
         assert database.get_device(device_id)["notes"] == "моя правка"
 
 
+class TestWorkItemsQuantityIsClampedNotPersistedAsZero:
+    """Workflow-найденное расхождение: _work_items_to_json() (использовалась
+    и на создании, и на обновлении заказа) была независимой третьей
+    реализацией парсинга quantity — делала только int(qty) без пола в 1, в
+    отличие от classic GUI/Flet, которые уже отклоняют/клэмпят такое
+    значение на своих интерактивных путях. API-клиент мог записать
+    quantity<=0 напрямую в work_items_json в обход этого правила. Теперь
+    оба пути идут через WorkItem.from_dict() (database/models.py) — тот же
+    код, что и обе GUI-оболочки."""
+
+    def test_create_order_clamps_zero_quantity_to_one(self, pwa_client):
+        client, database = pwa_client
+
+        resp = client.post(
+            "/api/orders",
+            json=_sample_device(
+                work_items=[{"description": "Диагностика", "price": "500", "quantity": 0}]
+            ),
+        )
+        assert resp.status_code == 201, resp.get_json()
+
+        device_id = resp.get_json()["order"]["id"]
+        stored = database.get_work_items_from_db(device_id)
+        assert len(stored) == 1
+        assert stored[0]["quantity"] == 1
+
+    def test_update_order_clamps_negative_quantity_to_one(self, pwa_client):
+        client, database = pwa_client
+        device_id = database.add_device(_sample_device())
+
+        resp = client.put(
+            f"/api/orders/{device_id}",
+            json={
+                "version": 1,
+                "work_items": [{"description": "Чистка", "price": "300", "quantity": -3}],
+            },
+        )
+        assert resp.status_code == 200, resp.get_json()
+
+        stored = database.get_work_items_from_db(device_id)
+        assert len(stored) == 1
+        assert stored[0]["quantity"] == 1
+
+
 class TestMalformedRequestsReturn400NotInternal500:
     """Регрессия workflow-найденного бага: request.get_json(force=True) без
     silent=True/None-проверка и int(request.args[...]) без валидации ловились
