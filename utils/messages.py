@@ -207,6 +207,19 @@ class Msg:
             "(0/отрицательное количество не имеет смысла)"
         )
 
+    class Act:
+        """Печать акта приёма/выполненных работ (gui_flet/views_orders.py::
+        _print_act) и точный PDF-предпросмотр макета акта
+        (gui_flet/views_act_builder.py::_on_exact_pdf_click)."""
+
+        GENERATE_FAILED = "Не удалось сформировать акт"
+        PRINTED = "Акт сформирован и открыт для печати"
+        PRINT_FAILED = "Ошибка печати акта: {error}"
+        PREVIEW_GENERATE_FAILED = "Не удалось сформировать PDF"
+        PREVIEW_OPENED = "PDF открыт для просмотра"
+        PREVIEW_FAILED = "Ошибка предпросмотра: {error}"
+        LOG_PREVIEW_FAILED = "Ошибка точного PDF-предпросмотра: {error}"
+
     class Order:
         """Валидация и сохранение заказа
         (gui/dialogs/device_form_parts/save_mixin.py) — save()

@@ -454,73 +454,101 @@ def _print_act(app, device: dict, act_type: str) -> None:
     (reports/report_renderer.py::ActPDFGenerator), что использует классический
     интерфейс (см. gui/main_window_parts/acts_mixin.py). Flet-шеллу нет смысла
     заводить отдельный предпросмотр — PDF открывается системным просмотрщиком,
-    печать оттуда доступна как для любого другого документа."""
-    import contextlib
-    import os
-    import subprocess
-    import sys
-    import tempfile
+    печать оттуда доступна как для любого другого документа.
 
-    from reports.report_editor import load_template_data
-    from reports.report_renderer import ActPDFGenerator
+    on_click сам по себе синхронный (Flet этого требует) — вся реальная
+    работа идёт внутри async _run(), запущенного через page.run_task(), а
+    генерация PDF/запуск системного просмотрщика — через asyncio.to_thread()
+    (оба блокирующие). Раньше всё это выполнялось синхронно прямо в
+    обработчике клика — печать акта замораживала ВСЮ страницу этой
+    браузерной сессии (никакой другой клик/обновление не обрабатывались) на
+    время генерации PDF и запуска внешнего процесса, хотя рядом в этом же
+    файле add() (загрузка фото) уже показывает правильный паттерн
+    (workflow-найденное расхождение)."""
 
-    try:
-        if act_type == "completion" and device.get("work_items"):
-            from database.models import WorkItemsManager
+    async def _run() -> None:
+        import asyncio
+        import contextlib
+        import os
+        import subprocess
+        import sys
+        import tempfile
 
-            work_manager = WorkItemsManager()
-            work_manager.from_json(device["work_items"])
-            device = {**device, "completed_work": work_manager.get_description_summary()}
+        from reports.report_editor import load_template_data
+        from reports.report_renderer import ActPDFGenerator
 
-        template = load_template_data(act_type)
-        gen = ActPDFGenerator(template_data=template)
+        local_device = device
+        try:
+            if act_type == "completion" and local_device.get("work_items"):
+                from database.models import WorkItemsManager
 
-        # Каждый клик по печати создавал НОВЫЙ temp PDF и никогда не удалял
-        # ни один из них — репозиторий тем самым копил по одному
-        # осиротевшему файлу на каждую печать за всё время работы процесса
-        # (workflow-найденный гэп). Полный предпросмотр/редактирование, как
-        # в classic-GUI (gui/dialogs/act_preview.py), — отдельная большая
-        # фича; здесь, как первый шаг, удаляем ПРЕДЫДУЩИЙ temp-файл прямо
-        # перед созданием следующего — тот же приём, что и в
-        # act_preview.py::render_pdf_preview() (contextlib.suppress(OSError),
-        # т.к. системный просмотрщик мог ещё держать файл открытым).
-        last_path = getattr(app, "_last_act_print_path", None)
-        if last_path and os.path.exists(last_path):
-            with contextlib.suppress(OSError):
-                os.remove(last_path)
+                work_manager = WorkItemsManager()
+                work_manager.from_json(local_device["work_items"])
+                local_device = {
+                    **local_device,
+                    "completed_work": work_manager.get_description_summary(),
+                }
 
-        fd, path = tempfile.mkstemp(
-            suffix=f"_{act_type}_{device.get('order_number', '')}.pdf"
-        )
-        os.close(fd)
-        app._last_act_print_path = path
-        ok = (
-            gen.generate_completion_pdf(path, device)
-            if act_type == "completion"
-            else gen.generate_receipt_pdf(path, device)
-        )
-        if not ok or not os.path.exists(path):
-            app.show_snackbar("Не удалось сформировать акт", error=True)
-            return
-        if sys.platform == "win32":
-            os.startfile(path)
-        elif sys.platform == "darwin":
-            subprocess.run(["open", path], check=False)
-        else:
-            subprocess.run(["xdg-open", path], check=False)
-        app.show_snackbar("Акт сформирован и открыт для печати")
+            template = load_template_data(act_type)
+            gen = ActPDFGenerator(template_data=template)
 
-        # Печать акта выполненных работ = выдача устройства клиенту — тот же
-        # рабочий процесс, что и в classic-GUI
-        # (gui/main_window_parts/acts_mixin.py::print_completion_act()).
-        # Flet-версия раньше вообще не трогала статус: заказы, выданные
-        # через Flet, оставались в прежнем статусе, пока сотрудник не менял
-        # его вручную — искажая дашборд/финансовые цифры, завязанные на
-        # статус (workflow-найденный гэп).
-        if act_type == "completion" and device.get("status") != STATUS_ISSUED:
-            _ask_mark_issued(app, device)
-    except Exception as e:
-        app.show_snackbar(f"Ошибка печати акта: {e}", error=True)
+            # Каждый клик по печати создавал НОВЫЙ temp PDF и никогда не
+            # удалял ни один из них — репозиторий тем самым копил по одному
+            # осиротевшему файлу на каждую печать за всё время работы
+            # процесса (workflow-найденный гэп). Полный предпросмотр/
+            # редактирование, как в classic-GUI (gui/dialogs/act_preview.py),
+            # — отдельная большая фича; здесь, как первый шаг, удаляем
+            # ПРЕДЫДУЩИЙ temp-файл прямо перед созданием следующего — тот же
+            # приём, что и в act_preview.py::render_pdf_preview()
+            # (contextlib.suppress(OSError), т.к. системный просмотрщик мог
+            # ещё держать файл открытым).
+            last_path = getattr(app, "_last_act_print_path", None)
+            if last_path and os.path.exists(last_path):
+                with contextlib.suppress(OSError):
+                    os.remove(last_path)
+
+            fd, path = tempfile.mkstemp(
+                suffix=f"_{act_type}_{local_device.get('order_number', '')}.pdf"
+            )
+            os.close(fd)
+            app._last_act_print_path = path
+
+            def _generate() -> bool:
+                return (
+                    gen.generate_completion_pdf(path, local_device)
+                    if act_type == "completion"
+                    else gen.generate_receipt_pdf(path, local_device)
+                )
+
+            ok = await asyncio.to_thread(_generate)
+            if not ok or not os.path.exists(path):
+                app.show_snackbar(Msg.Act.GENERATE_FAILED, error=True)
+                return
+
+            def _open_in_system_viewer() -> None:
+                if sys.platform == "win32":
+                    os.startfile(path)
+                elif sys.platform == "darwin":
+                    subprocess.run(["open", path], check=False)
+                else:
+                    subprocess.run(["xdg-open", path], check=False)
+
+            await asyncio.to_thread(_open_in_system_viewer)
+            app.show_snackbar(Msg.Act.PRINTED)
+
+            # Печать акта выполненных работ = выдача устройства клиенту —
+            # тот же рабочий процесс, что и в classic-GUI (gui/main_window_
+            # parts/acts_mixin.py::print_completion_act()). Flet-версия
+            # раньше вообще не трогала статус: заказы, выданные через Flet,
+            # оставались в прежнем статусе, пока сотрудник не менял его
+            # вручную — искажая дашборд/финансовые цифры, завязанные на
+            # статус (workflow-найденный гэп).
+            if act_type == "completion" and local_device.get("status") != STATUS_ISSUED:
+                _ask_mark_issued(app, local_device)
+        except Exception as e:
+            app.show_snackbar(Msg.Act.PRINT_FAILED.format(error=e), error=True)
+
+    app.page.run_task(_run)
 
 
 def _ask_mark_issued(app, device: dict) -> None:

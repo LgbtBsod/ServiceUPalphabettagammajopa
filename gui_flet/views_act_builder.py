@@ -43,6 +43,7 @@ from reports.report_renderer import (
     CANVAS_SIMPLE_FIELDS,
     ActPDFGenerator,
 )
+from utils.messages import Msg
 
 from . import theme
 from .views_orders import _opt
@@ -485,35 +486,59 @@ class ActBuilderView:
     # ── точный PDF ───────────────────────────────────────────
 
     def _on_exact_pdf_click(self, _e=None) -> None:
+        # Вся реальная работа — в async _run(), запущенном через
+        # page.run_task() (тот же паттерн, что _on_import_click() ниже и
+        # _print_act() в views_orders.py), генерация PDF/запуск системного
+        # просмотрщика — через asyncio.to_thread() (оба блокирующие). Раньше
+        # это выполнялось синхронно прямо в обработчике клика — точный
+        # PDF-предпросмотр замораживал всю страницу этой браузерной сессии
+        # на время генерации и запуска внешнего процесса (workflow-найденное
+        # расхождение с _on_import_click(), который уже делает это правильно
+        # в этом же файле).
         tpl = dict(self.templates[self.act_type])
         tpl["layout_mode"] = "canvas"
         tpl["canvas_fields"] = self._fields()
-        try:
-            gen = ActPDFGenerator(template_data=tpl)
-            fd, path = tempfile.mkstemp(suffix=f"_{self.act_type}_preview.pdf")
-            os.close(fd)
-            ok = (
-                gen.generate_completion_pdf(path, _DEMO_DEVICE)
-                if self.act_type == "completion"
-                else gen.generate_receipt_pdf(path, _DEMO_DEVICE)
-            )
-            if not ok or not os.path.exists(path):
-                self.app.show_snackbar("Не удалось сформировать PDF", error=True)
-                return
-            # Flet-оболочка — локальный сервер + локальная вкладка браузера на
-            # той же машине (см. gui_flet/app.py docstring), поэтому открываем
-            # системным просмотрщиком, как и печать готового акта в
-            # _print_act() (views_orders.py) — тот же приём, тот же контекст.
-            if sys.platform == "win32":
-                os.startfile(path)
-            elif sys.platform == "darwin":
-                subprocess.run(["open", path], check=False)
-            else:
-                subprocess.run(["xdg-open", path], check=False)
-            self.app.show_snackbar("PDF открыт для просмотра")
-        except Exception as e:
-            logger.exception(f"Ошибка точного PDF-предпросмотра: {e}")
-            self.app.show_snackbar(f"Ошибка предпросмотра: {e}", error=True)
+
+        async def _run() -> None:
+            import asyncio
+
+            try:
+                gen = ActPDFGenerator(template_data=tpl)
+                fd, path = tempfile.mkstemp(suffix=f"_{self.act_type}_preview.pdf")
+                os.close(fd)
+
+                def _generate() -> bool:
+                    return (
+                        gen.generate_completion_pdf(path, _DEMO_DEVICE)
+                        if self.act_type == "completion"
+                        else gen.generate_receipt_pdf(path, _DEMO_DEVICE)
+                    )
+
+                ok = await asyncio.to_thread(_generate)
+                if not ok or not os.path.exists(path):
+                    self.app.show_snackbar(Msg.Act.PREVIEW_GENERATE_FAILED, error=True)
+                    return
+
+                def _open_in_system_viewer() -> None:
+                    # Flet-оболочка — локальный сервер + локальная вкладка
+                    # браузера на той же машине (см. gui_flet/app.py
+                    # docstring), поэтому открываем системным просмотрщиком,
+                    # как и печать готового акта в _print_act()
+                    # (views_orders.py) — тот же приём, тот же контекст.
+                    if sys.platform == "win32":
+                        os.startfile(path)
+                    elif sys.platform == "darwin":
+                        subprocess.run(["open", path], check=False)
+                    else:
+                        subprocess.run(["xdg-open", path], check=False)
+
+                await asyncio.to_thread(_open_in_system_viewer)
+                self.app.show_snackbar(Msg.Act.PREVIEW_OPENED)
+            except Exception as e:
+                logger.exception(Msg.Act.LOG_PREVIEW_FAILED.format(error=e))
+                self.app.show_snackbar(Msg.Act.PREVIEW_FAILED.format(error=e), error=True)
+
+        self.app.page.run_task(_run)
 
     # ── импорт из файла ──────────────────────────────────────
 

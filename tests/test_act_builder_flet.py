@@ -13,6 +13,7 @@ docstring views_act_builder.py — global_delta это смещение С НА�
 
 from __future__ import annotations
 
+import os
 import types
 
 import pytest
@@ -27,6 +28,8 @@ from gui_flet.views_act_builder import (
     _palette_keys,
 )
 from reports import report_editor
+from reports.report_renderer import ActPDFGenerator
+from utils.messages import Msg
 
 
 @pytest.fixture(autouse=True)
@@ -42,12 +45,30 @@ def _isolated_templates_dir(tmp_path, monkeypatch):
 class _FakePage:
     def __init__(self):
         self.services = []
+        self.dialogs = []
 
     def update(self):
         pass
 
-    def run_task(self, coro_fn):
-        pass
+    def run_task(self, coro_fn, *args, **kwargs):
+        """Реальный Page.run_task планирует корутину в уже крутящемся
+        asyncio-цикле Flet — здесь такого цикла нет, а синхронный тест,
+        вызвавший код, ведущий сюда, ждёт результата синхронно.
+        asyncio.run() даёт то же самое "к моменту возврата всё уже
+        случилось" — тот же приём, что и в tests/test_gui_flet.py::
+        _FakePage.run_task() (см. там же за обсуждением, когда так делать
+        не стоит — настоящий конкурентный async вроде pick_files(),
+        ожидающего реальный Flet-клиент, по-прежнему не тестируется тут)."""
+        import asyncio
+
+        asyncio.run(coro_fn(*args, **kwargs))
+
+    def show_dialog(self, dialog):
+        self.dialogs.append(dialog)
+
+    def pop_dialog(self):
+        if self.dialogs:
+            self.dialogs.pop()
 
 
 class _FakeApp:
@@ -303,10 +324,6 @@ class TestImportFileErrorHandling:
     ничего не делающая."""
 
     def test_pick_files_failure_shows_error_snackbar_not_a_silent_crash(self, view):
-        import asyncio
-
-        view.app.page.run_task = lambda coro_fn: asyncio.run(coro_fn())
-
         async def _raise(*_args, **_kwargs):
             raise RuntimeError("picker disconnected")
 
@@ -345,6 +362,53 @@ class TestSave:
         saved = report_editor.load_template_data("receipt")
         assert saved["layout_mode"] == "canvas"
         assert saved["canvas_fields"]["client_name"]["x_mm"] == 42.0
+
+
+class TestExactPdfPreview:
+    """Regression (workflow architecture audit): _on_exact_pdf_click() used
+    to generate the PDF and launch the system viewer synchronously right
+    in the click handler, freezing the whole Flet page for the duration —
+    now wrapped in page.run_task()/asyncio.to_thread(), the same pattern
+    as _print_act() (views_orders.py) and _on_import_click() above."""
+
+    @pytest.fixture(autouse=True)
+    def _no_real_viewer_launch(self, monkeypatch):
+        monkeypatch.setattr(os, "startfile", lambda path: None, raising=False)
+
+    def test_success_opens_the_generated_pdf(self, view, app):
+        view._on_exact_pdf_click()
+
+        assert app.snackbars
+        message, is_error = app.snackbars[-1]
+        assert is_error is False
+        assert message == Msg.Act.PREVIEW_OPENED
+
+    def test_generation_failure_shows_error_without_raising(self, view, app, monkeypatch):
+        monkeypatch.setattr(
+            ActPDFGenerator, "generate_receipt_pdf", lambda self, path, device: False
+        )
+
+        view._on_exact_pdf_click()
+
+        assert app.snackbars
+        message, is_error = app.snackbars[-1]
+        assert is_error is True
+        assert message == Msg.Act.PREVIEW_GENERATE_FAILED
+
+    def test_exception_during_generation_shows_error_without_raising(
+        self, view, app, monkeypatch
+    ):
+        def _boom(self, path, device):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(ActPDFGenerator, "generate_receipt_pdf", _boom)
+
+        view._on_exact_pdf_click()
+
+        assert app.snackbars
+        message, is_error = app.snackbars[-1]
+        assert is_error is True
+        assert "boom" in message
 
 
 class TestClampHelper:
